@@ -64,3 +64,31 @@ def test_reset_search(app):
     app.search_var.set("abc")
     app.reset_search()
     assert app.search_var.get() == ""
+
+
+def test_update_nav_buttons_no_selection(app):
+    app.update_nav_buttons()
+    # ensure buttons exist and state is valid
+    assert app.prev_button["state"] in ("normal", "disabled")
+    assert app.next_button["state"] in ("normal", "disabled")
+
+
+def test_prev_search_result_no_results(app):
+    app.search_results = []
+    app.current_result_index = -1
+    app.prev_search_result()  # should not crash
+    assert app.current_result_index == -1
+
+
+def test_next_search_result_no_results(app):
+    app.search_results = []
+    app.current_result_index = -1
+    app.next_search_result()  # should not crash
+    assert app.current_result_index == -1
+
+
+def test_update_position_label_without_selection(app):
+    app.position_label.config(text="")
+    app._update_position_label()
+    # label should remain a string
+    assert isinstance(app.position_label.cget("text"), str)
