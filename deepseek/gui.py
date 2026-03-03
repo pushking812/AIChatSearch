@@ -283,6 +283,9 @@ class Application(tk.Tk):
                 self.tree.selection_set(item_id)
                 self.tree.see(item_id)
                 self._internal_tree_update = False
+            else:
+                # Message already selected – ensure text is displayed
+                self._display_pair(pair)
 
         self.controller.select_pair(chat, pair)
 
