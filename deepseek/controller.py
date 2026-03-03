@@ -12,6 +12,9 @@ class ChatController:
     def set_chats(self, chats):
         self.chats = chats or []
         self.filtered_chats = list(self.chats)
+        self._reset_navigation()
+
+    def _reset_navigation(self):
         self.current_chat = None
         self.current_chat_pairs = []
         self.current_index_in_chat = None
@@ -32,9 +35,28 @@ class ChatController:
                 if query in chat.title.lower()
             ]
 
-        self.current_chat = None
-        self.current_chat_pairs = []
-        self.current_index_in_chat = None
+        self._reset_navigation()
+
+    # ---------- SEARCH (within selected chat) ----------
+
+    def search(self, chat, query, field):
+        query = (query or "").lower().strip()
+        if not query or chat is None:
+            return chat.get_pairs()
+
+        result = []
+        for pair in chat.get_pairs():
+            if field == "Название чата":
+                if query in chat.title.lower():
+                    result.append(pair)
+            elif field == "Запрос":
+                if query in pair.request_text.lower():
+                    result.append(pair)
+            elif field == "Ответ":
+                if query in pair.response_text.lower():
+                    result.append(pair)
+
+        return result
 
     # ---------- SELECT MESSAGE ----------
 
