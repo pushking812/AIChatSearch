@@ -62,7 +62,7 @@ def test_load_from_zip_success():
     zip_path = create_test_zip(test_json)
     chats = load_from_zip(zip_path)
 
-    assert chats == []
+    assert len(chats) == 1
     assert len(chats[0].pairs) == 1
     assert chats[0].pairs[0].request_text == "Hello"
     assert "Hi there!" in chats[0].pairs[0].response_text
@@ -180,7 +180,6 @@ def test_load_from_zip_invalid_mapping(tmp_path):
 
     chats = load_from_zip(str(zip_path))
     assert chats == []
-    assert chats[0].get_pairs() == []
 
 
 def test_load_from_zip_empty_fragments(tmp_path):
@@ -204,7 +203,7 @@ def test_load_from_zip_empty_fragments(tmp_path):
         z.writestr("conversations.json", json.dumps(data))
 
     chats = load_from_zip(str(zip_path))
-    assert chats == []
+    assert len(chats) == 1
     assert chats[0].get_pairs() == []
 
 
