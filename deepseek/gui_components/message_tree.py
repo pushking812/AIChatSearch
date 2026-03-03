@@ -127,3 +127,7 @@ class MessageTreePanel:
         if self._internal_update:
             return
         self.on_select()
+
+    def clear(self):
+        """Удаляет все элементы из дерева."""
+        self._clear()
