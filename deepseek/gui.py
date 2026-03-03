@@ -338,6 +338,7 @@ class Application(tk.Tk):
         self.on_chat_select()
 
     def perform_search(self):
+        grouped = {}
         for chat, data in grouped.items():
             pairs = sorted(data['pairs'], key=lambda p: p.index)
             matches = data['matches']
