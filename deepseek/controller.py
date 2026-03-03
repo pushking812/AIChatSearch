@@ -1,4 +1,7 @@
 class ChatController:
+
+    def _reset_search_state(self):
+
     def __init__(self):
         self.chats = []
         self.filtered_chats = []
