@@ -220,33 +220,41 @@ class Application(tk.Tk):
 
     # ---------------- SEARCH ----------------
 
-    
+        
     def search_current_chat(self):
-        if not self.current_selected_chats:
-            return
-
-        query = self.search_var.get()
-        if not query:
-            return
-
-        field = self.search_field_var.get()
-
-        aggregated_pairs = []
-        print(f"[DEBUG] search_current_chat | selected_chats={len(self.current_selected_chats)}")
-
-        for chat in self.current_selected_chats:
-            pairs = self.controller.search(chat, query, field)
-            print(f"[DEBUG] search_current_chat | chat={chat} | found={len(pairs)}")
-            for pair in pairs:
-                aggregated_pairs.append((chat, pair))
-
-        print(f"[DEBUG] search_current_chat | total_found={len(aggregated_pairs)}")
-
-        self.current_search_results = aggregated_pairs
-        self.current_pair_index = 0 if aggregated_pairs else None
-
-        self.display_visible_pairs()
-        self.update_nav_buttons()
+            if not self.current_selected_chats:
+                return
+    
+            query = self.search_var.get()
+            if not query:
+                return
+    
+            field = self.search_field_var.get()
+    
+            aggregated_results = []
+    
+            for chat in self.current_selected_chats:
+                pairs = self.controller.search(chat, query, field)
+                for pair in pairs:
+                    aggregated_results.append((chat, pair))
+    
+            for item in self.tree.get_children():
+                self.tree.delete(item)
+    
+            self.tree_item_map = {}
+    
+            for chat, pair in aggregated_results:
+                item_id = self.tree.insert(
+                    "",
+                    "end",
+                    values=(
+                        chat.title,
+                        pair.index,
+                        pair.request_text[:30],
+                        pair.response_text[:30],
+                    ),
+                )
+                self.tree_item_map[item_id] = (chat, pair)
 
     def reset_search(self):
         self.search_var.set("")
