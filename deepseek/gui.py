@@ -20,6 +20,11 @@ class Application(tk.Tk):
         self.title("DeepSeek Chat Archive Navigator")
         self.geometry("1200x800")
 
+        # Set minimum window size based on panel minimums
+        min_width = 150 + 400
+        min_height = 150 + 250
+        self.minsize(min_width, min_height)
+
         self.tree_item_map = {}
         self.current_selected_chats = []
 
@@ -58,7 +63,7 @@ class Application(tk.Tk):
         main_paned.pack(fill=tk.BOTH, expand=True)
 
         left_frame = tk.Frame(main_paned)
-        main_paned.add(left_frame, width=300, minsize=220)
+        main_paned.add(left_frame, width=300, minsize=150)
 
         tk.Label(left_frame, text="Чаты", font=("Arial", 12, "bold")).pack(anchor="w", padx=5, pady=5)
 
@@ -116,7 +121,7 @@ class Application(tk.Tk):
         main_paned.add(right_paned, minsize=400)
 
         top_frame = tk.Frame(right_paned)
-        right_paned.add(top_frame, height=300, minsize=200)
+        right_paned.add(top_frame, height=300, minsize=150)
 
         tk.Label(top_frame, text="Сообщения", font=("Arial", 12, "bold")).pack(anchor="w", padx=5, pady=5)
 
