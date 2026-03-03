@@ -215,7 +215,7 @@ class Application(tk.Tk):
 
         self.tree_item_map = {}
 
-        for chat in chats_for_search:
+        for chat in self.current_selected_chats:
             for pair in chat.get_pairs():
                 item_id = self.tree.insert(
                     "",
