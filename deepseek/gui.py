@@ -253,6 +253,17 @@ class Application(tk.Tk):
             self._update_position_label()
             self.update_nav_buttons()
 
+        # If search is active, jump to first found occurrence of this message
+        if self.search_results:
+            for idx, (s_chat, s_pair, field, start_pos, end_pos) in enumerate(self.search_results):
+                if s_chat == chat and s_pair == pair:
+                    self.current_result_index = idx
+                    self.search_counter.config(
+                        text=f"{idx + 1} / {len(self.search_results)}"
+                    )
+                    self._apply_search_highlight(field, start_pos, end_pos, move_focus=False)
+                    break
+
     def _display_pair(self, pair):
 
         self.request_text.delete("1.0", tk.END)
