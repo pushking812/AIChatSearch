@@ -1,7 +1,4 @@
 class ChatController:
-
-    def _reset_search_state(self):
-
     def __init__(self):
         self.chats = []
         self.filtered_chats = []
@@ -11,6 +8,10 @@ class ChatController:
         self.current_index_in_chat = None
 
     # ---------- DATA ----------
+
+    def _reset_search_state(self):
+        self.visible_pairs = []
+        self.search_active = False
 
     def set_chats(self, chats):
         self.chats = chats or []
