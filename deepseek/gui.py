@@ -188,6 +188,9 @@ class Application(tk.Tk):
             return
 
         index = selection[0]
+        if index >= len(self.visible_pairs):
+            return
+
         self.current_pair_index = index
         _, pair = self.visible_pairs[index]
         self.current_pair = pair
@@ -281,3 +284,10 @@ class Application(tk.Tk):
                 if query in chat.title.lower()
             ]
         self._update_chat_list()
+
+        # Reset selections after filtering
+        self.selected_chats = []
+        self.visible_pairs = []
+        self.current_pair_index = None
+        self.pair_listbox.delete(0, tk.END)
+        self.update_nav_buttons()
