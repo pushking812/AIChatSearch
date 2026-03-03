@@ -161,7 +161,6 @@ class Application(tk.Tk):
         self.request_text.tag_configure("search_match", background="yellow")
         self.response_text.tag_configure("search_match", background="yellow")
 
-
         nav_frame = tk.Frame(bottom_frame)
         nav_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
 
@@ -170,6 +169,10 @@ class Application(tk.Tk):
 
         self.next_button = tk.Button(nav_frame, text="Следующая →", command=self.next_pair, state=tk.DISABLED)
         self.next_button.pack(side=tk.LEFT, padx=5)
+
+        # ---------- Добавленная кнопка "Сохранить изменения" ----------
+        self.save_button = tk.Button(bottom_frame, text="Сохранить изменения", command=self.save_current_pair)
+        self.save_button.pack(pady=5)
 
     # ---------------- DATA ----------------
 
@@ -217,12 +220,14 @@ class Application(tk.Tk):
 
         for chat in self.current_selected_chats:
             for pair in chat.get_pairs():
+                # Добавляем '*' к номеру, если пара изменена
+                idx_display = str(pair.index) + ('*' if pair.modified else '')
                 item_id = self.tree.insert(
                     "",
                     "end",
                     values=(
                         chat.title,
-                        pair.index,
+                        idx_display,
                         pair.request_text[:30],
                         pair.response_text[:30],
                     ),
@@ -265,7 +270,6 @@ class Application(tk.Tk):
                     break
 
     def _display_pair(self, pair):
-
         self.request_text.delete("1.0", tk.END)
         self.response_text.delete("1.0", tk.END)
         self.request_text.insert(tk.END, pair.request_text)
@@ -288,8 +292,6 @@ class Application(tk.Tk):
     def reset_search(self):
         self.search_var.set("")
         self.on_chat_select()
-
-
 
     def perform_search(self):
         self.search_results = []
@@ -319,12 +321,13 @@ class Application(tk.Tk):
                 unique_pairs.append((chat, pair))
 
         for chat, pair in unique_pairs:
+            idx_display = str(pair.index) + ('*' if pair.modified else '')
             item_id = self.tree.insert(
                 "",
                 "end",
                 values=(
                     chat.title,
-                    pair.index,
+                    idx_display,
                     pair.request_text[:30],
                     pair.response_text[:30],
                 ),
@@ -381,10 +384,7 @@ class Application(tk.Tk):
         if self.search_results:
             self.go_to_search_result(self.current_result_index - 1, move_focus=True)
 
-
-
     def _apply_search_highlight(self, field, start, end, move_focus):
-
         widget = self.request_text if field == "request" else self.response_text
 
         if move_focus:
@@ -423,3 +423,53 @@ class Application(tk.Tk):
             self.position_label.config(
                 text=f"Чат: {title} | Сообщение {index} из {total}"
             )
+
+    # ---------- НОВЫЙ МЕТОД: Сохранение изменений текущей пары ----------
+    def save_current_pair(self):
+        """Сохраняет изменения текущей пары сообщений."""
+        # Получаем текущую пару из контроллера (предполагается наличие метода get_current_pair)
+        current_pair = self.controller.get_current_pair() if hasattr(self.controller, 'get_current_pair') else None
+        if current_pair is None:
+            # Если метод отсутствует, пробуем получить через атрибут (на свой страх и риск)
+            current_pair = getattr(self.controller, 'current_pair', None)
+        if current_pair is None:
+            messagebox.showwarning("Предупреждение", "Нет выбранной пары для сохранения.")
+            return
+
+        modified = False
+
+        # Получаем текст из виджетов
+        new_request = self.request_text.get("1.0", "end-1c")
+        new_response = self.response_text.get("1.0", "end-1c")
+
+        # Сравниваем и обновляем
+        if new_request != current_pair.request_text:
+            current_pair.request_text = new_request
+            modified = True
+        if new_response != current_pair.response_text:
+            current_pair.response_text = new_response
+            modified = True
+
+        if modified:
+            current_pair.modified = True
+            # Обновляем отображение в дереве (добавляем * к номеру)
+            self._update_tree_item_for_pair(current_pair)
+            messagebox.showinfo("Сохранение", "Изменения сохранены.")
+        else:
+            messagebox.showinfo("Сохранение", "Нет изменений для сохранения.")
+
+    # ---------- ВСПОМОГАТЕЛЬНЫЙ МЕТОД: Обновление строки дерева ----------
+    def _update_tree_item_for_pair(self, target_pair):
+        """Находит элемент дерева, соответствующий паре, и обновляет его отображение."""
+        for item_id, (chat, pair) in self.tree_item_map.items():
+            if pair is target_pair:
+                # Формируем отображаемый номер со звёздочкой, если изменено
+                idx_display = str(pair.index) + ('*' if pair.modified else '')
+                # Обновляем значения в дереве
+                self.tree.item(item_id, values=(
+                    chat.title,
+                    idx_display,
+                    pair.request_text[:30],
+                    pair.response_text[:30],
+                ))
+                break

@@ -14,6 +14,13 @@ logger = logging.getLogger(__name__)
 # MessagePair
 # =========================
 
+
+class MessagePair:
+    def __init__(self, request_text, response_text):
+        self.request_text = request_text
+        self.response_text = response_text
+        self.modified = False  # Attribute to track modifications
+
 class MessagePair:
     def __init__(
         self,
