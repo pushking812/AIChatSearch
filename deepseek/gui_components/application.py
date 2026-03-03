@@ -166,7 +166,6 @@ class Application(tk.Tk):
         self._update_nav_buttons()
 
     def _on_tree_selected(self):
-        """Вызывается при выборе элемента в дереве."""
         selected = self.tree_panel.get_selected_pair()
         if not selected:
             return
@@ -176,12 +175,26 @@ class Application(tk.Tk):
             self.detail_panel.display_pair(pair)
             self._update_position_label()
             self._update_nav_buttons()
-            # Если есть активный поиск, подсветить результат
-            current = self.search_ctrl.get_current()
-            if current:
-                s_chat, s_pair, field, start, end = current
-                if s_chat == chat and s_pair == pair:
-                    self.detail_panel.highlight_search_match(field, start, end, move_focus=False)
+
+            # ---- ВОССТАНОВЛЕНИЕ ПЕРЕХОДА К РЕЗУЛЬТАТУ ПОИСКА ----
+            # Проверяем, есть ли у search_ctrl результаты поиска
+            if hasattr(self.search_ctrl, 'results') and self.search_ctrl.results:
+                results = self.search_ctrl.results
+                # Ищем первое вхождение для данной пары (чат + сообщение)
+                for idx, (s_chat, s_pair, field, start, end) in enumerate(results):
+                    if s_chat is chat and s_pair is pair:
+                        # Нашли – обновляем текущий индекс в search_ctrl (если есть такой атрибут)
+                        if hasattr(self.search_ctrl, 'current_index'):
+                            self.search_ctrl.current_index = idx
+                        # Обновляем счётчик
+                        self.search_counter.config(text=f"{idx + 1} / {len(results)}")
+                        # Подсвечиваем найденный фрагмент
+                        self.detail_panel.highlight_search_match(field, start, end, move_focus=False)
+                        break
+                else:
+                    # Если ни одного вхождения не найдено – убираем подсветку
+                    self.detail_panel.clear_highlight()
+            # ------------------------------------------------------
 
     def _on_search_key(self, event):
         """Обработка ввода в поле поиска при live-режиме."""

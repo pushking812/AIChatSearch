@@ -45,3 +45,36 @@ class SearchController:
     def clear(self):
         self.results = []
         self.current_index = -1
+        
+###        
+        
+    def has_results(self) -> bool:
+        """Возвращает True, если есть результаты поиска."""
+        return bool(self.results)
+
+    def get_total(self) -> int:
+        """Возвращает общее количество результатов."""
+        return len(self.results)
+
+    def get_current_index(self) -> int:
+        """Возвращает текущий индекс."""
+        return self.current_index
+
+    def set_current_index(self, idx: int, move_focus: bool = False):
+        """
+        Устанавливает текущий результат по индексу и вызывает колбэк.
+        Если индекс выходит за пределы, ничего не делает.
+        """
+        if 0 <= idx < len(self.results):
+            self.current_index = idx
+            self._callback(self.results[idx], idx, len(self.results), move_focus)
+
+    def find_first_index_for_pair(self, chat, pair) -> int:
+        """
+        Возвращает индекс первого результата, принадлежащего указанной паре (чат, сообщение).
+        Если не найдено, возвращает -1.
+        """
+        for i, (c, p, field, start, end) in enumerate(self.results):
+            if c is chat and p is pair:
+                return i
+        return -1

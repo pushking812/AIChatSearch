@@ -67,11 +67,12 @@ class MessageDetailPanel:
         self.position_label.config(text=text)
 
     def highlight_search_match(self, field, start, end, move_focus=True):
-        """Подсветить найденный фрагмент в соответствующем поле."""
         widget = self.request_text if field == "request" else self.response_text
         if move_focus:
             widget.focus_set()
+        # Удаляем предыдущую подсветку
         widget.tag_remove("search_match", "1.0", tk.END)
+        # Добавляем подсветку
         widget.tag_add("search_match", f"1.0 + {start} chars", f"1.0 + {end} chars")
         widget.see(f"1.0 + {start} chars")
 
@@ -81,3 +82,8 @@ class MessageDetailPanel:
             self.request_text.get("1.0", "end-1c"),
             self.response_text.get("1.0", "end-1c")
         )
+
+    def clear_highlight(self):
+        """Убирает подсветку поиска в обоих текстовых полях."""
+        self.request_text.tag_remove("search", "1.0", tk.END)
+        self.response_text.tag_remove("search", "1.0", tk.END)
