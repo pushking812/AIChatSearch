@@ -58,6 +58,12 @@ class Application(tk.Tk):
         left_label = tk.Label(left_frame, text="Чаты", font=("Arial", 12, "bold"))
         left_label.pack(anchor="w", padx=5, pady=5)
 
+        # --- Chat Filter Entry ---
+        self.chat_filter_entry = tk.Entry(left_frame, textvariable=self.chat_filter_var)
+        self.chat_filter_entry.pack(fill=tk.X, padx=5, pady=(0,5))
+        self.chat_filter_entry.bind("<KeyRelease>", self.filter_chats)
+
+
         self.chat_listbox = tk.Listbox(left_frame)
         self.chat_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0), pady=5)
 
