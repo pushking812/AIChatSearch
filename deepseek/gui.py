@@ -63,6 +63,9 @@ class Application(tk.Tk):
         self.chat_listbox.bind("<ButtonRelease-1>", self.on_chat_select)
         self.chat_listbox.bind("<Shift-ButtonRelease-1>", self.on_chat_select)
         self.chat_listbox.bind("<Control-ButtonRelease-1>", self.on_chat_select)
+        self._debug_bind_listbox()
+        self._last_debug_selection = ()
+        self.after(200, self._poll_selection_debug)
 
         right_paned = tk.PanedWindow(main_paned, orient=tk.VERTICAL)
         main_paned.add(right_paned)
