@@ -296,6 +296,7 @@ class Application(tk.Tk):
         self.update_nav_buttons()
 
     def update_nav_buttons(self):
+        print(f"[DEBUG] update_nav_buttons | visible_pairs={len(self.visible_pairs)} | current_pair_index={self.current_pair_index}")
         if not self.visible_pairs or self.current_pair_index is None:
             self.prev_button.config(state=tk.DISABLED)
             self.next_button.config(state=tk.DISABLED)
