@@ -284,13 +284,7 @@ class Application(tk.Tk):
         self.search_results = []
         self.current_result_index = -1
 
-        chats_for_search = (
-            self.current_selected_chats
-            if self.current_selected_chats
-            else self.controller.get_filtered_chats()
-        )
-
-        if not chats_for_search:
+        if not self.current_selected_chats:
             self.search_counter.config(text="0 / 0")
             return
 
@@ -301,7 +295,7 @@ class Application(tk.Tk):
 
         field = self.search_field_var.get()
 
-        for chat in chats_for_search:
+        for chat in self.current_selected_chats:
             results = self.controller.search_with_positions(chat, query, field)
             self.search_results.extend(results)
 
