@@ -58,7 +58,7 @@ class Application(tk.Tk):
         main_paned.pack(fill=tk.BOTH, expand=True)
 
         left_frame = tk.Frame(main_paned)
-        main_paned.add(left_frame, width=300)
+        main_paned.add(left_frame, width=300, minsize=220)
 
         tk.Label(left_frame, text="Чаты", font=("Arial", 12, "bold")).pack(anchor="w", padx=5, pady=5)
 
@@ -104,11 +104,19 @@ class Application(tk.Tk):
         )
         self.btn_clear_selection.pack(side=tk.LEFT, padx=2)
 
-        right_paned = tk.PanedWindow(main_paned, orient=tk.VERTICAL)
-        main_paned.add(right_paned)
+        right_paned = tk.PanedWindow(
+            main_paned,
+            orient=tk.VERTICAL,
+            sashrelief=tk.RAISED,
+            sashwidth=6,
+            bd=1,
+            relief=tk.SUNKEN,
+            showhandle=True,
+        )
+        main_paned.add(right_paned, minsize=400)
 
         top_frame = tk.Frame(right_paned)
-        right_paned.add(top_frame, height=300)
+        right_paned.add(top_frame, height=300, minsize=200)
 
         tk.Label(top_frame, text="Сообщения", font=("Arial", 12, "bold")).pack(anchor="w", padx=5, pady=5)
 
@@ -153,7 +161,7 @@ class Application(tk.Tk):
         self.tree.bind("<<TreeviewSelect>>", self.on_tree_select)
 
         bottom_frame = tk.Frame(right_paned)
-        right_paned.add(bottom_frame)
+        right_paned.add(bottom_frame, minsize=250)
 
         self.position_label = tk.Label(bottom_frame, text="", font=("Arial", 10, "italic"))
         self.position_label.pack(anchor="w", padx=5, pady=(5, 0))
@@ -179,8 +187,8 @@ class Application(tk.Tk):
         self.response_text = tk.Text(response_container, height=10)
         self.response_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        text_paned.add(request_container)
-        text_paned.add(response_container)
+        text_paned.add(request_container, minsize=120)
+        text_paned.add(response_container, minsize=120)
 
         self.request_text.tag_configure("search_match", background="yellow")
         self.response_text.tag_configure("search_match", background="yellow")
