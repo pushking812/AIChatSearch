@@ -92,3 +92,59 @@ def test_update_position_label_without_selection(app):
     app._update_position_label()
     # label should remain a string
     assert isinstance(app.position_label.cget("text"), str)
+
+
+def test_on_chat_select_populates_tree(app):
+    # create chat with one pair
+    class Pair:
+        def __init__(self):
+            self.index = 1
+            self.request_text = "req"
+            self.response_text = "resp"
+
+    class Chat:
+        def __init__(self):
+            self.title = "Chat1"
+            self._pairs = [Pair()]
+        def get_pairs(self):
+            return self._pairs
+
+    chat = Chat()
+    app.controller.set_chats([chat])
+    app._update_chat_list()
+
+    # select first chat
+    app.chat_listbox.selection_set(0)
+    app.on_chat_select()
+
+    items = app.tree.get_children()
+    assert len(items) == 1
+
+
+def test_on_tree_select_displays_pair(app):
+    class Pair:
+        def __init__(self):
+            self.index = 1
+            self.request_text = "hello"
+            self.response_text = "world"
+
+    class Chat:
+        def __init__(self):
+            self.title = "Chat1"
+            self._pairs = [Pair()]
+        def get_pairs(self):
+            return self._pairs
+
+    chat = Chat()
+    app.controller.set_chats([chat])
+    app._update_chat_list()
+
+    app.chat_listbox.selection_set(0)
+    app.on_chat_select()
+
+    items = app.tree.get_children()
+    app.tree.selection_set(items[0])
+    app.on_tree_select()
+
+    assert "hello" in app.request_text.get("1.0", "end")
+    assert "world" in app.response_text.get("1.0", "end")
