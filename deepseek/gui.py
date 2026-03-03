@@ -20,22 +20,17 @@ class Application(tk.Tk):
         self.title("DeepSeek Chat Archive Navigator")
         self.geometry("1200x800")
 
-        # Data (GUI-level only)
         self.chats = []
         self.filtered_chats = []
         self.tree_item_map = {}
 
         self.chat_filter_var = tk.StringVar()
-        self.search_var = tk.StringVar()
-        self.search_field_var = tk.StringVar(value="Запрос")
 
         self.archive_path = None
         self.raw_data = None
 
         self._create_menu()
         self._create_layout()
-
-    # ---------------- MENU ----------------
 
     def _create_menu(self):
         menubar = tk.Menu(self)
@@ -44,13 +39,10 @@ class Application(tk.Tk):
         menubar.add_cascade(label="Файл", menu=file_menu)
         self.config(menu=menubar)
 
-    # ---------------- LAYOUT ----------------
-
     def _create_layout(self):
         main_paned = tk.PanedWindow(self, orient=tk.HORIZONTAL)
         main_paned.pack(fill=tk.BOTH, expand=True)
 
-        # LEFT
         left_frame = tk.Frame(main_paned)
         main_paned.add(left_frame, width=300)
 
@@ -69,11 +61,9 @@ class Application(tk.Tk):
 
         self.chat_listbox.bind("<<ListboxSelect>>", self.on_chat_select)
 
-        # RIGHT
         right_paned = tk.PanedWindow(main_paned, orient=tk.VERTICAL)
         main_paned.add(right_paned)
 
-        # Top
         top_frame = tk.Frame(right_paned)
         right_paned.add(top_frame, height=300)
 
@@ -100,7 +90,6 @@ class Application(tk.Tk):
 
         self.tree.bind("<<TreeviewSelect>>", self.on_tree_select)
 
-        # Bottom
         bottom_frame = tk.Frame(right_paned)
         right_paned.add(bottom_frame)
 
@@ -121,8 +110,6 @@ class Application(tk.Tk):
         self.next_button = tk.Button(nav_frame, text="Следующая →", command=self.next_pair, state=tk.DISABLED)
         self.next_button.pack(side=tk.LEFT, padx=5)
 
-    # ---------------- DATA LOADING ----------------
-
     def open_archive(self):
         file_path = filedialog.askopenfilename(filetypes=[("ZIP files", "*.zip")])
         if not file_path:
@@ -141,8 +128,6 @@ class Application(tk.Tk):
         for chat in self.filtered_chats:
             self.chat_listbox.insert(tk.END, chat.title)
 
-    # ---------------- CHAT SELECTION ----------------
-
     def on_chat_select(self, event=None):
         indices = self.chat_listbox.curselection()
         selected = [
@@ -150,12 +135,9 @@ class Application(tk.Tk):
             for i in indices
             if i < len(self.filtered_chats)
         ]
-
         self.controller.select_chats(selected)
         self.display_visible_pairs()
         self.update_nav_buttons()
-
-    # ---------------- PAIR LIST ----------------
 
     def display_visible_pairs(self):
         for item in self.tree.get_children():
@@ -192,26 +174,37 @@ class Application(tk.Tk):
         self.request_text.insert(tk.END, pair.request_text)
         self.response_text.insert(tk.END, pair.response_text)
 
-    # ---------------- NAVIGATION ----------------
+    def _sync_tree_selection(self):
+        index = self.controller.current_pair_index
+        if index is None:
+            return
+
+        for item_id, item_index in self.tree_item_map.items():
+            if item_index == index:
+                self.tree.selection_remove(self.tree.selection())
+                self.tree.selection_set(item_id)
+                self.tree.focus(item_id)
+                self.tree.see(item_id)
+                break
 
     def prev_pair(self):
         pair = self.controller.prev_pair()
         if pair:
             self._display_pair(pair)
+            self._sync_tree_selection()
             self.update_nav_buttons()
 
     def next_pair(self):
         pair = self.controller.next_pair()
         if pair:
             self._display_pair(pair)
+            self._sync_tree_selection()
             self.update_nav_buttons()
 
     def update_nav_buttons(self):
         can_prev, can_next = self.controller.get_nav_state()
         self.prev_button.config(state=tk.NORMAL if can_prev else tk.DISABLED)
         self.next_button.config(state=tk.NORMAL if can_next else tk.DISABLED)
-
-    # ---------------- FILTER (unchanged for now) ----------------
 
     def filter_chats(self, event=None):
         query = self.chat_filter_var.get().lower().strip()
