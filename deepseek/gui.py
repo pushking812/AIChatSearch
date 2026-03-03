@@ -151,10 +151,9 @@ class Application(tk.Tk):
 
         self.tree = ttk.Treeview(
             top_frame,
-            columns=("chat", "idx", "request", "response"),
-            show="headings",
+            columns=("idx", "request", "response"),
+            show="tree headings",
         )
-        self.tree.heading("chat", text="Чат")
         self.tree.heading("idx", text="#")
         self.tree.heading("request", text="Запрос")
         self.tree.heading("response", text="Ответ")
