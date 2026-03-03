@@ -1,6 +1,8 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from tkinter import ttk
+import json
+import os
 
 from . import model
 from .controller import ChatController
@@ -36,8 +38,17 @@ class Application(tk.Tk):
         self.live_search_var = tk.BooleanVar(value=True)
         self._internal_tree_update = False
 
+        # Path to configuration file
+        self.config_dir = os.path.join(os.path.dirname(__file__), 'config')
+        self.config_path = os.path.join(self.config_dir, 'config.json')
+
         self._create_menu()
         self._create_layout()
+
+        # Restore window state after UI is fully created
+        self.after_idle(self.load_window_state)
+        # Handle window close event
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     # ---------------- MENU ----------------
 
@@ -51,7 +62,8 @@ class Application(tk.Tk):
     # ---------------- LAYOUT ----------------
 
     def _create_layout(self):
-        main_paned = tk.PanedWindow(
+        # Main horizontal paned window
+        self.main_paned = tk.PanedWindow(
             self,
             orient=tk.HORIZONTAL,
             sashrelief=tk.RAISED,
@@ -60,10 +72,11 @@ class Application(tk.Tk):
             relief=tk.SUNKEN,
             showhandle=True,
         )
-        main_paned.pack(fill=tk.BOTH, expand=True)
+        self.main_paned.pack(fill=tk.BOTH, expand=True)
 
-        left_frame = tk.Frame(main_paned)
-        main_paned.add(left_frame, width=300, minsize=150)
+        # Left frame (chat list)
+        left_frame = tk.Frame(self.main_paned)
+        self.main_paned.add(left_frame, width=300, minsize=150)
 
         tk.Label(left_frame, text="Чаты", font=("Arial", 12, "bold")).pack(anchor="w", padx=5, pady=5)
 
@@ -109,8 +122,9 @@ class Application(tk.Tk):
         )
         self.btn_clear_selection.pack(side=tk.LEFT, padx=2)
 
-        right_paned = tk.PanedWindow(
-            main_paned,
+        # Right vertical paned window
+        self.right_paned = tk.PanedWindow(
+            self.main_paned,
             orient=tk.VERTICAL,
             sashrelief=tk.RAISED,
             sashwidth=6,
@@ -118,10 +132,11 @@ class Application(tk.Tk):
             relief=tk.SUNKEN,
             showhandle=True,
         )
-        main_paned.add(right_paned, minsize=400)
+        self.main_paned.add(self.right_paned, minsize=400)
 
-        top_frame = tk.Frame(right_paned)
-        right_paned.add(top_frame, height=300, minsize=150)
+        # Top frame (messages tree)
+        top_frame = tk.Frame(self.right_paned)
+        self.right_paned.add(top_frame, height=300, minsize=150)
 
         tk.Label(top_frame, text="Сообщения", font=("Arial", 12, "bold")).pack(anchor="w", padx=5, pady=5)
 
@@ -164,13 +179,15 @@ class Application(tk.Tk):
         self.tree.config(yscrollcommand=tree_scroll.set)
         self.tree.bind("<<TreeviewSelect>>", self.on_tree_select)
 
-        bottom_frame = tk.Frame(right_paned)
-        right_paned.add(bottom_frame, minsize=250)
+        # Bottom frame (message details)
+        bottom_frame = tk.Frame(self.right_paned)
+        self.right_paned.add(bottom_frame, minsize=250)
 
         self.position_label = tk.Label(bottom_frame, text="", font=("Arial", 10, "italic"))
         self.position_label.pack(anchor="w", padx=5, pady=(5, 0))
 
-        text_paned = tk.PanedWindow(
+        # Vertical paned window inside bottom frame for request/response
+        self.text_paned = tk.PanedWindow(
             bottom_frame,
             orient=tk.VERTICAL,
             sashrelief=tk.RAISED,
@@ -179,25 +196,21 @@ class Application(tk.Tk):
             relief=tk.SUNKEN,
             showhandle=True,
         )
-        text_paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.text_paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        request_container = tk.Frame(text_paned)
+        request_container = tk.Frame(self.text_paned)
         tk.Label(request_container, text="Запрос", font=("Arial", 11, "bold")).pack(anchor="w", padx=5)
         self.request_text = tk.Text(request_container, height=10)
         self.request_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        response_container = tk.Frame(text_paned)
+        response_container = tk.Frame(self.text_paned)
         tk.Label(response_container, text="Ответ", font=("Arial", 11, "bold")).pack(anchor="w", padx=5)
         self.response_text = tk.Text(response_container, height=10)
         self.response_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        text_paned.add(request_container, minsize=110)
-        text_paned.add(response_container, minsize=130)
+        self.text_paned.add(request_container, minsize=110)
+        self.text_paned.add(response_container, minsize=130)
 
-        self.request_text.tag_configure("search_match", background="yellow")
-        self.response_text.tag_configure("search_match", background="yellow")
-
-        # Configure search highlight tag
         self.request_text.tag_configure("search_match", background="yellow")
         self.response_text.tag_configure("search_match", background="yellow")
 
@@ -210,9 +223,16 @@ class Application(tk.Tk):
         self.next_button = tk.Button(nav_frame, text="Следующая →", command=self.next_pair, state=tk.DISABLED)
         self.next_button.pack(side=tk.LEFT, padx=5)
 
-        # ---------- Добавленная кнопка "Сохранить изменения" ----------
-        # self.save_button = tk.Button(bottom_frame, text="Сохранить изменения", command=self.save_current_pair)
-        # self.save_button.pack(pady=5)
+        # Save button
+        self.save_button = tk.Button(bottom_frame, text="Сохранить изменения", command=self.save_current_pair)
+        self.save_button.pack(pady=5)
+
+        # Keep references for state saving/restoring
+        self.left_frame = left_frame
+        self.top_frame = top_frame
+        self.bottom_frame = bottom_frame
+        self.request_container = request_container
+        self.response_container = response_container
 
     # ---------------- DATA ----------------
 
@@ -281,6 +301,7 @@ class Application(tk.Tk):
     
         self.position_label.config(text="")
         self.update_nav_buttons()
+
     def on_tree_select(self, event=None):
         if self._internal_tree_update:
             return
@@ -479,7 +500,147 @@ class Application(tk.Tk):
                 text=f"Чат: {title} | Сообщение {index} из {total}"
             )
 
-    # ---------- НОВЫЙ МЕТОД: Сохранение изменений текущей пары ----------
+    # ---------- СОХРАНЕНИЕ/ВОССТАНОВЛЕНИЕ С ПРОПОРЦИЯМИ ----------
+    def save_window_state(self):
+        """Сохраняет геометрию окна и пропорции разделителей в config.json."""
+        os.makedirs(self.config_dir, exist_ok=True)
+
+        win_width = self.winfo_width()
+        win_height = self.winfo_height()
+
+        # Вычисляем пропорции для каждой панели
+        try:
+            left_width = self.main_paned.sash_coord(0)[0]
+            main_total = self.main_paned.winfo_width()
+            main_sash = self.main_paned.cget('sashwidth')
+            left_prop = left_width / (main_total - main_sash) if main_total > main_sash else 0.25
+        except:
+            left_prop = 0.25
+
+        try:
+            top_height = self.right_paned.sash_coord(0)[1]
+            right_total = self.right_paned.winfo_height()
+            right_sash = self.right_paned.cget('sashwidth')
+            top_prop = top_height / (right_total - right_sash) if right_total > right_sash else 0.5
+        except:
+            top_prop = 0.5
+
+        try:
+            req_height = self.text_paned.sash_coord(0)[1]
+            text_total = self.text_paned.winfo_height()
+            text_sash = self.text_paned.cget('sashwidth')
+            req_prop = req_height / (text_total - text_sash) if text_total > text_sash else 0.5
+        except:
+            req_prop = 0.5
+
+        config = {
+            "window_size": {"width": win_width, "height": win_height},
+            "proportions": {
+                "main_horizontal": left_prop,
+                "right_vertical": top_prop,
+                "text_vertical": req_prop
+            }
+        }
+
+        try:
+            with open(self.config_path, 'w', encoding='utf-8') as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+            print(f"Сохранено: {config}")
+        except Exception as e:
+            print(f"Ошибка сохранения: {e}")
+
+    def load_window_state(self):
+        """Восстанавливает геометрию окна и пропорции разделителей."""
+        if not os.path.exists(self.config_path):
+            return
+
+        try:
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            print(f"Загружено: {config}")
+        except Exception as e:
+            print(f"Ошибка загрузки: {e}")
+            return
+
+        # Восстанавливаем размер окна
+        win_size = config.get("window_size", {})
+        width = win_size.get("width", 1200)
+        height = win_size.get("height", 800)
+        self.geometry(f"{width}x{height}")
+
+        self.update_idletasks()
+
+        # Восстанавливаем пропорции
+        props = config.get("proportions", {})
+        if props:
+            self.after(50, self._apply_proportions, props)
+
+    def _apply_proportions(self, props):
+        """Применяет сохранённые пропорции к панелям с учётом minsize."""
+        # Главная горизонтальная панель
+        left_prop = props.get("main_horizontal")
+        if left_prop is not None:
+            total_width = self.main_paned.winfo_width()
+            sash_width = self.main_paned.cget('sashwidth')
+            available = total_width - sash_width
+            desired = int(left_prop * available)
+            # Минимальные размеры (заданы при создании)
+            left_minsize = 150
+            right_minsize = 400
+            if desired < left_minsize:
+                desired = left_minsize
+            if available - desired < right_minsize:
+                desired = available - right_minsize
+            if 0 < desired < total_width - sash_width:
+                try:
+                    self.main_paned.sash_place(0, desired, 0)
+                except Exception as e:
+                    print(f"Ошибка main_horizontal: {e}")
+
+        # Вертикальная панель справа
+        top_prop = props.get("right_vertical")
+        if top_prop is not None:
+            total_height = self.right_paned.winfo_height()
+            sash_width = self.right_paned.cget('sashwidth')
+            available = total_height - sash_width
+            desired = int(top_prop * available)
+            top_minsize = 150
+            bottom_minsize = 250
+            if desired < top_minsize:
+                desired = top_minsize
+            if available - desired < bottom_minsize:
+                desired = available - bottom_minsize
+            if 0 < desired < total_height - sash_width:
+                try:
+                    self.right_paned.sash_place(0, 0, desired)
+                except Exception as e:
+                    print(f"Ошибка right_vertical: {e}")
+
+        # Текстовая панель
+        req_prop = props.get("text_vertical")
+        if req_prop is not None:
+            total_height = self.text_paned.winfo_height()
+            sash_width = self.text_paned.cget('sashwidth')
+            available = total_height - sash_width
+            desired = int(req_prop * available)
+            req_minsize = 110
+            resp_minsize = 130
+            if desired < req_minsize:
+                desired = req_minsize
+            if available - desired < resp_minsize:
+                desired = available - resp_minsize
+            if 0 < desired < total_height - sash_width:
+                try:
+                    self.text_paned.sash_place(0, 0, desired)
+                except Exception as e:
+                    print(f"Ошибка text_vertical: {e}")
+
+    def on_closing(self):
+        """Обработчик закрытия окна: сохраняем состояние и завершаем работу."""
+        self.save_window_state()
+        self.destroy()
+
+    # ---------- СОХРАНЕНИЕ ТЕКУЩЕЙ ПАРЫ ----------
     def save_current_pair(self):
         """Сохраняет изменения текущей пары сообщений."""
         # Получаем текущую пару из контроллера (предполагается наличие метода get_current_pair)
