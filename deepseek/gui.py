@@ -286,14 +286,11 @@ class Application(tk.Tk):
 
         self.controller.select_pair(chat, pair)
 
-        widget = self.request_text if field == "request" else self.response_text
-
-        if move_focus:
-            widget.focus_set()
-
-        widget.tag_remove("sel", "1.0", tk.END)
-        widget.tag_add("sel", f"1.0 + {start} chars", f"1.0 + {end} chars")
-        widget.see(f"1.0 + {start} chars")
+        # Defer highlight until after Treeview selection event completes
+        self.after_idle(
+            lambda f=field, s=start, e=end, mf=move_focus: 
+                self._apply_search_highlight(f, s, e, mf)
+        )
 
         self.search_counter.config(
             text=f"{self.current_result_index + 1} / {total}"
@@ -306,6 +303,18 @@ class Application(tk.Tk):
     def prev_search_result(self):
         if self.search_results:
             self.go_to_search_result(self.current_result_index - 1, move_focus=True)
+
+
+
+    def _apply_search_highlight(self, field, start, end, move_focus):
+        widget = self.request_text if field == "request" else self.response_text
+
+        if move_focus:
+            widget.focus_set()
+
+        widget.tag_remove("sel", "1.0", tk.END)
+        widget.tag_add("sel", f"1.0 + {start} chars", f"1.0 + {end} chars")
+        widget.see(f"1.0 + {start} chars")
 
     # ---------------- NAVIGATION ----------------
 
