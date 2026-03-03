@@ -1,8 +1,7 @@
 [run]
 omit =
     tests/*
-    src/gui.py
-    src/main.py
+    deepseek/gui.py
     */__init__.py
 
 [report]
