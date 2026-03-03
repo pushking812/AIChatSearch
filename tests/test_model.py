@@ -4,8 +4,8 @@ import tempfile
 import os
 import pytest
 
-from src.model import load_from_zip
-from src.utils import parse_datetime
+from deepseek.model import load_from_zip
+from deepseek.utils import parse_datetime
 
 
 def create_test_zip(json_content: str) -> str:
@@ -13,7 +13,7 @@ def create_test_zip(json_content: str) -> str:
     zip_path = os.path.join(temp_dir, "test.zip")
 
     with zipfile.ZipFile(zip_path, "w") as z:
-        z.writestr("conversation.json", json_content)
+        z.writestr("conversations.json", json_content)
 
     return zip_path
 
@@ -26,18 +26,33 @@ def test_load_from_zip_success():
             "inserted_at": "2024-01-01T10:00:00+00:00",
             "updated_at": "2024-01-01T10:05:00+00:00",
             "mapping": {
+                "root": {
+                    "id": "root",
+                    "parent": None,
+                    "children": ["1"],
+                    "message": None
+                },
                 "1": {
-                    "inserted_at": "2024-01-01T10:00:00+00:00",
+                    "id": "1",
+                    "parent": "root",
+                    "children": ["2"],
                     "message": {
-                        "role": "user",
-                        "content": {"parts": ["Hello"]}
+                        "inserted_at": "2024-01-01T10:00:00+00:00",
+                        "fragments": [
+                            {"type": "REQUEST", "content": "Hello"}
+                        ]
                     }
                 },
                 "2": {
-                    "inserted_at": "2024-01-01T10:01:00+00:00",
+                    "id": "2",
+                    "parent": "1",
+                    "children": [],
                     "message": {
-                        "role": "assistant",
-                        "content": {"parts": ["Hi there!"]}
+                        "inserted_at": "2024-01-01T10:01:00+00:00",
+                        "fragments": [
+                            {"type": "THINK", "content": "..."},
+                            {"type": "RESPONSE", "content": "Hi there!"}
+                        ]
                     }
                 }
             }
@@ -49,6 +64,8 @@ def test_load_from_zip_success():
 
     assert len(chats) == 1
     assert len(chats[0].pairs) == 1
+    assert chats[0].pairs[0].request_text == "Hello"
+    assert "Hi there!" in chats[0].pairs[0].response_text
 
 
 def test_skip_invalid_pair():
@@ -56,9 +73,22 @@ def test_skip_invalid_pair():
         {
             "id": "chat1",
             "mapping": {
+                "root": {
+                    "id": "root",
+                    "parent": None,
+                    "children": ["1"],
+                    "message": None
+                },
                 "1": {
-                    "inserted_at": "2024-01-01T10:00:00+00:00",
-                    "message": {"role": "assistant", "content": {"parts": ["Oops"]}}
+                    "id": "1",
+                    "parent": "root",
+                    "children": [],
+                    "message": {
+                        "inserted_at": "2024-01-01T10:00:00+00:00",
+                        "fragments": [
+                            {"type": "RESPONSE", "content": "Oops"}
+                        ]
+                    }
                 }
             }
         }
@@ -75,7 +105,7 @@ def test_invalid_json():
     zip_path = os.path.join(temp_dir, "bad.zip")
 
     with zipfile.ZipFile(zip_path, "w") as z:
-        z.writestr("conversation.json", "not json")
+        z.writestr("conversations.json", "not json")
 
     with pytest.raises(ValueError):
         load_from_zip(zip_path)
