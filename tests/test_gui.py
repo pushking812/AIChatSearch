@@ -64,3 +64,84 @@ def test_reset_search(app):
     app.search_var.set("abc")
     app.reset_search()
     assert app.search_var.get() == ""
+
+import tkinter as tk
+from unittest.mock import patch
+from deepseek.gui import Application
+
+
+class DummyChat:
+    def __init__(self, title, pairs):
+        self.title = title
+        self._pairs = pairs
+
+    def get_pairs(self):
+        return self._pairs
+
+
+class DummyPair:
+    def __init__(self, index, request, response):
+        self.index = index
+        self.request_text = request
+        self.response_text = response
+
+
+def test_open_archive_success(monkeypatch):
+    app = Application()
+    app.withdraw()
+
+    dummy_chat = DummyChat("Chat1", [])
+
+    monkeypatch.setattr("deepseek.gui.filedialog.askopenfilename", lambda **kwargs: "file.zip")
+    monkeypatch.setattr("deepseek.gui.model.load_from_zip", lambda path: [dummy_chat])
+
+    app.open_archive()
+    assert app.chat_listbox.size() == 1
+
+    app.destroy()
+
+
+def test_open_archive_exception(monkeypatch):
+    app = Application()
+    app.withdraw()
+
+    monkeypatch.setattr("deepseek.gui.filedialog.askopenfilename", lambda **kwargs: "file.zip")
+    monkeypatch.setattr("deepseek.gui.model.load_from_zip", lambda path: (_ for _ in ()).throw(Exception("fail")))
+    monkeypatch.setattr("deepseek.gui.messagebox.showerror", lambda *args, **kwargs: None)
+
+    app.open_archive()
+    app.destroy()
+
+
+def test_on_chat_select_and_tree_select():
+    app = Application()
+    app.withdraw()
+
+    pair = DummyPair(1, "req", "resp")
+    chat = DummyChat("Chat1", [pair])
+
+    app.controller.set_chats([chat])
+    app._update_chat_list()
+
+    app.chat_listbox.selection_set(0)
+    app.on_chat_select()
+
+    items = app.tree.get_children()
+    assert len(items) == 1
+
+    app.tree.selection_set(items[0])
+    app.on_tree_select()
+
+    app.destroy()
+
+
+def test_perform_search_no_selected_chats():
+    app = Application()
+    app.withdraw()
+
+    app.search_var.set("abc")
+    app.perform_search()
+
+    assert app.search_counter.cget("text") == "0 / 0"
+
+    app.destroy()
