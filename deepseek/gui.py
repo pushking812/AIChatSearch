@@ -224,8 +224,19 @@ class Application(tk.Tk):
         if not self.current_selected_chats:
             return
 
-        chat = self.current_selected_chats[0]
-        pairs = self.controller.search(chat, self.search_var.get(), self.search_field_var.get())
+        
+all_pairs = []
+print(f"[DEBUG] search_current_chat | selected_chats={len(self.current_selected_chats)}")
+
+for chat in self.current_selected_chats:
+    pairs = self.controller.search(chat, self.search_var.get())
+    print(f"[DEBUG] search_current_chat | chat={chat} | found={len(pairs)}")
+    for pair in pairs:
+        all_pairs.append((chat, pair))
+
+pairs = all_pairs
+print(f"[DEBUG] search_current_chat | total_found={len(pairs)}")
+, self.search_field_var.get())
 
         for item in self.tree.get_children():
             self.tree.delete(item)
