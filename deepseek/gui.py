@@ -133,6 +133,10 @@ class Application(tk.Tk):
         tk.Label(bottom_frame, text="Ответ", font=("Arial", 11, "bold")).pack(anchor="w", padx=5)
         self.response_text = tk.Text(bottom_frame, height=10)
         self.response_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        # Configure search highlight tag
+        self.request_text.tag_configure("search_match", background="yellow")
+        self.response_text.tag_configure("search_match", background="yellow")
+
 
         nav_frame = tk.Frame(bottom_frame)
         nav_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
@@ -319,8 +323,8 @@ class Application(tk.Tk):
         if move_focus:
             widget.focus_set()
 
-        widget.tag_remove("sel", "1.0", tk.END)
-        widget.tag_add("sel", f"1.0 + {start} chars", f"1.0 + {end} chars")
+        widget.tag_remove("search_match", "1.0", tk.END)
+        widget.tag_add("search_match", f"1.0 + {start} chars", f"1.0 + {end} chars")
         widget.see(f"1.0 + {start} chars")
 
     # ---------------- NAVIGATION ----------------
