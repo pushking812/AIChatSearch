@@ -83,6 +83,7 @@ class Application(tk.Tk):
         search_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
 
         self.search_entry = tk.Entry(search_frame, textvariable=self.search_var)
+        self.search_entry.bind('<KeyRelease>', lambda e: self.perform_search() if self.live_search_var.get() else None)
         self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
 
         self.search_combobox = ttk.Combobox(
@@ -227,46 +228,67 @@ class Application(tk.Tk):
         self.response_text.insert(tk.END, pair.response_text)
 
     # ---------------- SEARCH ----------------
-
-        
-    def search_current_chat(self):
-            if not self.current_selected_chats:
-                return
-    
-            query = self.search_var.get()
-            if not query:
-                return
-    
-            field = self.search_field_var.get()
-    
-            aggregated_results = []
-    
-            for chat in self.current_selected_chats:
-                pairs = self.controller.search(chat, query, field)
-                for pair in pairs:
-                    aggregated_results.append((chat, pair))
-    
-            for item in self.tree.get_children():
-                self.tree.delete(item)
-    
-            self.tree_item_map = {}
-    
-            for chat, pair in aggregated_results:
-                item_id = self.tree.insert(
-                    "",
-                    "end",
-                    values=(
-                        chat.title,
-                        pair.index,
-                        pair.request_text[:30],
-                        pair.response_text[:30],
-                    ),
-                )
-                self.tree_item_map[item_id] = (chat, pair)
-
     def reset_search(self):
         self.search_var.set("")
         self.on_chat_select()
+
+
+
+    def perform_search(self):
+        self.search_results = []
+        self.current_result_index = -1
+
+        if not self.current_selected_chats:
+            self.search_counter.config(text="0 / 0")
+            return
+
+        query = self.search_var.get().strip()
+        if not query:
+            self.search_counter.config(text="0 / 0")
+            return
+
+        field = self.search_field_var.get()
+
+        for chat in self.current_selected_chats:
+            results = self.controller.search_with_positions(chat, query, field)
+            self.search_results.extend(results)
+
+        if not self.search_results:
+            self.search_counter.config(text="0 / 0")
+            return
+
+        self.go_to_search_result(0)
+
+    def go_to_search_result(self, index):
+        total = len(self.search_results)
+        self.current_result_index = index % total
+
+        chat, pair, field, start, end = self.search_results[self.current_result_index]
+
+        for item_id, value in self.tree_item_map.items():
+            if value == (chat, pair):
+                self.tree.selection_set(item_id)
+                self.tree.see(item_id)
+                break
+
+        self.controller.select_pair(chat, pair)
+        self._display_pair(pair)
+
+        widget = self.request_text if field == "request" else self.response_text
+        widget.focus_set()
+        widget.tag_remove("sel", "1.0", tk.END)
+        widget.tag_add("sel", f"1.0 + {start} chars", f"1.0 + {end} chars")
+        widget.see(f"1.0 + {start} chars")
+
+        self.search_counter.config(text=f"{self.current_result_index + 1} / {total}")
+
+    def next_search_result(self):
+        if self.search_results:
+            self.go_to_search_result(self.current_result_index + 1)
+
+    def prev_search_result(self):
+        if self.search_results:
+            self.go_to_search_result(self.current_result_index - 1)
 
     # ---------------- NAVIGATION ----------------
 

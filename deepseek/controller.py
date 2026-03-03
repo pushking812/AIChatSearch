@@ -74,10 +74,10 @@ class ChatController:
         results = []
 
         for pair in chat.get_pairs():
-            if field in ("Запрос",):
+            if field == "Запрос":
                 for m in pattern.finditer(pair.request_text or ""):
                     results.append((chat, pair, "request", m.start(), m.end()))
-            elif field in ("Ответ",):
+            elif field == "Ответ":
                 for m in pattern.finditer(pair.response_text or ""):
                     results.append((chat, pair, "response", m.start(), m.end()))
             else:
