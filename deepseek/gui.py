@@ -364,20 +364,30 @@ class Application(tk.Tk):
             if (chat, pair) not in unique_pairs:
                 unique_pairs.append((chat, pair))
 
-        for chat, pair in unique_pairs:
-            idx_display = str(pair.index) + ('*' if pair.modified else '')
-            item_id = self.tree.insert(
-                "",
-                "end",
-                values=(
-                    chat.title,
-                    idx_display,
-                    pair.request_text[:30],
-                    pair.response_text[:30],
-                ),
-            )
-            self.tree_item_map[item_id] = (chat, pair)
+        grouped = {}
+        for chat, pair, _, _, _ in self.search_results:
+            if chat not in grouped:
+                grouped[chat] = {'pairs': set(), 'matches': 0}
+            grouped[chat]['pairs'].add(pair)
+            grouped[chat]['matches'] += 1
 
+        for chat, data in grouped.items():
+            pairs = list(data['pairs'])
+            matches = data['matches']
+            parent_text = f"{chat.title} ({len(pairs)} msgs / {matches} matches)"
+            parent_id = self.tree.insert("", "end", text=parent_text)
+            for pair in pairs:
+                idx_display = str(pair.index) + ('*' if pair.modified else '')
+                item_id = self.tree.insert(
+                    parent_id,
+                    "end",
+                    values=(
+                        idx_display,
+                        pair.request_text[:30],
+                        pair.response_text[:30],
+                    ),
+                )
+                self.tree_item_map[item_id] = (chat, pair)
         if not self.search_results:
             self.search_counter.config(text="0 / 0")
             return
