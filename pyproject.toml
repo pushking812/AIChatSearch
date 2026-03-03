@@ -5,7 +5,7 @@ description = "DeepSeek Chat Archive Navigator"
 requires-python = ">=3.9"
 
 [project.scripts]
-deepseek = "deepseek.main:main"
+deepseek = "deepseek.gui:run_gui"
 
 [tool.setuptools.packages.find]
 where = ["."]

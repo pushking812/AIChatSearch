@@ -3,6 +3,7 @@
 import json
 import zipfile
 import logging
+import os  # добавлено для DataSource
 from datetime import datetime
 from typing import List, Optional
 
@@ -191,3 +192,18 @@ def load_from_zip(zip_path: str) -> List[Chat]:
             )
 
     return chats
+
+
+# =========================
+# DataSource (новый класс)
+# =========================
+
+class DataSource:
+    """Представляет один загруженный ZIP-архив с чатами."""
+    def __init__(self, file_path: str):
+        self.file_path = file_path
+        self.chats: List[Chat] = []
+        self.id = os.path.basename(file_path)  # упрощённо, имя файла
+
+    def __repr__(self):
+        return f"<DataSource id={self.id} chats={len(self.chats)}>"

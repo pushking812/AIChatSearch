@@ -1,13 +1,28 @@
 # deepseek/controller.py
 
+import os
+from typing import List, Set, Dict, Optional
+
+from .model import DataSource, Chat, MessagePair  # добавлен импорт DataSource
+
+
 class ChatController:
     def __init__(self):
-        self.chats = []
-        self.filtered_chats = []
+        # Новые атрибуты для работы с несколькими источниками
+        self.sources: List[DataSource] = []                 # список загруженных источников
+        self.known_chat_ids: Set[str] = set()               # глобальное множество id чатов
+        self._chat_to_source: Dict[str, DataSource] = {}    # id чата -> источник
+        self._current_filter_query: str = ""                 # текущий фильтр для перестроения
 
-        self.current_chat = None
-        self.current_chat_pairs = []
-        self.current_index_in_chat = None
+        # Для обратной совместимости оставляем chats как объединённый список
+        self.chats: List[Chat] = []                          # все чаты из всех источников
+        self.filtered_chats: List[Chat] = []                 # отфильтрованный список
+
+        self.current_chat: Optional[Chat] = None
+        self.current_chat_pairs: List[MessagePair] = []
+        self.current_index_in_chat: Optional[int] = None
+
+        self._reset_search_state()
 
     # ---------- DATA ----------
 
@@ -16,9 +31,26 @@ class ChatController:
         self.search_active = False
 
     def set_chats(self, chats):
-        self.chats = chats or []
-        self.filtered_chats = list(self.chats)
-        self._reset_navigation()
+        """Заменяет все источники одним новым, содержащим переданные чаты (для обратной совместимости)."""
+        # Очищаем текущие данные
+        self.sources.clear()
+        self.known_chat_ids.clear()
+        self._chat_to_source.clear()
+
+        if chats:
+            # Создаём один источник без реального файла
+            source = DataSource("Imported")  # специальное имя
+            source.chats = list(chats)       # копируем список
+            self.sources.append(source)
+
+            # Обновляем множества и отображения
+            for chat in source.chats:
+                self.known_chat_ids.add(chat.id)
+                self._chat_to_source[chat.id] = source
+
+        # Перестраиваем отфильтрованный список
+        self._current_filter_query = ""  # сбрасываем фильтр
+        self._rebuild_filtered_chats()
 
     def _reset_navigation(self):
         self.current_chat = None
@@ -28,20 +60,74 @@ class ChatController:
     def get_filtered_chats(self):
         return self.filtered_chats
 
-    # ---------- FILTER ----------
+    # ---------- НОВЫЕ МЕТОДЫ ДЛЯ ИСТОЧНИКОВ ----------
 
-    def filter_chats(self, query):
-        query = (query or "").lower().strip()
+    def add_source(self, file_path: str) -> List[Chat]:
+        """Загружает архив, добавляет только новые чаты, возвращает список добавленных чатов."""
+        from .model import load_from_zip  # локальный импорт для избежания циклических зависимостей
 
-        if not query:
-            self.filtered_chats = list(self.chats)
-        else:
+        new_chats = load_from_zip(file_path)
+        added_chats = []
+
+        # Фильтруем только уникальные чаты
+        for chat in new_chats:
+            if chat.id not in self.known_chat_ids:
+                self.known_chat_ids.add(chat.id)
+                added_chats.append(chat)
+
+        if added_chats:
+            # Создаём новый источник
+            source = DataSource(file_path)
+            source.chats = added_chats
+            self.sources.append(source)
+
+            # Обновляем отображение id -> источник
+            for chat in added_chats:
+                self._chat_to_source[chat.id] = source
+
+            # Перестраиваем объединённые списки
+            self._rebuild_filtered_chats()
+
+        return added_chats
+
+    def _rebuild_filtered_chats(self):
+        """Перестраивает объединённый список чатов и применяет фильтр."""
+        # Собираем все чаты из источников
+        all_chats = []
+        for source in self.sources:
+            all_chats.extend(source.chats)
+        self.chats = all_chats
+
+        # Применяем фильтр, если есть
+        query = self._current_filter_query.lower().strip()
+        if query:
             self.filtered_chats = [
                 chat for chat in self.chats
                 if query in chat.title.lower()
             ]
+        else:
+            self.filtered_chats = list(self.chats)
 
+        # Сбрасываем навигацию (как и раньше при изменении списка)
         self._reset_navigation()
+
+    def get_source_name(self, chat: Chat) -> str:
+        """Возвращает имя файла источника для данного чата или 'Imported', если источник не определён."""
+        source = self._chat_to_source.get(chat.id)
+        if source:
+            # Если file_path не None, берём basename, иначе возвращаем специальное имя
+            if source.file_path != "Imported":
+                return os.path.basename(source.file_path)
+            else:
+                return "Imported"
+        return "Unknown"
+
+    # ---------- FILTER ----------
+
+    def filter_chats(self, query):
+        """Сохраняет запрос фильтра и перестраивает отфильтрованный список."""
+        self._current_filter_query = (query or "").strip()
+        self._rebuild_filtered_chats()
 
     # ---------- SEARCH ----------
 
@@ -67,7 +153,6 @@ class ChatController:
                     result.append(pair)
 
         return result
-
 
     def search_with_positions(self, chat, query, field):
         import re
@@ -147,7 +232,6 @@ class ChatController:
             len(self.current_chat_pairs),
         )
 
-
     def get_current_pair(self):
         """
         Возвращает текущую выбранную пару сообщений.
@@ -165,4 +249,3 @@ class ChatController:
             return None
 
         return self.current_chat_pairs[self.current_index_in_chat]
-
