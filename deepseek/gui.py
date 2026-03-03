@@ -373,7 +373,7 @@ class Application(tk.Tk):
             grouped[chat]['matches'] += 1
 
         for chat, data in grouped.items():
-            pairs = sorted(data['pairs'], key=lambda p: p.index)
+            pairs = sorted(data['pairs'], key=lambda p: int(p.index))
             matches = data['matches']
             parent_text = f"{chat.title} ({len(pairs)} msgs / {matches} matches)"
             parent_id = self.tree.insert("", "end", text=parent_text)
