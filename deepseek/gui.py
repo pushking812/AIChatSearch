@@ -26,6 +26,9 @@ class Application(tk.Tk):
         self.chat_filter_var = tk.StringVar()
         self.search_var = tk.StringVar()
         self.search_field_var = tk.StringVar(value="Запрос")
+        self.search_results = []
+        self.current_result_index = -1
+        self.live_search_var = tk.BooleanVar(value=True)
 
         self._create_menu()
         self._create_layout()
@@ -91,8 +94,13 @@ class Application(tk.Tk):
         )
         self.search_combobox.pack(side=tk.LEFT, padx=(0, 5))
 
-        tk.Button(search_frame, text="Найти", command=self.search_current_chat).pack(side=tk.LEFT, padx=(0, 5))
+        tk.Button(search_frame, text="Найти", command=self.perform_search).pack(side=tk.LEFT, padx=(0, 5))
         tk.Button(search_frame, text="Сбросить", command=self.reset_search).pack(side=tk.LEFT)
+        tk.Checkbutton(search_frame, text="Live", variable=self.live_search_var).pack(side=tk.LEFT, padx=5)
+        tk.Button(search_frame, text="<", width=2, command=self.prev_search_result).pack(side=tk.LEFT)
+        tk.Button(search_frame, text=">", width=2, command=self.next_search_result).pack(side=tk.LEFT)
+        self.search_counter = tk.Label(search_frame, text="0 / 0")
+        self.search_counter.pack(side=tk.LEFT, padx=5)
 
         self.tree = ttk.Treeview(
             top_frame,

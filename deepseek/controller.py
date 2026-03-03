@@ -62,6 +62,32 @@ class ChatController:
 
         return result
 
+
+    def search_with_positions(self, chat, query, field):
+        import re
+
+        query = (query or "").strip()
+        if not chat or not query:
+            return []
+
+        pattern = re.compile(re.escape(query), re.IGNORECASE)
+        results = []
+
+        for pair in chat.get_pairs():
+            if field in ("Запрос",):
+                for m in pattern.finditer(pair.request_text or ""):
+                    results.append((chat, pair, "request", m.start(), m.end()))
+            elif field in ("Ответ",):
+                for m in pattern.finditer(pair.response_text or ""):
+                    results.append((chat, pair, "response", m.start(), m.end()))
+            else:
+                for m in pattern.finditer(pair.request_text or ""):
+                    results.append((chat, pair, "request", m.start(), m.end()))
+                for m in pattern.finditer(pair.response_text or ""):
+                    results.append((chat, pair, "response", m.start(), m.end()))
+
+        return results
+
     # ---------- SELECT MESSAGE ----------
 
     def select_pair(self, chat, pair):
@@ -114,35 +140,3 @@ class ChatController:
             self.current_index_in_chat + 1,
             len(self.current_chat_pairs),
         )
-import re
-
-    def search_with_positions(self, query: str, field: str = "both"):
-        results = []
-        if not query:
-            return results
-
-        pattern = re.compile(re.escape(query), re.IGNORECASE)
-
-        for pair_index, pair in enumerate(self.pairs):
-            request_text = getattr(pair, "request", "") or ""
-            response_text = getattr(pair, "response", "") or ""
-
-            if field in ("request", "both"):
-                for match in pattern.finditer(request_text):
-                    results.append({
-                        "pair_index": pair_index,
-                        "field": "request",
-                        "start": match.start(),
-                        "end": match.end(),
-                    })
-
-            if field in ("response", "both"):
-                for match in pattern.finditer(response_text):
-                    results.append({
-                        "pair_index": pair_index,
-                        "field": "response",
-                        "start": match.start(),
-                        "end": match.end(),
-                    })
-
-        return results
