@@ -153,7 +153,7 @@ class Application(tk.Tk):
 
     # ---------------- CHAT SELECTION ----------------
 
-        def on_chat_select(self, event=None):
+    def on_chat_select(self, event=None):
         indices = self.chat_listbox.curselection()
 
         # Ignore false deselection event caused by focus change
@@ -166,7 +166,6 @@ class Application(tk.Tk):
         ]
 
         self._rebuild_visible_pairs()
-
     def _rebuild_visible_pairs(self):
         self.visible_pairs = []
         for chat in self.selected_chats:
