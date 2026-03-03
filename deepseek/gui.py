@@ -23,8 +23,6 @@ class Application(tk.Tk):
         self.tree_item_map = {}
 
         self.chat_filter_var = tk.StringVar()
-        self.search_var = tk.StringVar()
-        self.search_field_var = tk.StringVar(value="Запрос")
 
         self._create_menu()
         self._create_layout()
@@ -44,7 +42,6 @@ class Application(tk.Tk):
         main_paned = tk.PanedWindow(self, orient=tk.HORIZONTAL)
         main_paned.pack(fill=tk.BOTH, expand=True)
 
-        # LEFT
         left_frame = tk.Frame(main_paned)
         main_paned.add(left_frame, width=300)
 
@@ -63,7 +60,6 @@ class Application(tk.Tk):
 
         self.chat_listbox.bind("<<ListboxSelect>>", self.on_chat_select)
 
-        # RIGHT
         right_paned = tk.PanedWindow(main_paned, orient=tk.VERTICAL)
         main_paned.add(right_paned)
 
@@ -71,24 +67,6 @@ class Application(tk.Tk):
         right_paned.add(top_frame, height=300)
 
         tk.Label(top_frame, text="Сообщения", font=("Arial", 12, "bold")).pack(anchor="w", padx=5, pady=5)
-
-        search_frame = tk.Frame(top_frame)
-        search_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
-
-        self.search_entry = tk.Entry(search_frame, textvariable=self.search_var)
-        self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
-
-        self.search_combobox = ttk.Combobox(
-            search_frame,
-            textvariable=self.search_field_var,
-            values=["Название чата", "Запрос", "Ответ"],
-            state="readonly",
-            width=18
-        )
-        self.search_combobox.pack(side=tk.LEFT, padx=(0, 5))
-
-        tk.Button(search_frame, text="Найти", command=self.search_current_chat).pack(side=tk.LEFT, padx=(0, 5))
-        tk.Button(search_frame, text="Сбросить", command=self.reset_search).pack(side=tk.LEFT)
 
         self.tree = ttk.Treeview(
             top_frame,
@@ -99,10 +77,6 @@ class Application(tk.Tk):
         self.tree.heading("idx", text="#")
         self.tree.heading("request", text="Запрос")
         self.tree.heading("response", text="Ответ")
-        self.tree.column("chat", width=180)
-        self.tree.column("idx", width=50, anchor="center")
-        self.tree.column("request", width=300)
-        self.tree.column("response", width=300)
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0), pady=5)
 
         tree_scroll = tk.Scrollbar(top_frame, command=self.tree.yview)
@@ -111,15 +85,17 @@ class Application(tk.Tk):
 
         self.tree.bind("<<TreeviewSelect>>", self.on_tree_select)
 
-        # Bottom
         bottom_frame = tk.Frame(right_paned)
         right_paned.add(bottom_frame)
 
-        tk.Label(bottom_frame, text="Запрос", font=("Arial", 11, "bold")).pack(anchor="w", padx=5, pady=(5, 0))
+        self.position_label = tk.Label(bottom_frame, text="", font=("Arial", 10, "italic"))
+        self.position_label.pack(anchor="w", padx=5, pady=(5, 0))
+
+        tk.Label(bottom_frame, text="Запрос", font=("Arial", 11, "bold")).pack(anchor="w", padx=5)
         self.request_text = tk.Text(bottom_frame, height=10)
         self.request_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        tk.Label(bottom_frame, text="Ответ", font=("Arial", 11, "bold")).pack(anchor="w", padx=5, pady=(5, 0))
+        tk.Label(bottom_frame, text="Ответ", font=("Arial", 11, "bold")).pack(anchor="w", padx=5)
         self.response_text = tk.Text(bottom_frame, height=10)
         self.response_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
@@ -151,14 +127,11 @@ class Application(tk.Tk):
         for chat in self.controller.get_filtered_chats():
             self.chat_listbox.insert(tk.END, chat.title)
 
-    # ---------------- FILTER ----------------
-
     def filter_chats(self, event=None):
         self.controller.filter_chats(self.chat_filter_var.get())
         self._update_chat_list()
-        self._clear_tree()
 
-    # ---------------- CHAT SELECTION ----------------
+    # ---------------- TREE ----------------
 
     def on_chat_select(self, event=None):
         indices = self.chat_listbox.curselection()
@@ -170,43 +143,27 @@ class Application(tk.Tk):
             if i < len(filtered)
         ]
 
-        self.controller.select_chats(selected)
-        self.display_visible_pairs()
-        self.update_nav_buttons()
-
-    # ---------------- SEARCH ----------------
-
-    def search_current_chat(self):
-        self.controller.search(
-            self.search_var.get(),
-            self.search_field_var.get()
-        )
-        self.display_visible_pairs()
-        self.update_nav_buttons()
-
-    def reset_search(self):
-        self.search_var.set("")
-        self.controller.reset_search()
-        self.display_visible_pairs()
-        self.update_nav_buttons()
-
-    # ---------------- TREE ----------------
-
-    def display_visible_pairs(self):
-        self._clear_tree()
-        self.tree_item_map = {}
-
-        for index, (chat, pair) in enumerate(self.controller.get_visible_pairs()):
-            item_id = self.tree.insert(
-                "",
-                "end",
-                values=(chat.title, pair.index, pair.request_text[:30], pair.response_text[:30]),
-            )
-            self.tree_item_map[item_id] = index
-
-    def _clear_tree(self):
         for item in self.tree.get_children():
             self.tree.delete(item)
+
+        self.tree_item_map = {}
+
+        for chat in selected:
+            for pair in chat.get_pairs():
+                item_id = self.tree.insert(
+                    "",
+                    "end",
+                    values=(
+                        chat.title,
+                        pair.index,
+                        pair.request_text[:30],
+                        pair.response_text[:30],
+                    ),
+                )
+                self.tree_item_map[item_id] = (chat, pair)
+
+        self.position_label.config(text="")
+        self.update_nav_buttons()
 
     def on_tree_select(self, event=None):
         selection = self.tree.selection()
@@ -214,13 +171,16 @@ class Application(tk.Tk):
             return
 
         item_id = selection[0]
-        index = self.tree_item_map.get(item_id)
-        if index is None:
+        chat_pair = self.tree_item_map.get(item_id)
+        if not chat_pair:
             return
 
-        pair = self.controller.select_pair_by_index(index)
+        chat, pair = chat_pair
+
+        pair = self.controller.select_pair(chat, pair)
         if pair:
             self._display_pair(pair)
+            self._update_position_label()
             self.update_nav_buttons()
 
     def _display_pair(self, pair):
@@ -231,34 +191,30 @@ class Application(tk.Tk):
 
     # ---------------- NAVIGATION ----------------
 
-    def _sync_tree_selection(self):
-        index = self.controller.current_pair_index
-        if index is None:
-            return
-
-        for item_id, item_index in self.tree_item_map.items():
-            if item_index == index:
-                self.tree.selection_remove(self.tree.selection())
-                self.tree.selection_set(item_id)
-                self.tree.focus(item_id)
-                self.tree.see(item_id)
-                break
-
     def prev_pair(self):
         pair = self.controller.prev_pair()
         if pair:
             self._display_pair(pair)
-            self._sync_tree_selection()
+            self._update_position_label()
             self.update_nav_buttons()
 
     def next_pair(self):
         pair = self.controller.next_pair()
         if pair:
             self._display_pair(pair)
-            self._sync_tree_selection()
+            self._update_position_label()
             self.update_nav_buttons()
 
     def update_nav_buttons(self):
         can_prev, can_next = self.controller.get_nav_state()
         self.prev_button.config(state=tk.NORMAL if can_prev else tk.DISABLED)
         self.next_button.config(state=tk.NORMAL if can_next else tk.DISABLED)
+
+    def _update_position_label(self):
+        title, index, total = self.controller.get_position_info()
+        if title is None:
+            self.position_label.config(text="")
+        else:
+            self.position_label.config(
+                text=f"Чат: {title} | Сообщение {index} из {total}"
+            )
