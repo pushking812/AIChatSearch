@@ -24,6 +24,9 @@ class Application(tk.Tk):
         self.selected_chats = []
         self.visible_pairs = []
 
+        self.tree_item_map = {}
+
+
         self.current_pair = None
         self.current_pair_index = None
 
@@ -99,14 +102,24 @@ class Application(tk.Tk):
         tk.Button(search_frame, text="Найти", command=self.search_current_chat).pack(side=tk.LEFT, padx=(0,5))
         tk.Button(search_frame, text="Сбросить", command=self.reset_search).pack(side=tk.LEFT)
 
-        self.pair_listbox = tk.Listbox(top_frame)
+        self.tree = ttk.Treeview(top_frame, columns=('chat','idx','request','response'), show='headings')
+        self.tree.heading('chat', text='Чат')
+        self.tree.heading('idx', text='#')
+        self.tree.heading('request', text='Запрос')
+        self.tree.heading('response', text='Ответ')
+        self.tree.column('chat', width=180)
+        self.tree.column('idx', width=50, anchor='center')
+        self.tree.column('request', width=300)
+        self.tree.column('response', width=300)
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5,0), pady=5)
         self.pair_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5,0), pady=5)
 
-        pair_scroll = tk.Scrollbar(top_frame, command=self.pair_listbox.yview)
+        tree_scroll = tk.Scrollbar(top_frame, command=self.tree.yview)
+        tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.tree.config(yscrollcommand=tree_scroll.set)
         pair_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-        self.pair_listbox.config(yscrollcommand=pair_scroll.set)
 
-        self.pair_listbox.bind("<<ListboxSelect>>", self.on_pair_select)
+        self.tree.bind('<<TreeviewSelect>>', self.on_tree_select)
 
         # Bottom
         bottom_frame = tk.Frame(right_paned)
@@ -168,36 +181,44 @@ class Application(tk.Tk):
         self._rebuild_visible_pairs()
     def _rebuild_visible_pairs(self):
         self.visible_pairs = []
+
+        self.tree_item_map = {}
+
         for chat in self.selected_chats:
             for pair in chat.get_pairs():
                 self.visible_pairs.append((chat, pair))
         self.current_pair_index = None
-        self._update_pair_list()
+        self.display_visible_pairs()
         self.update_nav_buttons()
 
     # ---------------- PAIR LIST ----------------
 
-    def _update_pair_list(self):
-        self.pair_listbox.delete(0, tk.END)
+    def display_visible_pairs(self):
+                for item in self.tree.get_children():
+            self.tree.delete(item)
+        self.tree_item_map = {}
         for chat, pair in self.visible_pairs:
             text = (
                 f"{chat.title} [#{pair.index}]: "
                 f"{pair.request_text[:30]}... → "
                 f"{pair.response_text[:30]}..."
             )
-            self.pair_listbox.insert(tk.END, text)
+                        item_id = self.tree.insert('', 'end', values=(chat.title, pair.index, pair.request_text[:30], pair.response_text[:30]))
+            self.tree_item_map[item_id] = (chat, pair)
 
-    def on_pair_select(self, event=None):
-        selection = self.pair_listbox.curselection()
+    def on_tree_select(self, event=None):
+        selection = self.tree.selection()
         if not selection:
             return
 
-        index = selection[0]
+        item_id = selection[0]
         if index >= len(self.visible_pairs):
             return
 
         self.current_pair_index = index
-        _, pair = self.visible_pairs[index]
+        chat, pair = self.tree_item_map.get(item_id, (None, None))
+        if not pair:
+            return
         self.current_pair = pair
         self._display_pair(pair)
         self.update_nav_buttons()
@@ -234,7 +255,7 @@ class Application(tk.Tk):
 
         self.visible_pairs = result
         self.current_pair_index = None
-        self._update_pair_list()
+        self.display_visible_pairs()
         self.update_nav_buttons()
 
     def reset_search(self):
@@ -258,10 +279,12 @@ class Application(tk.Tk):
             self._select_pair(self.current_pair_index)
 
     def _select_pair(self, index):
-        self.pair_listbox.selection_clear(0, tk.END)
-        self.pair_listbox.selection_set(index)
-        self.pair_listbox.activate(index)
-        _, pair = self.visible_pairs[index]
+        
+        
+        
+        chat, pair = self.tree_item_map.get(item_id, (None, None))
+        if not pair:
+            return
         self.current_pair = pair
         self._display_pair(pair)
         self.update_nav_buttons()
@@ -293,6 +316,11 @@ class Application(tk.Tk):
         # Reset selections after filtering
         self.selected_chats = []
         self.visible_pairs = []
+
+        self.tree_item_map = {}
+
         self.current_pair_index = None
-        self.pair_listbox.delete(0, tk.END)
+                for item in self.tree.get_children():
+            self.tree.delete(item)
+        self.tree_item_map = {}
         self.update_nav_buttons()
