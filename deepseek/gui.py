@@ -305,7 +305,26 @@ class Application(tk.Tk):
             self._select_pair(self.current_pair_index)
 
     def _select_pair(self, index):
-        _, pair = self.visible_pairs[index]
+        print(f"[DEBUG] _select_pair called | index={index} | visible_pairs={len(self.visible_pairs)}")
+
+        if index < 0 or index >= len(self.visible_pairs):
+            print("[DEBUG] _select_pair index out of range")
+            return
+
+        self.current_pair_index = index
+        chat, pair = self.visible_pairs[index]
+
+        # Find corresponding Treeview item
+        for item_id, (c, p) in self.tree_item_map.items():
+            if p is pair:
+                # Clear previous selection
+                self.tree.selection_remove(self.tree.selection())
+                self.tree.selection_set(item_id)
+                self.tree.focus(item_id)
+                self.tree.see(item_id)
+                print(f"[DEBUG] Treeview selection moved to item {item_id}")
+                break
+
         self.current_pair = pair
         self._display_pair(pair)
         self.update_nav_buttons()
