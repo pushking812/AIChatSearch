@@ -192,8 +192,8 @@ class Application(tk.Tk):
         self.response_text = tk.Text(response_container, height=10)
         self.response_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        text_paned.add(request_container, minsize=120)
-        text_paned.add(response_container, minsize=120)
+        text_paned.add(request_container, minsize=110)
+        text_paned.add(response_container, minsize=130)
 
         self.request_text.tag_configure("search_match", background="yellow")
         self.response_text.tag_configure("search_match", background="yellow")
