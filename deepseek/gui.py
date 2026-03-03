@@ -229,11 +229,13 @@ class Application(tk.Tk):
         if not query:
             return
 
+        field = self.search_field_var.get()
+
         aggregated_pairs = []
         print(f"[DEBUG] search_current_chat | selected_chats={len(self.current_selected_chats)}")
 
         for chat in self.current_selected_chats:
-            pairs = self.controller.search(chat, query)
+            pairs = self.controller.search(chat, query, field)
             print(f"[DEBUG] search_current_chat | chat={chat} | found={len(pairs)}")
             for pair in pairs:
                 aggregated_pairs.append((chat, pair))
