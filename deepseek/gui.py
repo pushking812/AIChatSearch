@@ -58,19 +58,43 @@ class Application(tk.Tk):
         self.chat_filter_entry.pack(fill=tk.X, padx=5, pady=(0, 5))
         self.chat_filter_entry.bind("<KeyRelease>", self.filter_chats)
 
+        list_container = tk.Frame(left_frame)
+        list_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
         self.chat_listbox = tk.Listbox(
-            left_frame,
+            list_container,
             selectmode=tk.EXTENDED,
             exportselection=False
         )
-        self.chat_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0), pady=5)
+        self.chat_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        scrollbar = tk.Scrollbar(left_frame, command=self.chat_listbox.yview)
+        scrollbar = tk.Scrollbar(list_container, command=self.chat_listbox.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.chat_listbox.config(yscrollcommand=scrollbar.set)
         self.chat_listbox.bind("<ButtonRelease-1>", self.on_chat_select)
         self.chat_listbox.bind("<Shift-ButtonRelease-1>", self.on_chat_select)
         self.chat_listbox.bind("<Control-ButtonRelease-1>", self.on_chat_select)
+
+        buttons_frame = tk.Frame(left_frame)
+        buttons_frame.pack(pady=(0, 5))
+
+        self.btn_select_all = tk.Button(
+            buttons_frame,
+            text="☑",
+            width=3,
+            height=1,
+            command=self.select_all_chats
+        )
+        self.btn_select_all.pack(side=tk.LEFT, padx=2)
+
+        self.btn_clear_selection = tk.Button(
+            buttons_frame,
+            text="[ ]",
+            width=3,
+            height=1,
+            command=self.clear_chat_selection
+        )
+        self.btn_clear_selection.pack(side=tk.LEFT, padx=2)
 
         right_paned = tk.PanedWindow(main_paned, orient=tk.VERTICAL)
         main_paned.add(right_paned)
@@ -235,6 +259,19 @@ class Application(tk.Tk):
         self.response_text.delete("1.0", tk.END)
         self.request_text.insert(tk.END, pair.request_text)
         self.response_text.insert(tk.END, pair.response_text)
+
+    def select_all_chats(self):
+        self.chat_listbox.selection_set(0, tk.END)
+        self.on_chat_select()
+
+    def clear_chat_selection(self):
+        self.chat_listbox.selection_clear(0, tk.END)
+        self.current_selected_chats = []
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        self.tree_item_map = {}
+        self.position_label.config(text="")
+        self.update_nav_buttons()
 
     # ---------------- SEARCH ----------------
     def reset_search(self):
