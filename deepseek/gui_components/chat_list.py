@@ -1,4 +1,4 @@
-﻿# deepseek/gui_components/chat_list.py
+# deepseek/gui_components/chat_list.py
 
 """Панель списка чатов с фильтрацией и множественным выбором."""
 
@@ -69,13 +69,15 @@ class ChatListPanel:
         )
         self.btn_clear.pack(side=tk.LEFT, padx=2)
 
-    def update_list(self, chats=None):
-        """Обновить отображение списка чатов."""
-        if chats is None:
-            chats = self.controller.get_filtered_chats()
+    def update_list(self, items):
+        """
+        Обновляет отображение списка чатов.
+        items: список кортежей (chat, source_name)
+        """
         self.listbox.delete(0, tk.END)
-        for chat in chats:
-            self.listbox.insert(tk.END, chat.title)
+        for chat, source_name in items:
+            display_text = f"[{source_name}] {chat.title}"
+            self.listbox.insert(tk.END, display_text)
 
     def get_selected_chats(self):
         """Вернуть список выбранных объектов Chat."""
@@ -98,9 +100,10 @@ class ChatListPanel:
     def _on_filter_changed(self, event=None):
         """Обработка изменения фильтра."""
         self.controller.filter_chats(self.filter_var.get())
-        self.update_list()
-        # Сброс выделения? Пользователь ожидает, что список обновится, а выделение останется.
-        # Но лучше сбросить, чтобы избежать несоответствий.
+        # Получаем отфильтрованные чаты и формируем кортежи с именами источников
+        filtered = self.controller.get_filtered_chats()
+        items = [(chat, self.controller.get_source_name(chat)) for chat in filtered]
+        self.update_list(items)
         self.clear_selection()
 
     def _on_select(self, event=None):

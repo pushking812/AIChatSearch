@@ -1,4 +1,4 @@
-﻿# deepseek/gui_components/application.py
+# deepseek/gui_components/application.py
 
 """Главный класс приложения, координирующий работу всех компонентов."""
 
@@ -42,7 +42,8 @@ class Application(tk.Tk):
     def _create_menu(self):
         menubar = tk.Menu(self)
         file_menu = tk.Menu(menubar, tearoff=0)
-        file_menu.add_command(label="Открыть архив...", command=self.open_archive)
+        file_menu.add_command(label="Загрузить архив...", command=self.add_archive)
+        file_menu.add_command(label="Новая сессия", command=self.new_session)
         menubar.add_cascade(label="Файл", menu=file_menu)
         self.config(menu=menubar)
 
@@ -143,6 +144,13 @@ class Application(tk.Tk):
         self.search_ctrl = SearchController(self.controller, self._on_search_result_change)
         self.nav_ctrl = NavigationController(self.controller)
 
+    # ---------- Вспомогательные методы для обновления интерфейса ----------
+    def _update_chat_list(self):
+        """Обновляет список чатов в панели, формируя кортежи (chat, source_name)."""
+        filtered = self.controller.get_filtered_chats()
+        items = [(chat, self.controller.get_source_name(chat)) for chat in filtered]
+        self.chat_panel.update_list(items)
+
     # ---------- Обработчики событий ----------
     def _on_chats_selected(self):
         """Вызывается при изменении выбора в списке чатов."""
@@ -218,18 +226,40 @@ class Application(tk.Tk):
             self.detail_panel.highlight_search_match(field, start, end, move_focus=move_focus)
         self.search_counter.config(text=f"{index + 1} / {total}")
 
-    # ---------- Публичные методы (для обратной совместимости) ----------
-    def open_archive(self):
-        """Открыть ZIP-архив с чатами."""
+    # ---------- Новые методы для работы с архивами и сессией ----------
+    def add_archive(self):
+        """Загружает новый ZIP-архив и добавляет его чаты к существующим."""
         file_path = filedialog.askopenfilename(filetypes=[("ZIP files", "*.zip")])
         if not file_path:
             return
         try:
-            chats = model.load_from_zip(file_path)
-            self.controller.set_chats(chats)
-            self.chat_panel.update_list()
+            added = self.controller.add_source(file_path)
+            if added:
+                self._update_chat_list()
+                # Можно показать сообщение о количестве добавленных чатов
+                messagebox.showinfo("Добавление архива", f"Добавлено {len(added)} новых чатов.")
+            else:
+                messagebox.showinfo("Добавление архива", "Все чаты из этого архива уже загружены.")
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Не удалось открыть архив:\n{e}")
+            messagebox.showerror("Ошибка", f"Не удалось загрузить архив:\n{e}")
+
+    def new_session(self):
+        """Очищает все загруженные источники и сбрасывает интерфейс."""
+        self.controller.clear_all_sources()
+        self._update_chat_list()
+        # Очищаем дерево сообщений и детали
+        self.tree_panel.clear()
+        self.detail_panel.clear()
+        # Сбрасываем поиск
+        self.search_var.set("")
+        self.search_ctrl.clear()
+        self.search_counter.config(text="0 / 0")
+        # Обновляем навигацию
+        self._update_nav_buttons()
+        self._update_position_label()
+
+    # ---------- Публичные методы (для обратной совместимости) ----------
+    # Метод open_archive удалён, так как заменён на add_archive
 
     def save_current_pair(self):
         """Сохранить изменения текущей пары."""
