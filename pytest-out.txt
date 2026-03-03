@@ -1,0 +1,139 @@
+PS C:\Users\user\Desktop\py\DeepSeekProject\DeepSeekProject> pytest
+================================================= test session starts =================================================
+platform win32 -- Python 3.11.9, pytest-9.0.2, pluggy-1.6.0
+rootdir: C:\Users\user\Desktop\py\DeepSeekProject\DeepSeekProject
+configfile: pytest.ini
+plugins: cov-7.0.0
+collected 5 items
+
+tests\test_model.py ..F..
+ERROR: Coverage failure: total of 80 is less than fail-under=90
+                                                                                                                 [100%]
+
+====================================================== FAILURES =======================================================
+__________________________________________________ test_invalid_json __________________________________________________
+
+zip_path = 'C:\\Users\\user\\AppData\\Local\\Temp\\tmpgtvysl4v\\bad.zip'
+
+    def load_from_zip(zip_path: str) -> List[Chat]:
+        global raw_data
+        chats: List[Chat] = []
+
+        try:
+            with zipfile.ZipFile(zip_path, "r") as z:
+                if "conversation.json" not in z.namelist():
+                    raise FileNotFoundError("conversation.json not found in archive")
+
+                try:
+                    with z.open("conversation.json") as f:
+>                       raw_data = json.load(f)
+                                   ^^^^^^^^^^^^
+
+src\model.py:76:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+..\..\..\..\AppData\Local\Programs\Python\Python311\Lib\json\__init__.py:293: in load
+    return loads(fp.read(),
+..\..\..\..\AppData\Local\Programs\Python\Python311\Lib\json\__init__.py:346: in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\AppData\Local\Programs\Python\Python311\Lib\json\decoder.py:337: in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <json.decoder.JSONDecoder object at 0x0000016AE25FF410>, s = 'not json', idx = 0
+
+    def raw_decode(self, s, idx=0):
+        """Decode a JSON document from ``s`` (a ``str`` beginning with
+        a JSON document) and return a 2-tuple of the Python
+        representation and the index in ``s`` where the document ended.
+
+        This can be used to decode a JSON document from a string that may
+        have extraneous data at the end.
+
+        """
+        try:
+            obj, end = self.scan_once(s, idx)
+        except StopIteration as err:
+>           raise JSONDecodeError("Expecting value", s, err.value) from None
+E           json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+..\..\..\..\AppData\Local\Programs\Python\Python311\Lib\json\decoder.py:355: JSONDecodeError
+
+During handling of the above exception, another exception occurred:
+
+zip_path = 'C:\\Users\\user\\AppData\\Local\\Temp\\tmpgtvysl4v\\bad.zip'
+
+    def load_from_zip(zip_path: str) -> List[Chat]:
+        global raw_data
+        chats: List[Chat] = []
+
+        try:
+            with zipfile.ZipFile(zip_path, "r") as z:
+                if "conversation.json" not in z.namelist():
+                    raise FileNotFoundError("conversation.json not found in archive")
+
+                try:
+                    with z.open("conversation.json") as f:
+                        raw_data = json.load(f)
+                except json.JSONDecodeError as e:
+>                   raise ValueError(f"Invalid JSON format: {e}")
+E                   ValueError: Invalid JSON format: Expecting value: line 1 column 1 (char 0)
+
+src\model.py:78: ValueError
+
+During handling of the above exception, another exception occurred:
+
+    def test_invalid_json():
+        temp_dir = tempfile.mkdtemp()
+        zip_path = os.path.join(temp_dir, "bad.zip")
+
+        with zipfile.ZipFile(zip_path, "w") as z:
+            z.writestr("conversation.json", "not json")
+
+        with pytest.raises(ValueError):
+>           load_from_zip(zip_path)
+
+tests\test_model.py:81:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+zip_path = 'C:\\Users\\user\\AppData\\Local\\Temp\\tmpgtvysl4v\\bad.zip'
+
+    def load_from_zip(zip_path: str) -> List[Chat]:
+        global raw_data
+        chats: List[Chat] = []
+
+        try:
+            with zipfile.ZipFile(zip_path, "r") as z:
+                if "conversation.json" not in z.namelist():
+                    raise FileNotFoundError("conversation.json not found in archive")
+
+                try:
+                    with z.open("conversation.json") as f:
+                        raw_data = json.load(f)
+                except json.JSONDecodeError as e:
+                    raise ValueError(f"Invalid JSON format: {e}")
+        except zipfile.BadZipFile:
+            raise ValueError("Invalid or corrupted ZIP archive")
+        except FileNotFoundError:
+            raise
+        except Exception as e:
+>           raise RuntimeError(f"Unexpected error while reading ZIP: {e}")
+E           RuntimeError: Unexpected error while reading ZIP: Invalid JSON format: Expecting value: line 1 column 1 (char 0)
+
+src\model.py:84: RuntimeError
+=================================================== tests coverage ====================================================
+___________________________________ coverage: platform win32, python 3.11.9-final-0 ___________________________________
+
+Name           Stmts   Miss  Cover   Missing
+--------------------------------------------
+src\gui.py         9      9     0%   2-12
+src\main.py        1      1     0%   2
+src\model.py      95     13    86%   33, 59, 62, 80, 87, 100-101, 108, 140-144, 148-149, 159
+src\utils.py       9      0   100%
+--------------------------------------------
+TOTAL            114     23    80%
+FAIL Required test coverage of 90% not reached. Total coverage: 79.82%
+=============================================== short test summary info ===============================================
+FAILED tests/test_model.py::test_invalid_json - RuntimeError: Unexpected error while reading ZIP: Invalid JSON format: Expecting value: line 1 column 1 (char 0)
+============================================= 1 failed, 4 passed in 0.51s =============================================
