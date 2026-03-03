@@ -119,30 +119,3 @@ pytest.ini
   – защита от обращения к несуществующей паре;
   – очистка текстовых полей перед обновлением;
   – безопасная обработка отмены выбора файла.
-
-
-============================
-Отображение сообщений (обновлённая архитектура)
-
-selected_chats
-      ↓
-_rebuild_visible_pairs()
-      ↓
-visible_pairs (List[(Chat, MessagePair)])
-      ↓
-display_visible_pairs()
-      ↓
-ttk.Treeview
-      ↓
-tree_item_map[item_id] -> (Chat, MessagePair)
-
-Принципы:
-1. visible_pairs остаётся единственным источником данных отображения.
-2. GUI не хранит копии сообщений, только ссылки.
-3. Для сопоставления используется словарь:
-   self.tree_item_map: dict[str, tuple[Chat, MessagePair]]
-4. Выбор строки Treeview:
-   - получение item_id
-   - поиск в tree_item_map
-   - отображение выбранной пары
-
