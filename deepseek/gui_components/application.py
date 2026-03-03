@@ -206,17 +206,16 @@ class Application(tk.Tk):
         """Следующий результат поиска."""
         self.search_ctrl.next()
 
-    def _on_search_result_change(self, result, index, total):
-        """Обработчик смены текущего результата поиска."""
+    def _on_search_result_change(self, result, index, total, move_focus=True):
         chat, pair, field, start, end = result
         # Выделяем пару в дереве
         if self.tree_panel.select_item_by_pair(chat, pair):
-            # Обновляем детали (уже будет вызвано через _on_tree_selected, но для надёжности)
+            # Обновляем детали
             self.controller.select_pair(chat, pair)
             self.detail_panel.display_pair(pair)
             self._update_position_label()
             self._update_nav_buttons()
-            self.detail_panel.highlight_search_match(field, start, end, move_focus=True)
+            self.detail_panel.highlight_search_match(field, start, end, move_focus=move_focus)
         self.search_counter.config(text=f"{index + 1} / {total}")
 
     # ---------- Публичные методы (для обратной совместимости) ----------
