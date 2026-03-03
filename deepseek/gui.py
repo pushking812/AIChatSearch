@@ -19,6 +19,9 @@ class Application(tk.Tk):
 
         # Данные
         self.chats = []
+        self.filtered_chats = []
+        self.selected_chats = []
+        self.chat_filter_var = tk.StringVar()
         self.current_chat = None
         self.current_pairs = []
         self.current_pair = None
@@ -394,3 +397,21 @@ class Application(tk.Tk):
             self.next_button.config(state=tk.DISABLED)
         else:
             self.next_button.config(state=tk.NORMAL)
+
+
+    # ---------------- CHAT FILTER ----------------
+
+    def filter_chats(self, event=None):
+        query = self.chat_filter_var.get().lower().strip()
+        self.chat_listbox.delete(0, tk.END)
+
+        if not query:
+            self.filtered_chats = self.chats[:]
+        else:
+            self.filtered_chats = [
+                chat for chat in self.chats
+                if query in chat.title.lower()
+            ]
+
+        for chat in self.filtered_chats:
+            self.chat_listbox.insert(tk.END, chat.title)
