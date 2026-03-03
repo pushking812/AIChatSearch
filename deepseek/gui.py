@@ -20,17 +20,16 @@ class Application(tk.Tk):
         self.title("DeepSeek Chat Archive Navigator")
         self.geometry("1200x800")
 
-        self.chats = []
-        self.filtered_chats = []
         self.tree_item_map = {}
 
         self.chat_filter_var = tk.StringVar()
-
-        self.archive_path = None
-        self.raw_data = None
+        self.search_var = tk.StringVar()
+        self.search_field_var = tk.StringVar(value="Запрос")
 
         self._create_menu()
         self._create_layout()
+
+    # ---------------- MENU ----------------
 
     def _create_menu(self):
         menubar = tk.Menu(self)
@@ -39,10 +38,13 @@ class Application(tk.Tk):
         menubar.add_cascade(label="Файл", menu=file_menu)
         self.config(menu=menubar)
 
+    # ---------------- LAYOUT ----------------
+
     def _create_layout(self):
         main_paned = tk.PanedWindow(self, orient=tk.HORIZONTAL)
         main_paned.pack(fill=tk.BOTH, expand=True)
 
+        # LEFT
         left_frame = tk.Frame(main_paned)
         main_paned.add(left_frame, width=300)
 
@@ -61,6 +63,7 @@ class Application(tk.Tk):
 
         self.chat_listbox.bind("<<ListboxSelect>>", self.on_chat_select)
 
+        # RIGHT
         right_paned = tk.PanedWindow(main_paned, orient=tk.VERTICAL)
         main_paned.add(right_paned)
 
@@ -68,6 +71,24 @@ class Application(tk.Tk):
         right_paned.add(top_frame, height=300)
 
         tk.Label(top_frame, text="Сообщения", font=("Arial", 12, "bold")).pack(anchor="w", padx=5, pady=5)
+
+        search_frame = tk.Frame(top_frame)
+        search_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
+
+        self.search_entry = tk.Entry(search_frame, textvariable=self.search_var)
+        self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+
+        self.search_combobox = ttk.Combobox(
+            search_frame,
+            textvariable=self.search_field_var,
+            values=["Название чата", "Запрос", "Ответ"],
+            state="readonly",
+            width=18
+        )
+        self.search_combobox.pack(side=tk.LEFT, padx=(0, 5))
+
+        tk.Button(search_frame, text="Найти", command=self.search_current_chat).pack(side=tk.LEFT, padx=(0, 5))
+        tk.Button(search_frame, text="Сбросить", command=self.reset_search).pack(side=tk.LEFT)
 
         self.tree = ttk.Treeview(
             top_frame,
@@ -90,6 +111,7 @@ class Application(tk.Tk):
 
         self.tree.bind("<<TreeviewSelect>>", self.on_tree_select)
 
+        # Bottom
         bottom_frame = tk.Frame(right_paned)
         right_paned.add(bottom_frame)
 
@@ -110,39 +132,68 @@ class Application(tk.Tk):
         self.next_button = tk.Button(nav_frame, text="Следующая →", command=self.next_pair, state=tk.DISABLED)
         self.next_button.pack(side=tk.LEFT, padx=5)
 
+    # ---------------- DATA ----------------
+
     def open_archive(self):
         file_path = filedialog.askopenfilename(filetypes=[("ZIP files", "*.zip")])
         if not file_path:
             return
 
         try:
-            self.chats = model.load_from_zip(file_path)
-            self.filtered_chats = self.chats[:]
-            self.controller.set_chats(self.chats)
+            chats = model.load_from_zip(file_path)
+            self.controller.set_chats(chats)
             self._update_chat_list()
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось открыть архив:\n{e}")
 
     def _update_chat_list(self):
         self.chat_listbox.delete(0, tk.END)
-        for chat in self.filtered_chats:
+        for chat in self.controller.get_filtered_chats():
             self.chat_listbox.insert(tk.END, chat.title)
+
+    # ---------------- FILTER ----------------
+
+    def filter_chats(self, event=None):
+        self.controller.filter_chats(self.chat_filter_var.get())
+        self._update_chat_list()
+        self._clear_tree()
+
+    # ---------------- CHAT SELECTION ----------------
 
     def on_chat_select(self, event=None):
         indices = self.chat_listbox.curselection()
+        filtered = self.controller.get_filtered_chats()
+
         selected = [
-            self.filtered_chats[i]
+            filtered[i]
             for i in indices
-            if i < len(self.filtered_chats)
+            if i < len(filtered)
         ]
+
         self.controller.select_chats(selected)
         self.display_visible_pairs()
         self.update_nav_buttons()
 
-    def display_visible_pairs(self):
-        for item in self.tree.get_children():
-            self.tree.delete(item)
+    # ---------------- SEARCH ----------------
 
+    def search_current_chat(self):
+        self.controller.search(
+            self.search_var.get(),
+            self.search_field_var.get()
+        )
+        self.display_visible_pairs()
+        self.update_nav_buttons()
+
+    def reset_search(self):
+        self.search_var.set("")
+        self.controller.reset_search()
+        self.display_visible_pairs()
+        self.update_nav_buttons()
+
+    # ---------------- TREE ----------------
+
+    def display_visible_pairs(self):
+        self._clear_tree()
         self.tree_item_map = {}
 
         for index, (chat, pair) in enumerate(self.controller.get_visible_pairs()):
@@ -152,6 +203,10 @@ class Application(tk.Tk):
                 values=(chat.title, pair.index, pair.request_text[:30], pair.response_text[:30]),
             )
             self.tree_item_map[item_id] = index
+
+    def _clear_tree(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
 
     def on_tree_select(self, event=None):
         selection = self.tree.selection()
@@ -173,6 +228,8 @@ class Application(tk.Tk):
         self.response_text.delete("1.0", tk.END)
         self.request_text.insert(tk.END, pair.request_text)
         self.response_text.insert(tk.END, pair.response_text)
+
+    # ---------------- NAVIGATION ----------------
 
     def _sync_tree_selection(self):
         index = self.controller.current_pair_index
@@ -205,14 +262,3 @@ class Application(tk.Tk):
         can_prev, can_next = self.controller.get_nav_state()
         self.prev_button.config(state=tk.NORMAL if can_prev else tk.DISABLED)
         self.next_button.config(state=tk.NORMAL if can_next else tk.DISABLED)
-
-    def filter_chats(self, event=None):
-        query = self.chat_filter_var.get().lower().strip()
-        if not query:
-            self.filtered_chats = self.chats[:]
-        else:
-            self.filtered_chats = [
-                chat for chat in self.chats
-                if query in chat.title.lower()
-            ]
-        self._update_chat_list()
