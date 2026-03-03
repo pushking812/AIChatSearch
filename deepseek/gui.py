@@ -183,3 +183,58 @@ class Application(tk.Tk):
 
         self.request_text.insert(tk.END, pair.request_text)
         self.response_text.insert(tk.END, pair.response_text)
+
+    def prev_pair(self):
+        if not hasattr(self, "current_pairs") or not self.current_pairs:
+            return
+        if self.current_pair_index > 0:
+            self.current_pair_index -= 1
+            self.pairs_listbox.selection_clear(0, tk.END)
+            self.pairs_listbox.selection_set(self.current_pair_index)
+            self.pairs_listbox.activate(self.current_pair_index)
+            self.display_pair_by_index(self.current_pair_index)
+            self.update_nav_buttons()
+
+    def next_pair(self):
+        if not hasattr(self, "current_pairs") or not self.current_pairs:
+            return
+        if self.current_pair_index < len(self.current_pairs) - 1:
+            self.current_pair_index += 1
+            self.pairs_listbox.selection_clear(0, tk.END)
+            self.pairs_listbox.selection_set(self.current_pair_index)
+            self.pairs_listbox.activate(self.current_pair_index)
+            self.display_pair_by_index(self.current_pair_index)
+            self.update_nav_buttons()
+
+    def update_nav_buttons(self):
+        if not hasattr(self, "current_pairs") or not self.current_pairs:
+            self.prev_button.config(state=tk.DISABLED)
+            self.next_button.config(state=tk.DISABLED)
+            return
+
+        if self.current_pair_index <= 0:
+            self.prev_button.config(state=tk.DISABLED)
+        else:
+            self.prev_button.config(state=tk.NORMAL)
+
+        if self.current_pair_index >= len(self.current_pairs) - 1:
+            self.next_button.config(state=tk.DISABLED)
+        else:
+            self.next_button.config(state=tk.NORMAL)
+
+    def display_pair_by_index(self, index):
+        if index < 0 or index >= len(self.current_pairs):
+            return
+        pair = self.current_pairs[index]
+        self.current_pair = pair
+
+        self.request_text.delete("1.0", tk.END)
+        self.response_text.delete("1.0", tk.END)
+
+        self.request_text.insert(tk.END, pair.request_text)
+        self.response_text.insert(tk.END, pair.response_text)
+
+        # Optional search highlight hook (safe even if search not implemented yet)
+        if hasattr(self, "highlight_search"):
+            self.highlight_search()
+
