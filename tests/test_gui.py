@@ -87,7 +87,11 @@ class DummyPair:
 
 
 def test_open_archive_success(monkeypatch):
+    import tkinter as _tk
+    _orig_init = _tk.Tk.__init__
+    _tk.Tk.__init__ = lambda self: None
     app = Application()
+    _tk.Tk.__init__ = _orig_init
     app.withdraw()
 
     dummy_chat = DummyChat("Chat1", [])
@@ -102,7 +106,11 @@ def test_open_archive_success(monkeypatch):
 
 
 def test_open_archive_exception(monkeypatch):
+    import tkinter as _tk
+    _orig_init = _tk.Tk.__init__
+    _tk.Tk.__init__ = lambda self: None
     app = Application()
+    _tk.Tk.__init__ = _orig_init
     app.withdraw()
 
     monkeypatch.setattr("deepseek.gui.filedialog.askopenfilename", lambda **kwargs: "file.zip")
@@ -114,7 +122,11 @@ def test_open_archive_exception(monkeypatch):
 
 
 def test_on_chat_select_and_tree_select():
+    import tkinter as _tk
+    _orig_init = _tk.Tk.__init__
+    _tk.Tk.__init__ = lambda self: None
     app = Application()
+    _tk.Tk.__init__ = _orig_init
     app.withdraw()
 
     pair = DummyPair(1, "req", "resp")
@@ -136,7 +148,11 @@ def test_on_chat_select_and_tree_select():
 
 
 def test_perform_search_no_selected_chats():
+    import tkinter as _tk
+    _orig_init = _tk.Tk.__init__
+    _tk.Tk.__init__ = lambda self: None
     app = Application()
+    _tk.Tk.__init__ = _orig_init
     app.withdraw()
 
     app.search_var.set("abc")
