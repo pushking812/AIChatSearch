@@ -1,7 +1,9 @@
-
 import pytest
+
 from deepseek.controller import ChatController
 
+
+# ---------- Test doubles ----------
 
 class DummyPair:
     def __init__(self, request_text="", response_text=""):
@@ -12,114 +14,103 @@ class DummyPair:
 class DummyChat:
     def __init__(self, title, pairs):
         self.title = title
-        self.pairs = pairs
+        self._pairs = pairs
+
+    def get_pairs(self):
+        return self._pairs
 
 
-# ---------- INIT ----------
+# ---------- DATA / FILTER ----------
 
-def test_initial_state():
+def test_set_chats_and_reset_navigation():
     controller = ChatController()
+    chat = DummyChat("Test Chat", [])
+    controller.set_chats([chat])
+
+    assert controller.get_filtered_chats() == [chat]
     assert controller.current_chat is None
-    assert controller.current_pair_index is None
-    assert controller.search_active is False
-    assert controller.visible_pairs == []
+    assert controller.current_index_in_chat is None
 
 
-# ---------- SET CURRENT CHAT ----------
-
-def test_set_current_chat_with_pairs():
+def test_filter_chats_by_title():
     controller = ChatController()
-    chat = DummyChat("Chat", [DummyPair(), DummyPair()])
 
-    controller.set_current_chat(chat)
+    chat1 = DummyChat("Alpha Chat", [])
+    chat2 = DummyChat("Beta Chat", [])
 
-    assert controller.current_chat is chat
-    assert controller.current_pair_index == 0
-    assert controller.search_active is False
+    controller.set_chats([chat1, chat2])
+    controller.filter_chats("alpha")
+
+    assert controller.get_filtered_chats() == [chat1]
 
 
-def test_set_current_chat_empty():
+def test_filter_chats_empty_query_restores_all():
     controller = ChatController()
-    chat = DummyChat("Chat", [])
 
-    controller.set_current_chat(chat)
+    chat1 = DummyChat("Alpha", [])
+    chat2 = DummyChat("Beta", [])
 
-    assert controller.current_pair_index is None
+    controller.set_chats([chat1, chat2])
+    controller.filter_chats("alpha")
+    controller.filter_chats("")
+
+    assert len(controller.get_filtered_chats()) == 2
 
 
-# ---------- RESET ----------
+# ---------- SEARCH ----------
 
-def test_reset_search_state():
+def test_search_by_request():
     controller = ChatController()
-    controller.search_active = True
-    controller.visible_pairs = [1]
 
-    controller._reset_search_state()
-
-    assert controller.search_active is False
-    assert controller.visible_pairs == []
-
-
-# ---------- SEARCH CURRENT CHAT ----------
-
-def test_search_current_chat_no_results():
-    controller = ChatController()
-    chat = DummyChat("Chat", [DummyPair("a", "b")])
-    controller.set_current_chat(chat)
-
-    result = controller.search_current_chat("zzz")
-
-    assert result == []
-    assert controller.search_active is True
-    assert controller.current_pair_index is None
-
-
-def test_search_current_chat_one_result():
-    controller = ChatController()
-    pair = DummyPair("hello", "world")
+    pair = DummyPair("hello world", "response")
     chat = DummyChat("Chat", [pair])
-    controller.set_current_chat(chat)
 
-    result = controller.search_current_chat("hello")
-
+    result = controller.search(chat, "hello", "Запрос")
     assert result == [pair]
-    assert controller.current_pair_index == 0
 
 
-def test_search_current_chat_multiple_results():
+def test_search_by_response():
     controller = ChatController()
-    pair1 = DummyPair("hello", "")
-    pair2 = DummyPair("hello again", "")
+
+    pair = DummyPair("request", "great answer")
+    chat = DummyChat("Chat", [pair])
+
+    result = controller.search(chat, "answer", "Ответ")
+    assert result == [pair]
+
+
+def test_search_empty_query_returns_all_pairs():
+    controller = ChatController()
+
+    pair1 = DummyPair("a", "b")
+    pair2 = DummyPair("c", "d")
     chat = DummyChat("Chat", [pair1, pair2])
-    controller.set_current_chat(chat)
 
-    result = controller.search_current_chat("hello")
-
-    assert len(result) == 2
-    assert controller.current_pair_index == 0
+    result = controller.search(chat, "", "Запрос")
+    assert result == [pair1, pair2]
 
 
-# ---------- SEARCH SELECTED CHATS ----------
-
-def test_search_selected_chats():
+def test_search_with_positions():
     controller = ChatController()
 
-    pair1 = DummyPair("alpha", "")
-    pair2 = DummyPair("beta", "")
+    pair = DummyPair("hello world", "response")
+    chat = DummyChat("Chat", [pair])
 
-    chat1 = DummyChat("Chat1", [pair1])
-    chat2 = DummyChat("Chat2", [pair2])
+    results = controller.search_with_positions(chat, "hello", "Запрос")
 
-    result = controller.search_selected_chats("beta", [chat1, chat2])
+    assert len(results) == 1
+    found_chat, found_pair, field, start, end = results[0]
 
-    assert result == [pair2]
-    assert controller.search_active is True
-    assert controller.current_pair_index == 0
+    assert found_chat is chat
+    assert found_pair is pair
+    assert field == "request"
+    assert start == 0
+    assert end == 5
 
 
-# ---------- NAVIGATION ----------
+# ---------- SELECT / NAVIGATION ----------
 
-def test_navigation_next_prev():
+def test_select_and_navigation():
     controller = ChatController()
 
     pair1 = DummyPair("r1", "a1")
@@ -127,26 +118,42 @@ def test_navigation_next_prev():
     pair3 = DummyPair("r3", "a3")
 
     chat = DummyChat("Chat", [pair1, pair2, pair3])
-    controller.set_current_chat(chat)
 
-    assert controller.current_pair_index == 0
+    selected = controller.select_pair(chat, pair2)
 
-    controller.next_pair()
-    assert controller.current_pair_index == 1
+    assert selected is pair2
+    assert controller.current_index_in_chat == 1
 
-    controller.next_pair()
-    assert controller.current_pair_index == 2
+    # prev
+    prev_pair = controller.prev_pair()
+    assert prev_pair is pair1
 
-    # next at end
-    controller.next_pair()
-    assert controller.current_pair_index == 2
+    # next (back to pair2)
+    next_pair = controller.next_pair()
+    assert next_pair is pair2
 
-    controller.prev_pair()
-    assert controller.current_pair_index == 1
+    # next (to pair3)
+    next_pair = controller.next_pair()
+    assert next_pair is pair3
 
-    controller.prev_pair()
-    assert controller.current_pair_index == 0
+    # next at end -> None
+    assert controller.next_pair() is None
 
-    # prev at start
-    controller.prev_pair()
-    assert controller.current_pair_index == 0
+
+def test_get_nav_state_and_position_info():
+    controller = ChatController()
+
+    pair1 = DummyPair("r1", "a1")
+    pair2 = DummyPair("r2", "a2")
+
+    chat = DummyChat("My Chat", [pair1, pair2])
+    controller.select_pair(chat, pair1)
+
+    can_prev, can_next = controller.get_nav_state()
+    assert can_prev is False
+    assert can_next is True
+
+    title, position, total = controller.get_position_info()
+    assert title == "My Chat"
+    assert position == 1
+    assert total == 2
