@@ -158,13 +158,33 @@ class Application(tk.Tk):
         self.position_label = tk.Label(bottom_frame, text="", font=("Arial", 10, "italic"))
         self.position_label.pack(anchor="w", padx=5, pady=(5, 0))
 
-        tk.Label(bottom_frame, text="Запрос", font=("Arial", 11, "bold")).pack(anchor="w", padx=5)
-        self.request_text = tk.Text(bottom_frame, height=10)
+        text_paned = tk.PanedWindow(
+            bottom_frame,
+            orient=tk.VERTICAL,
+            sashrelief=tk.RAISED,
+            sashwidth=6,
+            bd=1,
+            relief=tk.SUNKEN,
+            showhandle=True,
+        )
+        text_paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        request_container = tk.Frame(text_paned)
+        tk.Label(request_container, text="Запрос", font=("Arial", 11, "bold")).pack(anchor="w", padx=5)
+        self.request_text = tk.Text(request_container, height=10)
         self.request_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        tk.Label(bottom_frame, text="Ответ", font=("Arial", 11, "bold")).pack(anchor="w", padx=5)
-        self.response_text = tk.Text(bottom_frame, height=10)
+        response_container = tk.Frame(text_paned)
+        tk.Label(response_container, text="Ответ", font=("Arial", 11, "bold")).pack(anchor="w", padx=5)
+        self.response_text = tk.Text(response_container, height=10)
         self.response_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        text_paned.add(request_container)
+        text_paned.add(response_container)
+
+        self.request_text.tag_configure("search_match", background="yellow")
+        self.response_text.tag_configure("search_match", background="yellow")
+
         # Configure search highlight tag
         self.request_text.tag_configure("search_match", background="yellow")
         self.response_text.tag_configure("search_match", background="yellow")
