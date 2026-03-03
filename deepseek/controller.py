@@ -114,3 +114,35 @@ class ChatController:
             self.current_index_in_chat + 1,
             len(self.current_chat_pairs),
         )
+import re
+
+    def search_with_positions(self, query: str, field: str = "both"):
+        results = []
+        if not query:
+            return results
+
+        pattern = re.compile(re.escape(query), re.IGNORECASE)
+
+        for pair_index, pair in enumerate(self.pairs):
+            request_text = getattr(pair, "request", "") or ""
+            response_text = getattr(pair, "response", "") or ""
+
+            if field in ("request", "both"):
+                for match in pattern.finditer(request_text):
+                    results.append({
+                        "pair_index": pair_index,
+                        "field": "request",
+                        "start": match.start(),
+                        "end": match.end(),
+                    })
+
+            if field in ("response", "both"):
+                for match in pattern.finditer(response_text):
+                    results.append({
+                        "pair_index": pair_index,
+                        "field": "response",
+                        "start": match.start(),
+                        "end": match.end(),
+                    })
+
+        return results
