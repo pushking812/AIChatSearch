@@ -80,6 +80,8 @@ def load_from_zip(zip_path: str) -> List[Chat]:
         raise ValueError("Invalid or corrupted ZIP archive")
     except FileNotFoundError:
         raise
+    except ValueError:
+        raise
     except Exception as e:
         raise RuntimeError(f"Unexpected error while reading ZIP: {e}")
 

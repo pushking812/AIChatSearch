@@ -137,3 +137,26 @@ FAIL Required test coverage of 90% not reached. Total coverage: 79.82%
 =============================================== short test summary info ===============================================
 FAILED tests/test_model.py::test_invalid_json - RuntimeError: Unexpected error while reading ZIP: Invalid JSON format: Expecting value: line 1 column 1 (char 0)
 ============================================= 1 failed, 4 passed in 0.51s =============================================
+PS C:\Users\user\Desktop\py\DeepSeekProject\DeepSeekProject> pytest
+================================================= test session starts =================================================
+platform win32 -- Python 3.11.9, pytest-9.0.2, pluggy-1.6.0
+rootdir: C:\Users\user\Desktop\py\DeepSeekProject\DeepSeekProject
+configfile: pytest.ini
+plugins: cov-7.0.0
+collected 5 items
+
+tests\test_model.py .....
+ERROR: Coverage failure: total of 86 is less than fail-under=90
+                                                                                                                 [100%]
+
+=================================================== tests coverage ====================================================
+___________________________________ coverage: platform win32, python 3.11.9-final-0 ___________________________________
+
+Name           Stmts   Miss  Cover   Missing
+--------------------------------------------
+src\model.py      97     15    85%   33, 59, 62, 80, 85-86, 89, 102-103, 110, 142-146, 150-151, 161
+src\utils.py       9      0   100%
+--------------------------------------------
+TOTAL            106     15    86%
+FAIL Required test coverage of 90% not reached. Total coverage: 85.85%
+================================================== 5 passed in 0.28s ==================================================
