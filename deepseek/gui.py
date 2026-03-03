@@ -338,6 +338,7 @@ class Application(tk.Tk):
         self.on_chat_select()
 
     def perform_search(self):
+        search_term = self.search_var.get().strip().lower()
         print('Search Term:', search_term)
         print('Filtered Chats:', filtered_chats)
         print('Search Results:', self.search_results)
