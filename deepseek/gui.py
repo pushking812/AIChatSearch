@@ -191,6 +191,7 @@ class Application(tk.Tk):
         try:
             chats = model.load_from_zip(file_path)
             self.chats = chats
+            self.filtered_chats = self.chats[:]
             self.archive_path = file_path
 
             # raw_data хранится в model (если реализовано глобально)
