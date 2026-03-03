@@ -29,6 +29,7 @@ class Application(tk.Tk):
         self.search_results = []
         self.current_result_index = -1
         self.live_search_var = tk.BooleanVar(value=True)
+        self._internal_tree_update = False
 
         self._create_menu()
         self._create_layout()
@@ -204,6 +205,8 @@ class Application(tk.Tk):
         self.update_nav_buttons()
 
     def on_tree_select(self, event=None):
+        if self._internal_tree_update:
+            return
         selection = self.tree.selection()
         if not selection:
             return
@@ -257,9 +260,9 @@ class Application(tk.Tk):
             self.search_counter.config(text="0 / 0")
             return
 
-        self.go_to_search_result(0)
+        self.go_to_search_result(0, move_focus=False)
 
-    def go_to_search_result(self, index):
+    def go_to_search_result(self, index, move_focus=True):
         total = len(self.search_results)
         self.current_result_index = index % total
 
@@ -267,15 +270,18 @@ class Application(tk.Tk):
 
         for item_id, value in self.tree_item_map.items():
             if value == (chat, pair):
+                self._internal_tree_update = True
                 self.tree.selection_set(item_id)
                 self.tree.see(item_id)
+                self._internal_tree_update = False
                 break
 
         self.controller.select_pair(chat, pair)
         self._display_pair(pair)
 
         widget = self.request_text if field == "request" else self.response_text
-        widget.focus_set()
+                if move_focus:
+            widget.focus_set()
         widget.tag_remove("sel", "1.0", tk.END)
         widget.tag_add("sel", f"1.0 + {start} chars", f"1.0 + {end} chars")
         widget.see(f"1.0 + {start} chars")
