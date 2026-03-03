@@ -24,6 +24,8 @@ class Application(tk.Tk):
         self.chat_filter_var = tk.StringVar()
         self.current_chat = None
         self.current_pairs = []
+        self.multi_mode = False
+        self.multi_pairs = []
         self.current_pair = None
         self.current_pair_index = None
         self.archive_path = None
@@ -207,44 +209,61 @@ class Application(tk.Tk):
             self.chat_listbox.insert(tk.END, chat.title)
 
     def on_chat_select(self, event):
-        selection = self.chat_listbox.curselection()
-        if not selection:
+        self.update_selected_chats()
+        
+        if not self.selected_chats:
             return
-
-        index = selection[0]
-        self.current_chat = self.chats[index]
-        self.current_pairs = self.current_chat.get_pairs()
-
+        
+        if len(self.selected_chats) == 1:
+            self.multi_mode = False
+            self.current_chat = self.selected_chats[0]
+            self.current_pairs = self.current_chat.get_pairs()
+        else:
+            self.multi_mode = True
+            self.current_chat = None
+            self.multi_pairs = []
+            for chat in self.selected_chats:
+                for pair in chat.get_pairs():
+                    self.multi_pairs.append((chat, pair))
+        
+        self.current_pair_index = None
         self._update_pair_list()
-        self.current_pair_index = None
         self.update_nav_buttons()
-        self.current_pair_index = None
-        self.update_nav_buttons()
-
     def _update_pair_list(self):
         self.pair_listbox.delete(0, tk.END)
-
-        for pair in self.current_pairs:
-            preview_request = pair.request_text[:50].replace("\n", " ")
-            preview_response = pair.response_text[:50].replace("\n", " ")
-
-            line = f"#{pair.index}: {preview_request}... → {preview_response}"
-            self.pair_listbox.insert(tk.END, line)
-
+        
+        if self.multi_mode:
+            for chat, pair in self.multi_pairs:
+                display_text = (
+                    f"{chat.title} [#{pair.index}]: "
+                    f"{pair.request_text[:30]}... → "
+                    f"{pair.response_text[:30]}..."
+                )
+                self.pair_listbox.insert(tk.END, display_text)
+        else:
+            for pair in self.current_pairs:
+                display_text = (
+                    f"#{pair.index}: "
+                    f"{pair.request_text[:30]}... → "
+                    f"{pair.response_text[:30]}..."
+                )
+                self.pair_listbox.insert(tk.END, display_text)
     def on_pair_select(self, event):
         selection = self.pair_listbox.curselection()
         if not selection:
             return
-
+        
         index = selection[0]
         self.current_pair_index = index
-        self.current_pair_index = index
-        self.current_pair = self.current_pairs[index]
-
-        self._display_pair(self.current_pair)
+        
+        if self.multi_mode:
+            chat, pair = self.multi_pairs[index]
+        else:
+            pair = self.current_pairs[index]
+        
+        self.current_pair = pair
+        self._display_pair(pair)
         self.update_nav_buttons()
-        self.update_nav_buttons()
-
     def _display_pair(self, pair):
         self.request_text.delete("1.0", tk.END)
         self.response_text.delete("1.0", tk.END)
