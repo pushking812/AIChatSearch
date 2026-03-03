@@ -230,7 +230,7 @@ class Application(tk.Tk):
             self.update_nav_buttons()
 
     def _display_pair(self, pair):
-        print('[DEBUG] _display_pair called, request_len=', len(pair.request_text or ''))
+
         self.request_text.delete("1.0", tk.END)
         self.response_text.delete("1.0", tk.END)
         self.request_text.insert(tk.END, pair.request_text)
@@ -266,7 +266,6 @@ class Application(tk.Tk):
             self.search_counter.config(text="0 / 0")
             return
 
-        print('[DEBUG] perform_search -> first result (live)')
         self.go_to_search_result(0, move_focus=False)
 
     def go_to_search_result(self, index, move_focus=True):
@@ -316,9 +315,8 @@ class Application(tk.Tk):
 
 
     def _apply_search_highlight(self, field, start, end, move_focus):
-        print('[DEBUG] _apply_search_highlight called, start=', start, 'end=', end)
+
         widget = self.request_text if field == "request" else self.response_text
-        print('[DEBUG] widget text length before highlight=', len(widget.get('1.0', 'end-1c')))
 
         if move_focus:
             widget.focus_set()
