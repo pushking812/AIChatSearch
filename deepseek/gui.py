@@ -259,20 +259,32 @@ class Application(tk.Tk):
         self.tree_item_map = {}
 
         for chat in self.current_selected_chats:
-            for pair in chat.get_pairs():
-                # Добавляем '*' к номеру, если пара изменена
+            pairs = list(chat.get_pairs())
+            if not pairs:
+                continue
+            parent_text = f"{chat.title} ({len(pairs)} msgs / 0 matches)"
+            parent_id = self.tree.insert("", "end", text=parent_text)
+            for pair in pairs:
                 idx_display = str(pair.index) + ('*' if pair.modified else '')
                 item_id = self.tree.insert(
-                    "",
+                    parent_id,
                     "end",
                     values=(
-                        chat.title,
                         idx_display,
                         pair.request_text[:30],
                         pair.response_text[:30],
                     ),
                 )
                 self.tree_item_map[item_id] = (chat, pair)
+                # Добавляем '*' к номеру, если пара изменена
+                    "",
+                    "end",
+                    values=(
+                        chat.title,
+                        pair.request_text[:30],
+                        pair.response_text[:30],
+                    ),
+                )
 
         self.position_label.config(text="")
         self.update_nav_buttons()
@@ -346,13 +358,29 @@ class Application(tk.Tk):
         field = self.search_field_var.get()
 
         for chat in self.current_selected_chats:
+            pairs = list(chat.get_pairs())
+            if not pairs:
+                continue
+            parent_text = f"{chat.title} ({len(pairs)} msgs / 0 matches)"
+            parent_id = self.tree.insert("", "end", text=parent_text)
+            for pair in pairs:
+                idx_display = str(pair.index) + ('*' if pair.modified else '')
+                item_id = self.tree.insert(
+                    parent_id,
+                    "end",
+                    values=(
+                        idx_display,
+                        pair.request_text[:30],
+                        pair.response_text[:30],
+                    ),
+                )
+                self.tree_item_map[item_id] = (chat, pair)
             results = self.controller.search_with_positions(chat, query, field)
             self.search_results.extend(results)
 
         # Rebuild TreeView with found pairs only
         for item in self.tree.get_children():
             self.tree.delete(item)
-        self.tree_item_map = {}
 
         unique_pairs = []
 
@@ -361,18 +389,14 @@ class Application(tk.Tk):
                 unique_pairs.append((chat, pair))
 
         for chat, pair in unique_pairs:
-            idx_display = str(pair.index) + ('*' if pair.modified else '')
-            item_id = self.tree.insert(
                 "",
                 "end",
                 values=(
                     chat.title,
-                    idx_display,
                     pair.request_text[:30],
                     pair.response_text[:30],
                 ),
             )
-            self.tree_item_map[item_id] = (chat, pair)
 
         if not self.search_results:
             self.search_counter.config(text="0 / 0")
