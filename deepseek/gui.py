@@ -196,42 +196,38 @@ class Application(tk.Tk):
 
     # ---------------- TREE ----------------
 
-    def on_chat_select(self, event=None):
-        indices = self.chat_listbox.curselection()
 
-        if not indices:
-            return
-
-        filtered = self.controller.get_filtered_chats()
-
-        self.current_selected_chats = [
-            filtered[i]
-            for i in indices
-            if i < len(filtered)
-        ]
-
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-
-        self.tree_item_map = {}
-
-        for chat in self.current_selected_chats:
-            for pair in chat.get_pairs():
-                item_id = self.tree.insert(
-                    "",
-                    "end",
-                    values=(
-                        chat.title,
-                        pair.index,
-                        pair.request_text[:30],
-                        pair.response_text[:30],
-                    ),
-                )
-                self.tree_item_map[item_id] = (chat, pair)
-
-        self.position_label.config(text="")
-        self.update_nav_buttons()
-
+        if not self.search_var.get().strip():  # if search string is empty
+            # Display all messages for selected chats
+            for chat in self.current_selected_chats:
+                for pair in chat.get_pairs():
+                    item_id = self.tree.insert(
+                        "",
+                        "end",
+                        values=(
+                            chat.title,
+                            pair.index,
+                            pair.request_text[:30],
+                            pair.response_text[:30],
+                        ),
+                    )
+                    self.tree_item_map[item_id] = (chat, pair)
+        else:
+            # Filter messages based on search query
+            for chat in self.current_selected_chats:
+                for pair in chat.get_pairs():
+                    if self.search_var.get().lower() in pair.request_text.lower() or                         self.search_var.get().lower() in pair.response_text.lower():
+                        item_id = self.tree.insert(
+                            "",
+                            "end",
+                            values=(
+                                chat.title,
+                                pair.index,
+                                pair.request_text[:30],
+                                pair.response_text[:30],
+                            ),
+                        )
+                        self.tree_item_map[item_id] = (chat, pair)
     def on_tree_select(self, event=None):
         if self._internal_tree_update:
             return
