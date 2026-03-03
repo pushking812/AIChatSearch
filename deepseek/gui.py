@@ -64,7 +64,7 @@ class Application(tk.Tk):
         self.chat_filter_entry.bind("<KeyRelease>", self.filter_chats)
 
 
-        self.chat_listbox = tk.Listbox(left_frame)
+        self.chat_listbox = tk.Listbox(left_frame, selectmode=tk.EXTENDED)
         self.chat_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0), pady=5)
 
         chat_scrollbar = tk.Scrollbar(left_frame, command=self.chat_listbox.yview)
@@ -421,3 +421,19 @@ class Application(tk.Tk):
 
         for chat in self.filtered_chats:
             self.chat_listbox.insert(tk.END, chat.title)
+
+
+    def select_all_chats(self):
+        self.chat_listbox.select_set(0, tk.END)
+        self.update_selected_chats()
+
+    def clear_chat_selection(self):
+        self.chat_listbox.selection_clear(0, tk.END)
+        self.selected_chats = []
+
+    def update_selected_chats(self):
+        indices = self.chat_listbox.curselection()
+        self.selected_chats = [
+            self.filtered_chats[i] for i in indices
+            if i < len(self.filtered_chats)
+        ]
