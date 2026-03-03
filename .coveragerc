@@ -1,3 +1,5 @@
 [run]
 omit =
     */deepseek/gui.py
+	*/deepseek/gui_components/*
+	*/deepseek/config/*
