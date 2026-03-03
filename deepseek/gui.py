@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox
+from tkinter import ttk
 
 from . import model
 
@@ -73,6 +74,40 @@ class Application(tk.Tk):
 
         top_label = tk.Label(top_frame, text="Сообщения", font=("Arial", 12, "bold"))
         top_label.pack(anchor="w", padx=5, pady=5)
+
+        # --- Search Frame ---
+        search_frame = tk.Frame(top_frame)
+        search_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
+
+        self.search_var = tk.StringVar()
+        self.search_field_var = tk.StringVar(value="Запрос")
+
+        self.search_entry = tk.Entry(search_frame, textvariable=self.search_var)
+        self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+
+        self.search_combobox = ttk.Combobox(
+            search_frame,
+            textvariable=self.search_field_var,
+            values=["Название чата", "Запрос", "Ответ"],
+            state="readonly",
+            width=18
+        )
+        self.search_combobox.pack(side=tk.LEFT, padx=(0, 5))
+
+        self.search_button = tk.Button(
+            search_frame,
+            text="Найти",
+            command=self.search_current_chat
+        )
+        self.search_button.pack(side=tk.LEFT, padx=(0, 5))
+
+        self.reset_button = tk.Button(
+            search_frame,
+            text="Сбросить",
+            command=self.reset_search
+        )
+        self.reset_button.pack(side=tk.LEFT)
+
 
         self.pair_listbox = tk.Listbox(top_frame)
         self.pair_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0), pady=5)
@@ -210,6 +245,52 @@ class Application(tk.Tk):
 
 
 
+
+
+    # ---------------- SEARCH ----------------
+
+    def search_current_chat(self):
+        if not self.current_chat:
+            return
+
+        query = self.search_var.get().strip().lower()
+        field = self.search_field_var.get()
+
+        if not query:
+            self.reset_search()
+            return
+
+        if field == "Название чата":
+            if query in self.current_chat.title.lower():
+                self.current_pairs = self.current_chat.get_pairs()
+            else:
+                self.current_pairs = []
+        else:
+            filtered = []
+            for pair in self.current_chat.get_pairs():
+                if field == "Запрос":
+                    if query in pair.request_text.lower():
+                        filtered.append(pair)
+                elif field == "Ответ":
+                    if query in pair.response_text.lower():
+                        filtered.append(pair)
+
+            self.current_pairs = filtered
+
+        self.current_pair_index = None
+        self._update_pair_list()
+        self.update_nav_buttons()
+
+    def reset_search(self):
+        if not self.current_chat:
+            return
+
+        self.search_var.set("")
+        self.current_pairs = self.current_chat.get_pairs()
+        self.current_pair_index = None
+        self._update_pair_list()
+        self.update_nav_buttons()
+
     # ---------------- NAVIGATION ----------------
         if not self.current_pairs or self.current_pair_index is None:
             self.prev_button.config(state=tk.DISABLED)
@@ -226,6 +307,52 @@ class Application(tk.Tk):
         else:
             self.next_button.config(state=tk.NORMAL)
 
+
+
+
+    # ---------------- SEARCH ----------------
+
+    def search_current_chat(self):
+        if not self.current_chat:
+            return
+
+        query = self.search_var.get().strip().lower()
+        field = self.search_field_var.get()
+
+        if not query:
+            self.reset_search()
+            return
+
+        if field == "Название чата":
+            if query in self.current_chat.title.lower():
+                self.current_pairs = self.current_chat.get_pairs()
+            else:
+                self.current_pairs = []
+        else:
+            filtered = []
+            for pair in self.current_chat.get_pairs():
+                if field == "Запрос":
+                    if query in pair.request_text.lower():
+                        filtered.append(pair)
+                elif field == "Ответ":
+                    if query in pair.response_text.lower():
+                        filtered.append(pair)
+
+            self.current_pairs = filtered
+
+        self.current_pair_index = None
+        self._update_pair_list()
+        self.update_nav_buttons()
+
+    def reset_search(self):
+        if not self.current_chat:
+            return
+
+        self.search_var.set("")
+        self.current_pairs = self.current_chat.get_pairs()
+        self.current_pair_index = None
+        self._update_pair_list()
+        self.update_nav_buttons()
 
     # ---------------- NAVIGATION ----------------
 
