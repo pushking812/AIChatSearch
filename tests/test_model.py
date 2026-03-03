@@ -126,3 +126,100 @@ def test_parse_datetime():
     dt = parse_datetime("2024-01-01T10:00:00+02:00")
     assert dt.year == 2024
     assert dt.tzinfo is None
+
+import json
+import zipfile
+import pytest
+from deepseek.model import MessagePair, Chat, load_from_zip
+
+
+# ---------- ADDITIONAL MODEL COVERAGE TESTS ----------
+
+def test_messagepair_repr():
+    pair = MessagePair("1", "req", "resp", None, None, "n1", "n2")
+    r = repr(pair)
+    assert "MessagePair" in r
+    assert "index=1" in r
+
+
+def test_chat_repr_and_get_pairs():
+    chat = Chat("1", "Title", None, None)
+    assert chat.get_pairs() == []
+    r = repr(chat)
+    assert "Chat" in r
+    assert "Title" in r
+
+
+def test_load_from_zip_invalid_zip(tmp_path):
+    p = tmp_path / "bad.zip"
+    p.write_text("not a zip")
+    with pytest.raises(ValueError):
+        load_from_zip(str(p))
+
+
+def test_load_from_zip_invalid_raw_data(tmp_path):
+    zip_path = tmp_path / "test.zip"
+    with zipfile.ZipFile(zip_path, "w") as z:
+        z.writestr("conversations.json", json.dumps({}))
+    with pytest.raises(ValueError):
+        load_from_zip(str(zip_path))
+
+
+def test_load_from_zip_invalid_mapping(tmp_path):
+    data = [{
+        "id": "1",
+        "title": "Chat",
+        "inserted_at": None,
+        "updated_at": None,
+        "mapping": []
+    }]
+
+    zip_path = tmp_path / "test2.zip"
+    with zipfile.ZipFile(zip_path, "w") as z:
+        z.writestr("conversations.json", json.dumps(data))
+
+    chats = load_from_zip(str(zip_path))
+    assert len(chats) == 1
+    assert chats[0].get_pairs() == []
+
+
+def test_load_from_zip_empty_fragments(tmp_path):
+    data = [{
+        "id": "1",
+        "title": "Chat",
+        "inserted_at": None,
+        "updated_at": None,
+        "mapping": {
+            "node1": {
+                "message": {
+                    "fragments": [],
+                    "inserted_at": None
+                }
+            }
+        }
+    }]
+
+    zip_path = tmp_path / "test3.zip"
+    with zipfile.ZipFile(zip_path, "w") as z:
+        z.writestr("conversations.json", json.dumps(data))
+
+    chats = load_from_zip(str(zip_path))
+    assert len(chats) == 1
+    assert chats[0].get_pairs() == []
+
+
+def test_load_from_zip_exception_branch(tmp_path):
+    data = [{
+        "id": "1",
+        "title": "Chat",
+        "inserted_at": None,
+        "updated_at": None,
+        "mapping": None
+    }]
+
+    zip_path = tmp_path / "test4.zip"
+    with zipfile.ZipFile(zip_path, "w") as z:
+        z.writestr("conversations.json", json.dumps(data))
+
+    chats = load_from_zip(str(zip_path))
+    assert isinstance(chats, list)
