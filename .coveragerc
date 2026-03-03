@@ -1,10 +1,3 @@
 [run]
 omit =
-    tests/*
-    deepseek/gui.py
-    */__init__.py
-
-[report]
-exclude_lines =
-    if __name__ == .__main__.:
-    pragma: no cover
+    */deepseek/gui.py

@@ -144,3 +144,23 @@ class ChatController:
             self.current_index_in_chat + 1,
             len(self.current_chat_pairs),
         )
+
+
+    def get_current_pair(self):
+        """
+        Возвращает текущую выбранную пару сообщений.
+        """
+        if self.current_chat is None:
+            return None
+
+        if self.current_index_in_chat is None:
+            return None
+
+        if self.current_index_in_chat < 0:
+            return None
+
+        if self.current_index_in_chat >= len(self.current_chat_pairs):
+            return None
+
+        return self.current_chat_pairs[self.current_index_in_chat]
+
