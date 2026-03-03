@@ -206,3 +206,58 @@ def test_get_position_info_without_selection():
     assert title is None
     assert position is None
     assert total is None
+
+
+# ---------- ADDITIONAL COVERAGE TESTS ----------
+
+def test_reset_search_state_initializes_attrs():
+    controller = ChatController()
+    controller._reset_search_state()
+    assert controller.visible_pairs == []
+    assert controller.search_active is False
+
+
+def test_search_with_none_chat():
+    controller = ChatController()
+    assert controller.search(None, "a", "Запрос") == []
+
+
+def test_search_with_positions_none_chat():
+    controller = ChatController()
+    assert controller.search_with_positions(None, "a", "Запрос") == []
+
+
+def test_search_with_positions_empty_query():
+    controller = ChatController()
+    chat = DummyChat("Chat", [])
+    assert controller.search_with_positions(chat, "", "Запрос") == []
+
+
+def test_search_with_positions_response_field():
+    controller = ChatController()
+    pair = DummyPair("req", "hello world")
+    chat = DummyChat("Chat", [pair])
+
+    results = controller.search_with_positions(chat, "hello", "Ответ")
+    assert len(results) == 1
+    found_chat, found_pair, field, start, end = results[0]
+
+    assert found_chat is chat
+    assert found_pair is pair
+    assert field == "response"
+    assert start == 0
+    assert end == 5
+
+
+def test_prev_pair_at_start_returns_none():
+    controller = ChatController()
+    pair = DummyPair("r", "a")
+    chat = DummyChat("Chat", [pair])
+
+    controller.select_pair(chat, pair)
+    assert controller.prev_pair() is None
+
+
+def test_get_nav_state_when_none():
+    controller = ChatController()
+    assert controller.get_nav_state() == (False, False)
