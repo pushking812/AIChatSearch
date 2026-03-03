@@ -37,11 +37,15 @@ class ChatController:
 
         self._reset_navigation()
 
-    # ---------- SEARCH (within selected chat) ----------
+    # ---------- SEARCH ----------
 
     def search(self, chat, query, field):
         query = (query or "").lower().strip()
-        if not query or chat is None:
+
+        if not chat:
+            return []
+
+        if not query:
             return chat.get_pairs()
 
         result = []
