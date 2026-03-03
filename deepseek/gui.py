@@ -21,6 +21,7 @@ class Application(tk.Tk):
         self.current_chat = None
         self.current_pairs = []
         self.current_pair = None
+        self.current_pair_index = None
         self.archive_path = None
         self.raw_data = None
 
@@ -116,6 +117,21 @@ class Application(tk.Tk):
 
         self.response_text.config(yscrollcommand=response_scrollbar.set)
 
+        # --- Navigation controls ---
+        nav_frame = tk.Frame(bottom_frame)
+        nav_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
+
+        self.prev_button = tk.Button(
+            nav_frame, text="← Предыдущая", command=self.prev_pair, state=tk.DISABLED
+        )
+        self.prev_button.pack(side=tk.LEFT, padx=5)
+
+        self.next_button = tk.Button(
+            nav_frame, text="Следующая →", command=self.next_pair, state=tk.DISABLED
+        )
+        self.next_button.pack(side=tk.LEFT, padx=5)
+
+
     # ---------------- LOGIC ----------------
 
     def open_archive(self):
@@ -156,6 +172,10 @@ class Application(tk.Tk):
         self.current_pairs = self.current_chat.get_pairs()
 
         self._update_pair_list()
+        self.current_pair_index = None
+        self.update_nav_buttons()
+        self.current_pair_index = None
+        self.update_nav_buttons()
 
     def _update_pair_list(self):
         self.pair_listbox.delete(0, tk.END)
@@ -173,9 +193,13 @@ class Application(tk.Tk):
             return
 
         index = selection[0]
+        self.current_pair_index = index
+        self.current_pair_index = index
         self.current_pair = self.current_pairs[index]
 
         self._display_pair(self.current_pair)
+        self.update_nav_buttons()
+        self.update_nav_buttons()
 
     def _display_pair(self, pair):
         self.request_text.delete("1.0", tk.END)
@@ -184,30 +208,10 @@ class Application(tk.Tk):
         self.request_text.insert(tk.END, pair.request_text)
         self.response_text.insert(tk.END, pair.response_text)
 
-    def prev_pair(self):
-        if not hasattr(self, "current_pairs") or not self.current_pairs:
-            return
-        if self.current_pair_index > 0:
-            self.current_pair_index -= 1
-            self.pairs_listbox.selection_clear(0, tk.END)
-            self.pairs_listbox.selection_set(self.current_pair_index)
-            self.pairs_listbox.activate(self.current_pair_index)
-            self.display_pair_by_index(self.current_pair_index)
-            self.update_nav_buttons()
 
-    def next_pair(self):
-        if not hasattr(self, "current_pairs") or not self.current_pairs:
-            return
-        if self.current_pair_index < len(self.current_pairs) - 1:
-            self.current_pair_index += 1
-            self.pairs_listbox.selection_clear(0, tk.END)
-            self.pairs_listbox.selection_set(self.current_pair_index)
-            self.pairs_listbox.activate(self.current_pair_index)
-            self.display_pair_by_index(self.current_pair_index)
-            self.update_nav_buttons()
 
-    def update_nav_buttons(self):
-        if not hasattr(self, "current_pairs") or not self.current_pairs:
+    # ---------------- NAVIGATION ----------------
+        if not self.current_pairs or self.current_pair_index is None:
             self.prev_button.config(state=tk.DISABLED)
             self.next_button.config(state=tk.DISABLED)
             return
@@ -222,19 +226,44 @@ class Application(tk.Tk):
         else:
             self.next_button.config(state=tk.NORMAL)
 
-    def display_pair_by_index(self, index):
-        if index < 0 or index >= len(self.current_pairs):
+
+    # ---------------- NAVIGATION ----------------
+
+    def prev_pair(self):
+        if self.current_pair_index is None:
             return
-        pair = self.current_pairs[index]
-        self.current_pair = pair
+        if self.current_pair_index > 0:
+            self.current_pair_index -= 1
+            self._select_pair(self.current_pair_index)
 
-        self.request_text.delete("1.0", tk.END)
-        self.response_text.delete("1.0", tk.END)
+    def next_pair(self):
+        if self.current_pair_index is None:
+            return
+        if self.current_pair_index < len(self.current_pairs) - 1:
+            self.current_pair_index += 1
+            self._select_pair(self.current_pair_index)
 
-        self.request_text.insert(tk.END, pair.request_text)
-        self.response_text.insert(tk.END, pair.response_text)
+    def _select_pair(self, index):
+        self.pair_listbox.selection_clear(0, tk.END)
+        self.pair_listbox.selection_set(index)
+        self.pair_listbox.activate(index)
 
-        # Optional search highlight hook (safe even if search not implemented yet)
-        if hasattr(self, "highlight_search"):
-            self.highlight_search()
+        self.current_pair = self.current_pairs[index]
+        self._display_pair(self.current_pair)
+        self.update_nav_buttons()
 
+    def update_nav_buttons(self):
+        if not self.current_pairs or self.current_pair_index is None:
+            self.prev_button.config(state=tk.DISABLED)
+            self.next_button.config(state=tk.DISABLED)
+            return
+
+        if self.current_pair_index <= 0:
+            self.prev_button.config(state=tk.DISABLED)
+        else:
+            self.prev_button.config(state=tk.NORMAL)
+
+        if self.current_pair_index >= len(self.current_pairs) - 1:
+            self.next_button.config(state=tk.DISABLED)
+        else:
+            self.next_button.config(state=tk.NORMAL)

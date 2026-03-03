@@ -1,0 +1,6 @@
+# Runtime dependencies
+# (only standard library is used — no external packages required)
+
+# Development / testing
+pytest>=7.0
+pytest-cov>=4.0
