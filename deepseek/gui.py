@@ -23,7 +23,6 @@ class Application(tk.Tk):
         self.filtered_chats = []
         self.selected_chats = []
         self.visible_pairs = []
-        print(f"[DEBUG] selected_chats count: {len(self.selected_chats)}")
 
         self.current_pair = None
         self.current_pair_index = None
@@ -154,20 +153,22 @@ class Application(tk.Tk):
 
     # ---------------- CHAT SELECTION ----------------
 
-    def on_chat_select(self, event=None):
-        print(f"[DEBUG] on_chat_select called")
+        def on_chat_select(self, event=None):
         indices = self.chat_listbox.curselection()
-        print(f"[DEBUG] selected indices: {indices}")
+
+        # Ignore false deselection event caused by focus change
+        if not indices and self.selected_chats:
+            return
+
         self.selected_chats = [
             self.filtered_chats[i] for i in indices
             if i < len(self.filtered_chats)
         ]
+
         self._rebuild_visible_pairs()
 
     def _rebuild_visible_pairs(self):
-        print(f"[DEBUG] _rebuild_visible_pairs called")
         self.visible_pairs = []
-        print(f"[DEBUG] selected_chats count: {len(self.selected_chats)}")
         for chat in self.selected_chats:
             for pair in chat.get_pairs():
                 self.visible_pairs.append((chat, pair))
@@ -178,7 +179,6 @@ class Application(tk.Tk):
     # ---------------- PAIR LIST ----------------
 
     def _update_pair_list(self):
-        print(f"[DEBUG] _update_pair_list called, visible_pairs={len(self.visible_pairs)}")
         self.pair_listbox.delete(0, tk.END)
         for chat, pair in self.visible_pairs:
             text = (
@@ -189,9 +189,7 @@ class Application(tk.Tk):
             self.pair_listbox.insert(tk.END, text)
 
     def on_pair_select(self, event=None):
-        print(f"[DEBUG] on_pair_select triggered")
         selection = self.pair_listbox.curselection()
-        print(f"[DEBUG] pair selection: {selection}")
         if not selection:
             return
 
@@ -214,9 +212,7 @@ class Application(tk.Tk):
     # ---------------- SEARCH ----------------
 
     def search_current_chat(self):
-        print(f"[DEBUG] search_current_chat called")
         query = self.search_var.get().strip().lower()
-        print(f"[DEBUG] search query: '{query}'")
         field = self.search_field_var.get()
 
         if not query:
@@ -285,9 +281,7 @@ class Application(tk.Tk):
     # ---------------- FILTER ----------------
 
     def filter_chats(self, event=None):
-        print(f"[DEBUG] filter_chats called")
         query = self.chat_filter_var.get().lower().strip()
-        print(f"[DEBUG] filter query: '{query}'")
         if not query:
             self.filtered_chats = self.chats[:]
         else:
@@ -300,7 +294,6 @@ class Application(tk.Tk):
         # Reset selections after filtering
         self.selected_chats = []
         self.visible_pairs = []
-        print(f"[DEBUG] selected_chats count: {len(self.selected_chats)}")
         self.current_pair_index = None
         self.pair_listbox.delete(0, tk.END)
         self.update_nav_buttons()
