@@ -203,6 +203,7 @@ class Application(tk.Tk):
             self.tree_item_map[item_id] = (chat, pair)
 
     def on_tree_select(self, event=None):
+        print(f"[DEBUG] on_tree_select ENTER | current_pair_index(before)={self.current_pair_index}")
         selection = self.tree.selection()
         print(f"[DEBUG] on_tree_select selection={selection}")
         if not selection:
@@ -215,7 +216,21 @@ class Application(tk.Tk):
             return
 
         chat, pair = chat_pair
-        print(f"[DEBUG] Selected pair index={pair.index}")
+
+        # Synchronize index with visible_pairs
+        found_index = None
+        for i, (c, p) in enumerate(self.visible_pairs):
+            if p is pair:
+                found_index = i
+                break
+
+        if found_index is None:
+            print("[DEBUG] Pair not found in visible_pairs")
+            return
+
+        self.current_pair_index = found_index
+        print(f"[DEBUG] current_pair_index set to {self.current_pair_index}")
+
         self.current_pair = pair
         self._display_pair(pair)
         self.update_nav_buttons()
