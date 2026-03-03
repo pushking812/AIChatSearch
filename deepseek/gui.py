@@ -30,6 +30,11 @@ class Application(tk.Tk):
         self._create_menu()
         self._create_layout()
 
+        self._last_debug_selection = ()
+        self._debug_bind_listbox()
+        self.after(200, self._poll_selection_debug)
+
+
     # ---------------- MENU ----------------
 
     def _create_menu(self):
@@ -63,9 +68,6 @@ class Application(tk.Tk):
         self.chat_listbox.bind("<ButtonRelease-1>", self.on_chat_select)
         self.chat_listbox.bind("<Shift-ButtonRelease-1>", self.on_chat_select)
         self.chat_listbox.bind("<Control-ButtonRelease-1>", self.on_chat_select)
-        self._debug_bind_listbox()
-        self._last_debug_selection = ()
-        self.after(200, self._poll_selection_debug)
 
         right_paned = tk.PanedWindow(main_paned, orient=tk.VERTICAL)
         main_paned.add(right_paned)
@@ -277,3 +279,37 @@ class Application(tk.Tk):
             self.position_label.config(
                 text=f"Чат: {title} | Сообщение {index} из {total}"
             )
+
+    # ---------------- DEBUG INSTRUMENTATION ----------------
+
+    def _debug_bind_listbox(self):
+        lb = self.chat_listbox
+
+        lb.bind("<<ListboxSelect>>", self._debug_event, add="+")
+        lb.bind("<ButtonPress-1>", self._debug_event, add="+")
+        lb.bind("<ButtonRelease-1>", self._debug_event, add="+")
+        lb.bind("<Shift-ButtonRelease-1>", self._debug_event, add="+")
+        lb.bind("<Control-ButtonRelease-1>", self._debug_event, add="+")
+        lb.bind("<FocusIn>", self._debug_event, add="+")
+        lb.bind("<FocusOut>", self._debug_event, add="+")
+        lb.bind("<KeyRelease>", self._debug_event, add="+")
+
+    def _debug_event(self, event):
+        print("DEBUG EVENT")
+        print("  event type:", event.type)
+        print("  event widget:", event.widget)
+        print("  current selection:", self.chat_listbox.curselection())
+        print("  focus_get():", self.focus_get())
+        print("-" * 50)
+
+    def _poll_selection_debug(self):
+        current = self.chat_listbox.curselection()
+        if current != getattr(self, "_last_debug_selection", ()):
+            print("POLL DETECTED SELECTION CHANGE")
+            print("  from:", getattr(self, "_last_debug_selection", ()))
+            print("  to  :", current)
+            print("  focus_get():", self.focus_get())
+            print("=" * 50)
+            self._last_debug_selection = current
+
+        self.after(200, self._poll_selection_debug)
