@@ -46,7 +46,15 @@ class Application(tk.Tk):
     # ---------------- LAYOUT ----------------
 
     def _create_layout(self):
-        main_paned = tk.PanedWindow(self, orient=tk.HORIZONTAL)
+        main_paned = tk.PanedWindow(
+            self,
+            orient=tk.HORIZONTAL,
+            sashrelief=tk.RAISED,
+            sashwidth=6,
+            bd=1,
+            relief=tk.SUNKEN,
+            showhandle=True,
+        )
         main_paned.pack(fill=tk.BOTH, expand=True)
 
         left_frame = tk.Frame(main_paned)
