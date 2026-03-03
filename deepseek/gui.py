@@ -60,7 +60,9 @@ class Application(tk.Tk):
         scrollbar = tk.Scrollbar(left_frame, command=self.chat_listbox.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.chat_listbox.config(yscrollcommand=scrollbar.set)
-        self.chat_listbox.bind("<<ListboxSelect>>", self.on_chat_select)
+        self.chat_listbox.bind("<ButtonRelease-1>", self.on_chat_select)
+        self.chat_listbox.bind("<Shift-ButtonRelease-1>", self.on_chat_select)
+        self.chat_listbox.bind("<Control-ButtonRelease-1>", self.on_chat_select)
 
         right_paned = tk.PanedWindow(main_paned, orient=tk.VERTICAL)
         main_paned.add(right_paned)
@@ -154,6 +156,10 @@ class Application(tk.Tk):
 
     def on_chat_select(self, event=None):
         indices = self.chat_listbox.curselection()
+
+        if not indices:
+            return
+
         filtered = self.controller.get_filtered_chats()
 
         self.current_selected_chats = [
