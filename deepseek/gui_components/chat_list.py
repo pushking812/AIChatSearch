@@ -1,4 +1,6 @@
-﻿"""Панель списка чатов с фильтрацией и множественным выбором."""
+﻿# deepseek/gui_components/chat_list.py
+
+"""Панель списка чатов с фильтрацией и множественным выбором."""
 
 import tkinter as tk
 from tkinter import messagebox

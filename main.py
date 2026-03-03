@@ -1,5 +1,5 @@
 # main.py
-from .gui import run_gui
+from deepseek.gui import run_gui
 
 
 def main():

@@ -1,4 +1,6 @@
-﻿"""Главный класс приложения, координирующий работу всех компонентов."""
+﻿# deepseek/gui_components/application.py
+
+"""Главный класс приложения, координирующий работу всех компонентов."""
 
 from tkinter import ttk
 import tkinter as tk

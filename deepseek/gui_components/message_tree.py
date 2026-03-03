@@ -1,4 +1,6 @@
-﻿"""Панель дерева сообщений с отображением чатов и пар."""
+﻿# deepseek/gui_components/message_tree.py
+
+"""Панель дерева сообщений с отображением чатов и пар."""
 
 import tkinter as tk
 from tkinter import ttk

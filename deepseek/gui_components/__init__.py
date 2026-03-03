@@ -1,4 +1,6 @@
-﻿"""Пакет компонентов графического интерфейса DeepSeek."""
+﻿# deepseek/gui_components/__init__.py
+
+"""Пакет компонентов графического интерфейса DeepSeek."""
 
 from .application import Application
 

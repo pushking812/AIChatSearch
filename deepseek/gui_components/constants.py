@@ -1,4 +1,6 @@
-﻿"""Константы, используемые в GUI."""
+﻿# deepseek/gui_components/constants.py
+
+"""Константы, используемые в GUI."""
 
 # Минимальные размеры панелей
 MIN_LEFT_WIDTH = 150

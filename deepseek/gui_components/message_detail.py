@@ -1,4 +1,6 @@
-﻿"""Панель отображения и редактирования текста сообщения."""
+﻿# deepseek/gui_components/message_detail.py
+
+"""Панель отображения и редактирования текста сообщения."""
 
 import tkinter as tk
 from . import constants
