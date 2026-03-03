@@ -199,8 +199,8 @@ class Application(tk.Tk):
         self.next_button.pack(side=tk.LEFT, padx=5)
 
         # ---------- Добавленная кнопка "Сохранить изменения" ----------
-        self.save_button = tk.Button(bottom_frame, text="Сохранить изменения", command=self.save_current_pair)
-        self.save_button.pack(pady=5)
+        # self.save_button = tk.Button(bottom_frame, text="Сохранить изменения", command=self.save_current_pair)
+        # self.save_button.pack(pady=5)
 
     # ---------------- DATA ----------------
 
