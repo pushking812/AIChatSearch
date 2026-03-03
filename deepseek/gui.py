@@ -259,21 +259,24 @@ class Application(tk.Tk):
         self.tree_item_map = {}
 
         for chat in self.current_selected_chats:
-            for pair in chat.get_pairs():
-                # Добавляем '*' к номеру, если пара изменена
+            pairs = list(chat.get_pairs())
+            if not pairs:
+                continue
+            parent_text = f"{chat.title} ({len(pairs)} msgs / 0 matches)"
+            parent_id = self.tree.insert("", "end", text=parent_text)
+
+            for pair in pairs:
                 idx_display = str(pair.index) + ('*' if pair.modified else '')
                 item_id = self.tree.insert(
-                    "",
+                    parent_id,
                     "end",
                     values=(
-                        chat.title,
                         idx_display,
                         pair.request_text[:30],
                         pair.response_text[:30],
                     ),
                 )
                 self.tree_item_map[item_id] = (chat, pair)
-
         self.position_label.config(text="")
         self.update_nav_buttons()
 
@@ -346,118 +349,24 @@ class Application(tk.Tk):
         field = self.search_field_var.get()
 
         for chat in self.current_selected_chats:
-            results = self.controller.search_with_positions(chat, query, field)
-            self.search_results.extend(results)
+            pairs = list(chat.get_pairs())
+            if not pairs:
+                continue
+            parent_text = f"{chat.title} ({len(pairs)} msgs / 0 matches)"
+            parent_id = self.tree.insert("", "end", text=parent_text)
 
-        # Rebuild TreeView with found pairs only
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-        self.tree_item_map = {}
-
-        unique_pairs = []
-
-        for chat, pair, _, _, _ in self.search_results:
-            if (chat, pair) not in unique_pairs:
-                unique_pairs.append((chat, pair))
-
-        for chat, pair in unique_pairs:
-            idx_display = str(pair.index) + ('*' if pair.modified else '')
-            item_id = self.tree.insert(
-                "",
-                "end",
-                values=(
-                    chat.title,
-                    idx_display,
-                    pair.request_text[:30],
-                    pair.response_text[:30],
-                ),
-            )
-            self.tree_item_map[item_id] = (chat, pair)
-
-        if not self.search_results:
-            self.search_counter.config(text="0 / 0")
-            return
-
-        self.go_to_search_result(0, move_focus=False)
-
-    def go_to_search_result(self, index, move_focus=True):
-        total = len(self.search_results)
-        if total == 0:
-            return
-
-        self.current_result_index = index % total
-        chat, pair, field, start, end = self.search_results[self.current_result_index]
-
-        item_id = None
-        for iid, value in self.tree_item_map.items():
-            if value == (chat, pair):
-                item_id = iid
-                break
-
-        if item_id:
-            if item_id not in self.tree.selection():
-                self._internal_tree_update = True
-                self.tree.selection_set(item_id)
-                self.tree.see(item_id)
-                self._internal_tree_update = False
-            else:
-                # Message already selected – ensure text is displayed
-                self._display_pair(pair)
-
-        self.controller.select_pair(chat, pair)
-
-        # Defer highlight until after Treeview selection event completes
-        self.after_idle(
-            lambda f=field, s=start, e=end, mf=move_focus: 
-                self._apply_search_highlight(f, s, e, mf)
-        )
-
-        self.search_counter.config(
-            text=f"{self.current_result_index + 1} / {total}"
-        )
-
-    def next_search_result(self):
-        if self.search_results:
-            self.go_to_search_result(self.current_result_index + 1, move_focus=True)
-
-    def prev_search_result(self):
-        if self.search_results:
-            self.go_to_search_result(self.current_result_index - 1, move_focus=True)
-
-    def _apply_search_highlight(self, field, start, end, move_focus):
-        widget = self.request_text if field == "request" else self.response_text
-
-        if move_focus:
-            widget.focus_set()
-
-        widget.tag_remove("search_match", "1.0", tk.END)
-        widget.tag_add("search_match", f"1.0 + {start} chars", f"1.0 + {end} chars")
-        widget.see(f"1.0 + {start} chars")
-
-    # ---------------- NAVIGATION ----------------
-
-    def prev_pair(self):
-        pair = self.controller.prev_pair()
-        if pair:
-            self._display_pair(pair)
-            self._update_position_label()
-            self.update_nav_buttons()
-
-    def next_pair(self):
-        pair = self.controller.next_pair()
-        if pair:
-            self._display_pair(pair)
-            self._update_position_label()
-            self.update_nav_buttons()
-
-    def update_nav_buttons(self):
-        can_prev, can_next = self.controller.get_nav_state()
-        self.prev_button.config(state=tk.NORMAL if can_prev else tk.DISABLED)
-        self.next_button.config(state=tk.NORMAL if can_next else tk.DISABLED)
-
-    def _update_position_label(self):
-        title, index, total = self.controller.get_position_info()
-        if title is None:
+            for pair in pairs:
+                idx_display = str(pair.index) + ('*' if pair.modified else '')
+                item_id = self.tree.insert(
+                    parent_id,
+                    "end",
+                    values=(
+                        idx_display,
+                        pair.request_text[:30],
+                        pair.response_text[:30],
+                    ),
+                )
+                self.tree_item_map[item_id] = (chat, pair)
             self.position_label.config(text="")
         else:
             self.position_label.config(
