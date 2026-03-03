@@ -220,41 +220,31 @@ class Application(tk.Tk):
 
     # ---------------- SEARCH ----------------
 
+    
     def search_current_chat(self):
         if not self.current_selected_chats:
             return
 
-        
-all_pairs = []
-print(f"[DEBUG] search_current_chat | selected_chats={len(self.current_selected_chats)}")
+        query = self.search_var.get()
+        if not query:
+            return
 
-for chat in self.current_selected_chats:
-    pairs = self.controller.search(chat, self.search_var.get())
-    print(f"[DEBUG] search_current_chat | chat={chat} | found={len(pairs)}")
-    for pair in pairs:
-        all_pairs.append((chat, pair))
+        aggregated_pairs = []
+        print(f"[DEBUG] search_current_chat | selected_chats={len(self.current_selected_chats)}")
 
-pairs = all_pairs
-print(f"[DEBUG] search_current_chat | total_found={len(pairs)}")
-, self.search_field_var.get())
+        for chat in self.current_selected_chats:
+            pairs = self.controller.search(chat, query)
+            print(f"[DEBUG] search_current_chat | chat={chat} | found={len(pairs)}")
+            for pair in pairs:
+                aggregated_pairs.append((chat, pair))
 
-        for item in self.tree.get_children():
-            self.tree.delete(item)
+        print(f"[DEBUG] search_current_chat | total_found={len(aggregated_pairs)}")
 
-        self.tree_item_map = {}
+        self.current_search_results = aggregated_pairs
+        self.current_pair_index = 0 if aggregated_pairs else None
 
-        for pair in pairs:
-            item_id = self.tree.insert(
-                "",
-                "end",
-                values=(
-                    chat.title,
-                    pair.index,
-                    pair.request_text[:30],
-                    pair.response_text[:30],
-                ),
-            )
-            self.tree_item_map[item_id] = (chat, pair)
+        self.display_visible_pairs()
+        self.update_nav_buttons()
 
     def reset_search(self):
         self.search_var.set("")
