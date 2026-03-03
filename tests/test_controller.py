@@ -157,3 +157,52 @@ def test_get_nav_state_and_position_info():
     assert title == "My Chat"
     assert position == 1
     assert total == 2
+
+# ---------- EXTRA COVERAGE ----------
+
+def test_search_by_chat_title():
+    controller = ChatController()
+
+    pair = DummyPair("req", "res")
+    chat = DummyChat("Special Title", [pair])
+
+    result = controller.search(chat, "special", "Название чата")
+    assert result == [pair]
+
+
+def test_search_with_positions_both_fields():
+    controller = ChatController()
+
+    pair = DummyPair("hello", "world")
+    chat = DummyChat("Chat", [pair])
+
+    results = controller.search_with_positions(chat, "o", "Все")
+
+    assert len(results) >= 1
+
+
+def test_select_pair_not_found():
+    controller = ChatController()
+
+    pair1 = DummyPair("a", "b")
+    pair2 = DummyPair("c", "d")
+    chat = DummyChat("Chat", [pair1])
+
+    result = controller.select_pair(chat, pair2)
+    assert result is None
+
+
+def test_navigation_when_none():
+    controller = ChatController()
+
+    assert controller.prev_pair() is None
+    assert controller.next_pair() is None
+
+
+def test_get_position_info_without_selection():
+    controller = ChatController()
+
+    title, position, total = controller.get_position_info()
+    assert title is None
+    assert position is None
+    assert total is None
