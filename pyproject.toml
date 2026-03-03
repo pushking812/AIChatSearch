@@ -1,0 +1,11 @@
+[project]
+name = "deepseek"
+version = "0.1.0"
+description = "DeepSeek Chat Archive Navigator"
+requires-python = ">=3.9"
+
+[project.scripts]
+deepseek = "deepseek.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
