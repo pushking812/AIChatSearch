@@ -338,41 +338,8 @@ class Application(tk.Tk):
         self.on_chat_select()
 
     def perform_search(self):
-        self.search_results = []
-        self.current_result_index = -1
-        query = self.search_var.get().strip()
-
-        if not self.current_selected_chats:
-            self.search_counter.config(text="0 / 0")
-            return
-
-        query = self.search_var.get().strip()
-        field = self.search_field_var.get()
-
-        for chat in self.current_selected_chats:
-            results = self.controller.search_with_positions(chat, query, field)
-            self.search_results.extend(results)
-
-        # Rebuild TreeView with found pairs only
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-        self.tree_item_map = {}
-
-        unique_pairs = []
-
-        for chat, pair, _, _, _ in self.search_results:
-            if (chat, pair) not in unique_pairs:
-                unique_pairs.append((chat, pair))
-
-        grouped = {}
-        for chat, pair, _, _, _ in self.search_results:
-            if chat not in grouped:
-                grouped[chat] = {'pairs': set(), 'matches': 0}
-            grouped[chat]['pairs'].add(pair)
-            grouped[chat]['matches'] += 1
-
         for chat, data in grouped.items():
-            pairs = list(data['pairs'])
+            pairs = sorted(data['pairs'], key=lambda p: p.index)
             matches = data['matches']
             parent_text = f"{chat.title} ({len(pairs)} msgs / {matches} matches)"
             parent_id = self.tree.insert("", "end", text=parent_text)
@@ -388,12 +355,6 @@ class Application(tk.Tk):
                     ),
                 )
                 self.tree_item_map[item_id] = (chat, pair)
-        if not self.search_results:
-            self.search_counter.config(text="0 / 0")
-            return
-
-        self.go_to_search_result(0, move_focus=False)
-
     def go_to_search_result(self, index, move_focus=True):
         total = len(self.search_results)
         if total == 0:
