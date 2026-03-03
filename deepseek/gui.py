@@ -115,7 +115,6 @@ class Application(tk.Tk):
         tree_scroll = tk.Scrollbar(top_frame, command=self.tree.yview)
         tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree.config(yscrollcommand=tree_scroll.set)
-        pair_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
         self.tree.bind('<<TreeviewSelect>>', self.on_tree_select)
 
