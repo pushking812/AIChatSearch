@@ -32,6 +32,10 @@ class Application(tk.Tk):
         self._create_layout()
         self._init_controllers()
 
+        # ---- НОВОЕ: загрузка сессии после создания контроллера ----
+        self.controller.load_session()
+        self._update_chat_list()          # обновить список чатов после загрузки
+
         # Восстановление состояния окна
         self.state_manager = WindowStateManager(self)
         self.after_idle(self.state_manager.load_and_apply)
@@ -251,6 +255,8 @@ class Application(tk.Tk):
                 self._update_chat_list()
                 # Можно показать сообщение о количестве добавленных чатов
                 messagebox.showinfo("Добавление архива", f"Добавлено {len(added)} новых чатов.")
+                # ---- НОВОЕ: автосохранение после добавления ----
+                self.controller.save_session()
             else:
                 messagebox.showinfo("Добавление архива", "Все чаты из этого архива уже загружены.")
         except Exception as e:
@@ -295,6 +301,8 @@ class Application(tk.Tk):
             current_pair.modified = True
             self.tree_panel.update_pair_item(current_pair)
             messagebox.showinfo("Сохранение", "Изменения сохранены.")
+            # ---- НОВОЕ: автосохранение после изменения ----
+            self.controller.save_session()
         else:
             messagebox.showinfo("Сохранение", "Нет изменений для сохранения.")
 
@@ -333,5 +341,7 @@ class Application(tk.Tk):
 
     def _on_closing(self):
         """Обработчик закрытия окна."""
+        # ---- НОВОЕ: сохранение сессии перед сохранением геометрии ----
+        self.controller.save_session()
         self.state_manager.save()
         self.destroy()

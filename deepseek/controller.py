@@ -24,6 +24,9 @@ class ChatController:
 
         self._reset_search_state()
 
+        # ---- НОВОЕ: путь к файлу сессии ----
+        self.session_path = os.path.join("config", "session.pkl")
+
     # ---------- DATA ----------
 
     def _reset_search_state(self):
@@ -257,3 +260,25 @@ class ChatController:
             return None
 
         return self.current_chat_pairs[self.current_index_in_chat]
+
+    # ---------- СОХРАНЕНИЕ И ЗАГРУЗКА СЕССИИ ----------
+
+    def save_session(self):
+        """Сохраняет текущие источники в файл сессии."""
+        from .persistence import save_session as _save
+        _save(self.sources, self.session_path)
+
+    def load_session(self):
+        """Загружает источники из файла сессии и восстанавливает внутренние структуры."""
+        from .persistence import load_session as _load
+        sources = _load(self.session_path)
+        if sources is not None:
+            self.sources = sources
+            # Восстанавливаем known_chat_ids и _chat_to_source
+            self.known_chat_ids.clear()
+            self._chat_to_source.clear()
+            for source in self.sources:
+                for chat in source.chats:
+                    self.known_chat_ids.add(chat.id)
+                    self._chat_to_source[chat.id] = source
+            self._rebuild_filtered_chats()
