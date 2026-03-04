@@ -5,15 +5,32 @@
 import json
 import os
 import tkinter as tk
-from . import constants
+
+from .constants import (
+    CONFIG_DIR, 
+    CONFIG_FILE, 
+    DEFAULT_HEIGHT, 
+    DEFAULT_WIDTH, 
+    MIN_LEFT_WIDTH, 
+    MIN_RIGHT_WIDTH, 
+    MIN_TOP_HEIGHT, 
+    MIN_BOTTOM_HEIGHT, 
+    MIN_REQUEST_HEIGHT, 
+    MIN_RESPONSE_HEIGHT
+    )
 
 class WindowStateManager:
     """Отвечает за сохранение и загрузку геометрии окна и пропорций панелей."""
 
     def __init__(self, app):
         self.app = app
-        self.config_dir = os.path.join(os.path.dirname(__file__), '..', constants.CONFIG_DIR)
-        self.config_path = os.path.join(self.config_dir, constants.CONFIG_FILE)
+        self.config_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..', CONFIG_DIR))
+        print("windows_state", self.config_dir)
+        self.config_path = os.path.abspath(os.path.join(self.config_dir, CONFIG_FILE))
+        print("windows_state", self.config_path)
+        
+        # config_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', CONFIG_DIR))
+        # self.session_path = os.path.abspath(os.path.join(config_dir, PKL_FILE))
 
     def save(self):
         """Сохранить текущее состояние в JSON."""
@@ -62,8 +79,8 @@ class WindowStateManager:
 
         # Восстанавливаем размер окна
         win_size = config.get("window_size", {})
-        width = win_size.get("width", constants.DEFAULT_WIDTH)
-        height = win_size.get("height", constants.DEFAULT_HEIGHT)
+        width = win_size.get("width", DEFAULT_WIDTH)
+        height = win_size.get("height", DEFAULT_HEIGHT)
         self.app.geometry(f"{width}x{height}")
 
         self.app.update_idletasks()
@@ -98,8 +115,8 @@ class WindowStateManager:
             self._set_sash_proportion(
                 self.app.main_paned, 0, left_prop,
                 orient='horizontal',
-                minsize1=constants.MIN_LEFT_WIDTH,
-                minsize2=constants.MIN_RIGHT_WIDTH
+                minsize1=MIN_LEFT_WIDTH,
+                minsize2=MIN_RIGHT_WIDTH
             )
 
         # Вертикальная панель справа
@@ -108,8 +125,8 @@ class WindowStateManager:
             self._set_sash_proportion(
                 self.app.right_paned, 0, top_prop,
                 orient='vertical',
-                minsize1=constants.MIN_TOP_HEIGHT,
-                minsize2=constants.MIN_BOTTOM_HEIGHT
+                minsize1=MIN_TOP_HEIGHT,
+                minsize2=MIN_BOTTOM_HEIGHT
             )
 
         # Текстовая панель
@@ -118,8 +135,8 @@ class WindowStateManager:
             self._set_sash_proportion(
                 self.app.text_paned, 0, req_prop,
                 orient='vertical',
-                minsize1=constants.MIN_REQUEST_HEIGHT,
-                minsize2=constants.MIN_RESPONSE_HEIGHT
+                minsize1=MIN_REQUEST_HEIGHT,
+                minsize2=MIN_RESPONSE_HEIGHT
             )
 
     def _set_sash_proportion(self, paned, index, proportion, orient, minsize1, minsize2):

@@ -3,6 +3,8 @@
 import os
 from typing import List, Set, Dict, Optional
 
+from .gui_components.constants import CONFIG_DIR, CONFIG_FILE, PKL_FILE
+
 from .model import DataSource, Chat, MessagePair  # добавлен импорт DataSource
 
 
@@ -25,7 +27,11 @@ class ChatController:
         self._reset_search_state()
 
         # ---- НОВОЕ: путь к файлу сессии ----
-        self.session_path = os.path.join("config", "session.pkl")
+        config_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', CONFIG_DIR))
+        self.session_path = os.path.abspath(os.path.join(config_dir, PKL_FILE))
+        
+        print("controller dir:", config_dir)
+        print("controller path:", self.session_path)
 
     # ---------- DATA ----------
 
