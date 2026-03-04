@@ -25,12 +25,7 @@ class WindowStateManager:
     def __init__(self, app):
         self.app = app
         self.config_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..', CONFIG_DIR))
-        print("windows_state", self.config_dir)
         self.config_path = os.path.abspath(os.path.join(self.config_dir, CONFIG_FILE))
-        print("windows_state", self.config_path)
-        
-        # config_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', CONFIG_DIR))
-        # self.session_path = os.path.abspath(os.path.join(config_dir, PKL_FILE))
 
     def save(self):
         """Сохранить текущее состояние в JSON."""

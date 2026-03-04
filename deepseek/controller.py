@@ -29,9 +29,6 @@ class ChatController:
         # ---- НОВОЕ: путь к файлу сессии ----
         config_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', CONFIG_DIR))
         self.session_path = os.path.abspath(os.path.join(config_dir, PKL_FILE))
-        
-        print("controller dir:", config_dir)
-        print("controller path:", self.session_path)
 
     # ---------- DATA ----------
 
