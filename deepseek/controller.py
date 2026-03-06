@@ -6,7 +6,8 @@ from typing import List, Set, Dict, Optional
 from .gui_components.constants import CONFIG_DIR, CONFIG_FILE, PKL_FILE
 from .model import DataSource, Chat, MessagePair
 from .services.archive_loader import load_from_zip
-from .services.search_service import SearchService   # новый импорт
+from .services.search_service import SearchService
+from .services.session_manager import SessionManager   # новый импорт
 
 
 class ChatController:
@@ -32,7 +33,8 @@ class ChatController:
         self.session_path = os.path.abspath(os.path.join(config_dir, PKL_FILE))
 
         # ---- сервисы ----
-        self._search_service = SearchService()   # добавлено
+        self._search_service = SearchService()
+        self._session_manager = SessionManager(self.session_path)   # добавлено
 
     # ---------- DATA ----------
 
@@ -230,13 +232,11 @@ class ChatController:
 
     def save_session(self):
         """Сохраняет текущие источники в файл сессии."""
-        from .persistence import save_session as _save
-        _save(self.sources, self.session_path)
+        self._session_manager.save(self.sources)
 
     def load_session(self):
         """Загружает источники из файла сессии и восстанавливает внутренние структуры."""
-        from .persistence import load_session as _load
-        sources = _load(self.session_path)
+        sources = self._session_manager.load()
         if sources is not None:
             self.sources = sources
             # Восстанавливаем known_chat_ids и _chat_to_source
