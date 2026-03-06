@@ -23,4 +23,4 @@ DEFAULT_HEIGHT = 800
 # Путь к конфигурационному файлу (относительно корня проекта)
 CONFIG_DIR = ".config"
 CONFIG_FILE = "config.json"
-PKL_FILE = "session.pkl"
+SESSION_FILE = "session.pkl"   # файл сессии (pickle)

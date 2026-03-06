@@ -3,7 +3,7 @@
 import os
 from typing import List, Set, Dict, Optional
 
-from .gui_components.constants import CONFIG_DIR, CONFIG_FILE, PKL_FILE
+from .gui_components.constants import CONFIG_DIR, SESSION_FILE  # изменён импорт
 from .model import DataSource, Chat, MessagePair
 from .services.archive_loader import load_from_zip
 from .services.search_service import SearchService
@@ -30,7 +30,7 @@ class ChatController:
 
         # Путь к файлу сессии
         config_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', CONFIG_DIR))
-        self.session_path = os.path.abspath(os.path.join(config_dir, PKL_FILE))
+        self.session_path = os.path.abspath(os.path.join(config_dir, SESSION_FILE))  # SESSION_FILE вместо PKL_FILE
 
         # Сервисы
         self._search_service = SearchService()
