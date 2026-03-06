@@ -5,7 +5,8 @@ from typing import List, Set, Dict, Optional
 
 from .gui_components.constants import CONFIG_DIR, CONFIG_FILE, PKL_FILE
 from .model import DataSource, Chat, MessagePair
-from .services.archive_loader import load_from_zip   # добавлен импорт
+from .services.archive_loader import load_from_zip
+from .services.search_service import SearchService   # новый импорт
 
 
 class ChatController:
@@ -26,9 +27,12 @@ class ChatController:
 
         self._reset_search_state()
 
-        # ---- НОВОЕ: путь к файлу сессии ----
+        # ---- путь к файлу сессии ----
         config_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', CONFIG_DIR))
         self.session_path = os.path.abspath(os.path.join(config_dir, PKL_FILE))
+
+        # ---- сервисы ----
+        self._search_service = SearchService()   # добавлено
 
     # ---------- DATA ----------
 
@@ -66,11 +70,11 @@ class ChatController:
     def get_filtered_chats(self):
         return self.filtered_chats
 
-    # ---------- НОВЫЕ МЕТОДЫ ДЛЯ ИСТОЧНИКОВ ----------
+    # ---------- МЕТОДЫ ДЛЯ ИСТОЧНИКОВ ----------
 
     def add_source(self, file_path: str) -> List[Chat]:
         """Загружает архив, добавляет только новые чаты, возвращает список добавленных чатов."""
-        new_chats = load_from_zip(file_path)          # импорт теперь вверху
+        new_chats = load_from_zip(file_path)
         added_chats = []
 
         # Фильтруем только уникальные чаты
@@ -144,52 +148,12 @@ class ChatController:
     # ---------- SEARCH ----------
 
     def search(self, chat, query, field):
-        query = (query or "").lower().strip()
-
-        if not chat:
-            return []
-
-        if not query:
-            return chat.get_pairs()
-
-        result = []
-        for pair in chat.get_pairs():
-            if field == "Название чата":
-                if query in chat.title.lower():
-                    result.append(pair)
-            elif field == "Запрос":
-                if query in pair.request_text.lower():
-                    result.append(pair)
-            elif field == "Ответ":
-                if query in pair.response_text.lower():
-                    result.append(pair)
-
-        return result
+        """Делегирует выполнение поиска сервису SearchService."""
+        return self._search_service.search(chat, query, field)
 
     def search_with_positions(self, chat, query, field):
-        import re
-
-        query = (query or "").strip()
-        if not chat or not query:
-            return []
-
-        pattern = re.compile(re.escape(query), re.IGNORECASE)
-        results = []
-
-        for pair in chat.get_pairs():
-            if field == "Запрос":
-                for m in pattern.finditer(pair.request_text or ""):
-                    results.append((chat, pair, "request", m.start(), m.end()))
-            elif field == "Ответ":
-                for m in pattern.finditer(pair.response_text or ""):
-                    results.append((chat, pair, "response", m.start(), m.end()))
-            else:
-                for m in pattern.finditer(pair.request_text or ""):
-                    results.append((chat, pair, "request", m.start(), m.end()))
-                for m in pattern.finditer(pair.response_text or ""):
-                    results.append((chat, pair, "response", m.start(), m.end()))
-
-        return results
+        """Делегирует выполнение поиска с позициями сервису SearchService."""
+        return self._search_service.search_with_positions(chat, query, field)
 
     # ---------- SELECT MESSAGE ----------
 
