@@ -1,0 +1,2 @@
+[console_scripts]
+deepseek = deepseek.gui:run_gui

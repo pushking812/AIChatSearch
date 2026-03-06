@@ -3,13 +3,12 @@
 import json
 import zipfile
 import logging
-import os  # добавлено для DataSource
+import os
 from datetime import datetime
 from typing import List, Optional
 
 from .utils import parse_datetime
 
-raw_data = None
 logger = logging.getLogger(__name__)
 
 
@@ -80,7 +79,6 @@ class Chat:
 # =========================
 
 def load_from_zip(zip_path: str) -> List[Chat]:
-    global raw_data
     chats: List[Chat] = []
 
     try:
@@ -89,15 +87,15 @@ def load_from_zip(zip_path: str) -> List[Chat]:
                 raise FileNotFoundError("conversations.json not found in archive")
 
             with z.open("conversations.json") as f:
-                raw_data = json.load(f)
+                data = json.load(f)
 
     except zipfile.BadZipFile:
         raise ValueError("Invalid or corrupted ZIP archive")
 
-    if not isinstance(raw_data, list):
+    if not isinstance(data, list):
         raise ValueError("conversations.json must contain a list of chats")
 
-    for chat_item in raw_data:
+    for chat_item in data:
         try:
             chat_id = chat_item.get("id")
             title = chat_item.get("title", "Untitled")
@@ -195,7 +193,7 @@ def load_from_zip(zip_path: str) -> List[Chat]:
 
 
 # =========================
-# DataSource (новый класс)
+# DataSource
 # =========================
 
 class DataSource:
