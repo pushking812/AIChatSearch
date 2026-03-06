@@ -10,10 +10,9 @@ from .chat_list import ChatListPanel
 from .message_tree import MessageTreePanel
 from .message_detail import MessageDetailPanel
 from .search_controller import SearchController
-from .navigation_controller import NavigationController
 from .window_state import WindowStateManager
 from ..controller import ChatController
-from .. import model
+
 
 class Application(tk.Tk):
     """Основное окно приложения."""
@@ -32,7 +31,7 @@ class Application(tk.Tk):
         self._create_layout()
         self._init_controllers()
 
-        # ---- НОВОЕ: загрузка сессии после создания контроллера ----
+        # Загрузка сессии после создания контроллера
         self.controller.load_session()
         self._update_chat_list()          # обновить список чатов после загрузки
 
@@ -146,7 +145,7 @@ class Application(tk.Tk):
     def _init_controllers(self):
         """Создание вспомогательных контроллеров."""
         self.search_ctrl = SearchController(self.controller, self._on_search_result_change)
-        self.nav_ctrl = NavigationController(self.controller)
+        # NavigationController больше не используется
 
     # ---------- Вспомогательные методы для обновления интерфейса ----------
     def _update_chat_list(self):
@@ -255,7 +254,7 @@ class Application(tk.Tk):
                 self._update_chat_list()
                 # Можно показать сообщение о количестве добавленных чатов
                 messagebox.showinfo("Добавление архива", f"Добавлено {len(added)} новых чатов.")
-                # ---- НОВОЕ: автосохранение после добавления ----
+                # Автосохранение после добавления
                 self.controller.save_session()
             else:
                 messagebox.showinfo("Добавление архива", "Все чаты из этого архива уже загружены.")
@@ -277,12 +276,9 @@ class Application(tk.Tk):
         self._update_nav_buttons()
         self._update_position_label()
 
-    # ---------- Публичные методы (для обратной совместимости) ----------
-    # Метод open_archive удалён, так как заменён на add_archive
-
     def save_current_pair(self):
         """Сохранить изменения текущей пары."""
-        current_pair = self.nav_ctrl.get_current()
+        current_pair = self.controller.get_current_pair()  # было self.nav_ctrl.get_current()
         if current_pair is None:
             messagebox.showwarning("Предупреждение", "Нет выбранной пары для сохранения.")
             return
@@ -301,14 +297,14 @@ class Application(tk.Tk):
             current_pair.modified = True
             self.tree_panel.update_pair_item(current_pair)
             messagebox.showinfo("Сохранение", "Изменения сохранены.")
-            # ---- НОВОЕ: автосохранение после изменения ----
+            # Автосохранение после изменения
             self.controller.save_session()
         else:
             messagebox.showinfo("Сохранение", "Нет изменений для сохранения.")
 
     def prev_pair(self):
         """Перейти к предыдущей паре."""
-        pair = self.nav_ctrl.prev()
+        pair = self.controller.prev_pair()  # было self.nav_ctrl.prev()
         if pair:
             self.detail_panel.display_pair(pair)
             self._update_position_label()
@@ -316,7 +312,7 @@ class Application(tk.Tk):
 
     def next_pair(self):
         """Перейти к следующей паре."""
-        pair = self.nav_ctrl.next()
+        pair = self.controller.next_pair()  # было self.nav_ctrl.next()
         if pair:
             self.detail_panel.display_pair(pair)
             self._update_position_label()
@@ -328,12 +324,12 @@ class Application(tk.Tk):
 
     # ---------- Внутренние вспомогательные методы ----------
     def _update_nav_buttons(self):
-        can_prev, can_next = self.nav_ctrl.get_state()
+        can_prev, can_next = self.controller.get_nav_state()  # было self.nav_ctrl.get_state()
         self.prev_button.config(state=tk.NORMAL if can_prev else tk.DISABLED)
         self.next_button.config(state=tk.NORMAL if can_next else tk.DISABLED)
 
     def _update_position_label(self):
-        title, index, total = self.nav_ctrl.get_position_info()
+        title, index, total = self.controller.get_position_info()  # было self.nav_ctrl.get_position_info()
         if title is None:
             self.detail_panel.set_position_label("")
         else:
@@ -341,7 +337,6 @@ class Application(tk.Tk):
 
     def _on_closing(self):
         """Обработчик закрытия окна."""
-        # ---- НОВОЕ: сохранение сессии перед сохранением геометрии ----
         self.controller.save_session()
         self.state_manager.save()
         self.destroy()

@@ -13,15 +13,13 @@
 
 ---
 
-## Итерация 4: Выделение сервиса сессий
-**Задействованные модули:** `controller.py`, `services/session_manager.py` (новый), `persistence.py` (удаление)
-**Цель:** Инкапсулировать логику сохранения/загрузки сессии.
-- [ ] Создать `services/session_manager.py` с классом `SessionManager`.
-- [ ] Перенести функции `save_session` и `load_session` из `persistence.py` в этот класс как методы. Конструктор может принимать путь к файлу.
-- [ ] В `ChatController`:
-  - Добавить атрибут `self._session_manager = SessionManager(self.session_path)`.
-  - В методах `save_session` и `load_session` заменить вызовы функций на `self._session_manager.save(self.sources)` и `self._session_manager.load()` (последний должен возвращать список источников).
-  - В `load_session` после загрузки обновить внутренние структуры (код уже есть).
-- [ ] Удалить файл `persistence.py` (или оставить заглушку с импортами из нового модуля для обратной совместимости, но лучше удалить).
-**Риски:** Средние. Нужно аккуратно передать путь к файлу. Сериализация pickle остаётся без изменений.
-**После итерации:** Закрыть и открыть приложение – проверить, что сессия восстанавливается (чаты, геометрия).
+## Итерация 5: Удаление дублирующего NavigationController
+**Задействованные модули:** `application.py`, `gui_components/navigation_controller.py` (удаление)
+**Цель:** Упростить GUI, убрать лишний слой.
+- [ ] В `application.py` удалить создание `self.nav_ctrl`.
+- [ ] В методах навигации (`prev_pair`, `next_pair`, `_update_nav_buttons`, `_update_position_label`) заменить вызовы `self.nav_ctrl` на `self.controller`.
+- [ ] Убедиться, что у `ChatController` есть все необходимые методы: `prev_pair`, `next_pair`, `get_nav_state`, `get_position_info`, `get_current_pair`. Они уже присутствуют.
+- [ ] Удалить файл `gui_components/navigation_controller.py`.
+- [ ] Удалить импорт `NavigationController` из `application.py`.
+**Риски:** Низкие, если методы контроллера полностью покрывают функционал. Проверить работу кнопок «Предыдущая/Следующая».
+**После итерации:** Переключаться между сообщениями кнопками, проверить обновление позиции.
