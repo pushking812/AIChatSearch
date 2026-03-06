@@ -4,8 +4,8 @@ import os
 from typing import List, Set, Dict, Optional
 
 from .gui_components.constants import CONFIG_DIR, CONFIG_FILE, PKL_FILE
-
-from .model import DataSource, Chat, MessagePair  # добавлен импорт DataSource
+from .model import DataSource, Chat, MessagePair
+from .services.archive_loader import load_from_zip   # добавлен импорт
 
 
 class ChatController:
@@ -70,9 +70,7 @@ class ChatController:
 
     def add_source(self, file_path: str) -> List[Chat]:
         """Загружает архив, добавляет только новые чаты, возвращает список добавленных чатов."""
-        from .model import load_from_zip  # локальный импорт для избежания циклических зависимостей
-
-        new_chats = load_from_zip(file_path)
+        new_chats = load_from_zip(file_path)          # импорт теперь вверху
         added_chats = []
 
         # Фильтруем только уникальные чаты
