@@ -1,12 +1,16 @@
 # deepseek/gui_components/chat_list.py
 
-"""Панель списка чатов с фильтрацией и множественным выбором."""
+"""Панель списка чатов с фильтрацией и множественным выбором (Treeview)."""
 
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import ttk
+from typing import List, Tuple, Dict
+
+from ..model import Chat
+
 
 class ChatListPanel:
-    """Управляет списком чатов, фильтром и кнопками выбора."""
+    """Управляет списком чатов, фильтром и кнопками выбора с использованием Treeview."""
 
     def __init__(self, parent, controller, on_select_callback):
         """
@@ -17,6 +21,9 @@ class ChatListPanel:
         self.controller = controller
         self.on_select = on_select_callback
         self.filter_var = tk.StringVar()
+
+        # Словарь для быстрого поиска чата по iid элемента дерева
+        self._item_to_chat: Dict[str, Chat] = {}
 
         self._create_widgets(parent)
 
@@ -29,25 +36,34 @@ class ChatListPanel:
         self.filter_entry.pack(fill=tk.X, padx=5, pady=(0, 5))
         self.filter_entry.bind("<KeyRelease>", self._on_filter_changed)
 
-        # Контейнер для списка и скролла
-        list_container = tk.Frame(parent)
-        list_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        # Контейнер для дерева и скролла
+        tree_container = tk.Frame(parent)
+        tree_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        self.listbox = tk.Listbox(
-            list_container,
-            selectmode=tk.EXTENDED,
-            exportselection=False
+        # Создаём Treeview с двумя колонками
+        self.tree = ttk.Treeview(
+            tree_container,
+            columns=("source", "title"),
+            show="tree headings",
+            selectmode=tk.EXTENDED
         )
-        self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.tree.heading("source", text="Источник")
+        self.tree.heading("title", text="Название чата")
 
-        scrollbar = tk.Scrollbar(list_container, command=self.listbox.yview)
+        # Настраиваем ширину колонок (можно регулировать по желанию)
+        self.tree.column("#0", width=0, stretch=False)  # скрываем колонку-дерево
+        self.tree.column("source", width=150, anchor="w")
+        self.tree.column("title", width=250, anchor="w")
+
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Скроллбар
+        scrollbar = ttk.Scrollbar(tree_container, orient=tk.VERTICAL, command=self.tree.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.listbox.config(yscrollcommand=scrollbar.set)
+        self.tree.configure(yscrollcommand=scrollbar.set)
 
         # Привязка событий выбора
-        self.listbox.bind("<ButtonRelease-1>", self._on_select)
-        self.listbox.bind("<Shift-ButtonRelease-1>", self._on_select)
-        self.listbox.bind("<Control-ButtonRelease-1>", self._on_select)
+        self.tree.bind("<<TreeviewSelect>>", self._on_select)
 
         # Кнопки выбора
         buttons_frame = tk.Frame(parent)
@@ -69,32 +85,58 @@ class ChatListPanel:
         )
         self.btn_clear.pack(side=tk.LEFT, padx=2)
 
-    def update_list(self, items):
+    def update_list(self, items: List[Tuple[Chat, str]]):
         """
-        Обновляет отображение списка чатов.
+        Обновляет отображение списка чатов с группировкой по источникам.
         items: список кортежей (chat, source_name)
         """
-        self.listbox.delete(0, tk.END)
-        for chat, source_name in items:
-            display_text = f"[{source_name}] {chat.title}"
-            self.listbox.insert(tk.END, display_text)
+        # Очищаем дерево и словарь
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        self._item_to_chat.clear()
 
-    def get_selected_chats(self):
-        """Вернуть список выбранных объектов Chat."""
-        indices = self.listbox.curselection()
-        if not indices:
-            return []
-        filtered = self.controller.get_filtered_chats()
-        return [filtered[i] for i in indices if i < len(filtered)]
+        # Группируем чаты по источнику
+        groups: Dict[str, List[Chat]] = {}
+        for chat, source_name in items:
+            groups.setdefault(source_name, []).append(chat)
+
+        # Создаём элементы дерева
+        for source_name, chat_list in groups.items():
+            # Создаём родительский элемент (группу)
+            parent_id = self.tree.insert(
+                "",
+                "end",
+                values=(source_name, ""),   # название чата пустое
+                open=True                    # группа развёрнута по умолчанию
+            )
+            # Добавляем чаты как дочерние элементы
+            for chat in chat_list:
+                child_id = self.tree.insert(
+                    parent_id,
+                    "end",
+                    values=(source_name, chat.title),
+                    iid=chat.id               # используем уникальный id чата как iid
+                )
+                self._item_to_chat[chat.id] = chat
+
+    def get_selected_chats(self) -> List[Chat]:
+        """Вернуть список выбранных объектов Chat (только чаты, не группы)."""
+        selected_iids = self.tree.selection()
+        result = []
+        for iid in selected_iids:
+            chat = self._item_to_chat.get(iid)
+            if chat is not None:
+                result.append(chat)
+        return result
 
     def select_all(self):
-        """Выбрать все чаты в списке."""
-        self.listbox.selection_set(0, tk.END)
+        """Выбрать все чаты в списке (группы не выбираются)."""
+        self.tree.selection_set(list(self._item_to_chat.keys()))
         self._on_select()
 
     def clear_selection(self):
-        """Снять выделение со всех чатов."""
-        self.listbox.selection_clear(0, tk.END)
+        """Снять выделение со всех элементов."""
+        self.tree.selection_set(())
         self._on_select()
 
     def _on_filter_changed(self, event=None):
