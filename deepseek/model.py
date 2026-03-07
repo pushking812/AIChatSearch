@@ -12,6 +12,7 @@ from .utils import parse_datetime
 # =========================
 
 class MessagePair:
+    """Хранит одну пару «запрос–ответ» из чата."""
     def __init__(
         self,
         index: str,
@@ -45,6 +46,7 @@ class MessagePair:
 # =========================
 
 class Chat:
+    """Представляет один чат с метаданными и списком пар сообщений."""
     def __init__(
         self,
         chat_id: str,
@@ -73,7 +75,7 @@ class Chat:
 # =========================
 
 class DataSource:
-    """Представляет один загруженный ZIP-архив с чатами."""
+    """Источник данных – один загруженный ZIP-архив (или импортированный набор)."""
     def __init__(self, file_path: str):
         self.file_path = file_path
         self.chats: List[Chat] = []

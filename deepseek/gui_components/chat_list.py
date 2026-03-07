@@ -13,11 +13,6 @@ class ChatListPanel:
     """Управляет списком чатов, фильтром и кнопками выбора с использованием Treeview."""
 
     def __init__(self, parent, controller, on_select_callback):
-        """
-        :param parent: родительский виджет (Frame)
-        :param controller: экземпляр ChatController
-        :param on_select_callback: вызывается при изменении выбора
-        """
         self.controller = controller
         self.on_select = on_select_callback
         self.filter_var = tk.StringVar()
@@ -40,7 +35,6 @@ class ChatListPanel:
         tree_container = tk.Frame(parent)
         tree_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # Создаём Treeview с двумя колонками
         self.tree = ttk.Treeview(
             tree_container,
             columns=("source", "title"),
@@ -50,19 +44,16 @@ class ChatListPanel:
         self.tree.heading("source", text="Источник")
         self.tree.heading("title", text="Название чата")
 
-        # Настраиваем ширину колонок (можно регулировать по желанию)
-        self.tree.column("#0", width=0, stretch=False)  # скрываем колонку-дерево
+        self.tree.column("#0", width=25, stretch=False, minwidth=20)
         self.tree.column("source", width=150, anchor="w")
         self.tree.column("title", width=250, anchor="w")
 
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        # Скроллбар
         scrollbar = ttk.Scrollbar(tree_container, orient=tk.VERTICAL, command=self.tree.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree.configure(yscrollcommand=scrollbar.set)
 
-        # Привязка событий выбора
         self.tree.bind("<<TreeviewSelect>>", self._on_select)
 
         # Кнопки выбора
@@ -106,18 +97,22 @@ class ChatListPanel:
             parent_id = self.tree.insert(
                 "",
                 "end",
-                values=(source_name, ""),   # название чата пустое
-                open=True                    # группа развёрнута по умолчанию
+                values=(source_name, ""),
+                open=True
             )
             # Добавляем чаты как дочерние элементы
             for chat in chat_list:
+                # Уникальный iid на основе имени источника и ID чата
+                unique_iid = f"{source_name}_{chat.id}"
+                # Добавляем количество сообщений к названию для наглядности
+                display_title = f"{chat.title} ({len(chat.pairs)} сообщ.)"
                 child_id = self.tree.insert(
                     parent_id,
                     "end",
-                    values=(source_name, chat.title),
-                    iid=chat.id               # используем уникальный id чата как iid
+                    values=(source_name, display_title),
+                    iid=unique_iid
                 )
-                self._item_to_chat[chat.id] = chat
+                self._item_to_chat[unique_iid] = chat
 
     def get_selected_chats(self) -> List[Chat]:
         """Вернуть список выбранных объектов Chat (только чаты, не группы)."""
@@ -142,7 +137,6 @@ class ChatListPanel:
     def _on_filter_changed(self, event=None):
         """Обработка изменения фильтра."""
         self.controller.filter_chats(self.filter_var.get())
-        # Получаем отфильтрованные чаты и формируем кортежи с именами источников
         filtered = self.controller.get_filtered_chats()
         items = [(chat, self.controller.get_source_name(chat)) for chat in filtered]
         self.update_list(items)
