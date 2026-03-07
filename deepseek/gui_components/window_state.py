@@ -48,8 +48,11 @@ class WindowStateManager:
             self.app.text_paned, 0, orient='vertical'
         )
 
-        # Сохраняем ширину колонок дерева чатов
+        # Сохраняем ширину колонок левого дерева чатов
         column_widths = self.app.chat_panel.get_column_widths()
+
+        # Сохраняем ширину колонок правого дерева сообщений
+        tree_column_widths = self.app.tree_panel.get_column_widths()
 
         # Сохраняем размер шрифта
         font_size = self.app.detail_panel.get_font_size()
@@ -62,6 +65,7 @@ class WindowStateManager:
                 "text_vertical": req_prop
             },
             "column_widths": column_widths,
+            "tree_column_widths": tree_column_widths,
             "font_size": font_size
         }
 
@@ -96,10 +100,15 @@ class WindowStateManager:
         if props:
             self.app.after(50, self._apply_proportions, props)
 
-        # Применяем ширину колонок дерева чатов
+        # Применяем ширину колонок левого дерева чатов
         col_widths = config.get("column_widths", {})
         if col_widths:
             self.app.chat_panel.set_column_widths(col_widths)
+
+        # Применяем ширину колонок правого дерева сообщений
+        tree_widths = config.get("tree_column_widths", {})
+        if tree_widths:
+            self.app.tree_panel.set_column_widths(tree_widths)
 
         # Применяем размер шрифта
         font_size = config.get("font_size", FONT_SIZE)
