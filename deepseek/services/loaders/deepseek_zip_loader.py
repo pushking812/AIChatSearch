@@ -3,6 +3,7 @@
 import json
 import zipfile
 import logging
+import re
 from datetime import datetime
 from typing import List
 
@@ -15,6 +16,27 @@ logger = logging.getLogger(__name__)
 
 class DeepSeekZipLoader(ChatLoader):
     """Загрузчик для ZIP-архивов DeepSeek, содержащих conversations.json."""
+
+    # Опциональный паттерн для имени файла (можно убрать, если не нужен)
+    FILENAME_PATTERN = re.compile(r'deepseek_data-\d{4}-\d{2}-\d{2}\.zip$')
+
+    @classmethod
+    def can_load(cls, file_path: str) -> bool:
+        # Проверяем расширение .zip
+        if not file_path.lower().endswith('.zip'):
+            return False
+
+        # Опционально: проверяем имя файла по паттерну (можно закомментировать, если не требуется)
+        # filename = os.path.basename(file_path)
+        # if not cls.FILENAME_PATTERN.match(filename):
+        #     return False
+
+        # Проверяем наличие conversations.json внутри архива
+        try:
+            with zipfile.ZipFile(file_path, 'r') as zf:
+                return 'conversations.json' in zf.namelist()
+        except (zipfile.BadZipFile, FileNotFoundError):
+            return False
 
     def load(self, file_path: str) -> List[Chat]:
         chats: List[Chat] = []
