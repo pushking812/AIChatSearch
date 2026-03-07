@@ -1,4 +1,4 @@
-﻿# deepseek/gui_components/message_detail.py
+﻿# aichat_search/gui_components/message_detail.py
 
 """Панель отображения и редактирования текста сообщения."""
 

@@ -1,4 +1,4 @@
-# deepseek/services/loaders/base.py
+# aichat_search/services/loaders/base.py
 
 from abc import ABC, abstractmethod
 from typing import List

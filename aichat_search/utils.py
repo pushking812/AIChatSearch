@@ -1,4 +1,4 @@
-﻿# deepseek/utils.py
+﻿# aichat_search/utils.py
 
 from datetime import datetime
 

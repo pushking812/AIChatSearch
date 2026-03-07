@@ -1,5 +1,5 @@
 # main.py
-from deepseek.gui import run_gui
+from aichat_search.gui import run_gui
 
 
 def main():

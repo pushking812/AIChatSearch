@@ -1,4 +1,4 @@
-# deepseek/services/search_service.py
+# aichat_search/services/search_service.py
 
 import re
 from typing import List, Tuple, Any

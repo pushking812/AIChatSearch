@@ -1,6 +1,6 @@
-﻿# deepseek/gui.py
+﻿# aichat_search/gui.py
 
-"""Точка входа в графический интерфейс DeepSeek.
+"""Точка входа в графический интерфейс AI Chat Archive Search.
 
 Этот файл обеспечивает обратную совместимость и делегирует создание окна
 новому классу Application из пакета gui_components.

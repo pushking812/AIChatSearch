@@ -1,4 +1,4 @@
-# deepseek/model.py
+# aichat_search/model.py
 
 import os
 from datetime import datetime

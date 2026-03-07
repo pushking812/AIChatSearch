@@ -1,6 +1,6 @@
 import pytest
-from deepseek.controller import ChatController
-from deepseek.model import Chat, MessagePair
+from aichat_search.controller import ChatController
+from aichat_search.model import Chat, MessagePair
 
 
 # ---------- Test Helpers (public construction only) ----------

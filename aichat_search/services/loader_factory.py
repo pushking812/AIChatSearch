@@ -1,4 +1,4 @@
-# deepseek/services/loader_factory.py
+# aichat_search/services/loader_factory.py
 
 from typing import Optional, Type
 from .loaders import ChatLoader, DeepSeekZipLoader

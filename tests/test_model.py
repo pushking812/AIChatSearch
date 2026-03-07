@@ -4,8 +4,8 @@ import tempfile
 import os
 import pytest
 
-from deepseek.model import load_from_zip
-from deepseek.utils import parse_datetime
+from aichat_search.model import load_from_zip
+from aichat_search.utils import parse_datetime
 
 
 def create_test_zip(json_content: str) -> str:
@@ -130,7 +130,7 @@ def test_parse_datetime():
 import json
 import zipfile
 import pytest
-from deepseek.model import MessagePair, Chat, load_from_zip
+from aichat_search.model import MessagePair, Chat, load_from_zip
 
 
 # ---------- ADDITIONAL MODEL COVERAGE TESTS ----------

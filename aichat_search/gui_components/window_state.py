@@ -1,4 +1,4 @@
-﻿# deepseek/gui_components/window_state.py
+﻿# aichat_search/gui_components/window_state.py
 
 """Менеджер сохранения и восстановления состояния окна и панелей."""
 

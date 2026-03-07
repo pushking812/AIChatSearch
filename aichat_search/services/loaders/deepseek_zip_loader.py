@@ -1,4 +1,4 @@
-# deepseek/services/loaders/deepseek_zip_loader.py
+# aichat_search/services/loaders/deepseek_zip_loader.py
 
 import json
 import zipfile

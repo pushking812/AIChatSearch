@@ -1,4 +1,4 @@
-﻿# deepseek/gui_components/search_controller.py
+﻿# aichat_search/gui_components/search_controller.py
 
 """Контроллер управления поиском и навигацией по результатам."""
 

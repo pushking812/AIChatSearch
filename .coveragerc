@@ -1,5 +1,5 @@
 [run]
 omit =
-    */deepseek/gui.py
-	*/deepseek/gui_components/*
-	*/deepseek/config/*
+    */aichat_search/gui.py
+	*/aichat_search/gui_components/*
+	*/aichat_search/config/*

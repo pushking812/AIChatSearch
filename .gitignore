@@ -1,5 +1,5 @@
 __pycache__/ 
-deepseek.egg-info/
+aichat_search.egg-info/
 *.pkl
 *.pyc 
 .vs/ 

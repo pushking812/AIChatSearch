@@ -1,4 +1,4 @@
-# deepseek/services/session_manager.py
+# aichat_search/services/session_manager.py
 
 import pickle
 import os

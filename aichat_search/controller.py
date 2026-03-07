@@ -1,4 +1,4 @@
-# deepseek/controller.py
+# aichat_search/controller.py
 
 import os
 from typing import List, Dict, Optional, Tuple

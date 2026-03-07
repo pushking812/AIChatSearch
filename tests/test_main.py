@@ -1,6 +1,6 @@
 
-from deepseek import main
+from aichat_search import main
 
 def test_main_runs_without_error(monkeypatch):
-    monkeypatch.setattr("deepseek.main.run_gui", lambda: None)
+    monkeypatch.setattr("aichat_search.main.run_gui", lambda: None)
     main.main()

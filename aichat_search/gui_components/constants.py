@@ -1,4 +1,4 @@
-﻿# deepseek/gui_components/constants.py
+﻿# aichat_search/gui_components/constants.py
 
 """Константы, используемые в GUI."""
 

@@ -1,11 +1,11 @@
 [project]
-name = "deepseek"
+name = "aichat_search"
 version = "0.1.0"
-description = "DeepSeek Chat Archive Navigator"
+description = "AI Chat Archive Search"
 requires-python = ">=3.9"
 
 [project.scripts]
-deepseek = "deepseek.gui:run_gui"
+aichat_search = "aichat_search.gui:run_gui"
 
 [tool.setuptools.packages.find]
 where = ["."]

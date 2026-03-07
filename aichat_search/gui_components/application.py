@@ -1,4 +1,4 @@
-# deepseek/gui_components/application.py
+# aichat_search/gui_components/application.py
 
 """Главный класс приложения, координирующий работу всех компонентов."""
 
@@ -21,7 +21,7 @@ class Application(tk.Tk):
         super().__init__()
 
         self.controller = ChatController()
-        self.title("DeepSeek Chat Archive Navigator")
+        self.title("AI Chat Archive Search")
         self.geometry(f"{constants.DEFAULT_WIDTH}x{constants.DEFAULT_HEIGHT}")
         self.minsize(constants.MIN_LEFT_WIDTH + constants.MIN_RIGHT_WIDTH,
                      constants.MIN_TOP_HEIGHT + constants.MIN_BOTTOM_HEIGHT)

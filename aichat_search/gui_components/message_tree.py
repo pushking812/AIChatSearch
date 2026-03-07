@@ -1,4 +1,4 @@
-﻿# deepseek/gui_components/message_tree.py
+﻿# aichat_search/gui_components/message_tree.py
 
 """Панель дерева сообщений с отображением чатов и пар."""
 
