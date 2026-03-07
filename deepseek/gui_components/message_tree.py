@@ -7,6 +7,7 @@ from tkinter import ttk
 from typing import List, Tuple, Dict, Optional
 
 from ..model import Chat, MessagePair
+from . import constants
 
 
 def _format_datetime(dt) -> str:
@@ -23,13 +24,14 @@ def _escape_newlines(text: str) -> str:
     return text.replace('\n', '\\n')
 
 
-def _get_context(text: str, start: int, end: int, context_chars: int = 30) -> str:
+def _get_context(text: str, start: int, end: int) -> str:
     """
     Возвращает фрагмент текста вокруг позиции совпадения.
-    Выделяет до context_chars символов слева и справа.
+    Выделяет до CONTEXT_CHARS символов слева и справа.
     """
     if not text:
         return ""
+    context_chars = constants.CONTEXT_CHARS
     left = max(0, start - context_chars)
     right = min(len(text), end + context_chars)
     prefix = "..." if left > 0 else ""
@@ -85,6 +87,7 @@ class MessageTreePanel:
         self._clear()
         self._search_mode = False
         global_counter = 0
+        preview_chars = constants.PREVIEW_CHARS
 
         for chat in chats:
             pairs = list(chat.get_pairs())
@@ -106,11 +109,11 @@ class MessageTreePanel:
 
             for pair in pairs:
                 global_counter += 1
-                request_preview = _escape_newlines(pair.request_text[:50])
-                if len(pair.request_text) > 50:
+                request_preview = _escape_newlines(pair.request_text[:preview_chars])
+                if len(pair.request_text) > preview_chars:
                     request_preview += "..."
-                response_preview = _escape_newlines(pair.response_text[:50])
-                if len(pair.response_text) > 50:
+                response_preview = _escape_newlines(pair.response_text[:preview_chars])
+                if len(pair.response_text) > preview_chars:
                     response_preview += "..."
 
                 self._insert_pair(
@@ -127,6 +130,7 @@ class MessageTreePanel:
         self._clear()
         self._search_mode = True
         global_counter = 0
+        preview_chars = constants.PREVIEW_CHARS
 
         grouped = {}
         for chat, pair, field, start, end in results:
@@ -156,10 +160,10 @@ class MessageTreePanel:
                 else:
                     full_text = pair.response_text
 
-                context = _get_context(full_text, start, end, context_chars=30)
+                context = _get_context(full_text, start, end)
 
-                request_preview = _escape_newlines(pair.request_text[:50])
-                if len(pair.request_text) > 50:
+                request_preview = _escape_newlines(pair.request_text[:preview_chars])
+                if len(pair.request_text) > preview_chars:
                     request_preview += "..."
 
                 self._insert_pair(
@@ -192,16 +196,17 @@ class MessageTreePanel:
 
     def update_pair_item(self, pair):
         """Обновить отображение конкретной пары (после изменения)."""
+        preview_chars = constants.PREVIEW_CHARS
         for item_id, (chat, p) in self.tree_item_map.items():
             if p is pair:
                 idx_display = str(pair.index) + ('*' if pair.modified else '')
                 current_values = self.tree.item(item_id, 'values')
                 if current_values:
-                    request_preview = _escape_newlines(pair.request_text[:50])
-                    if len(pair.request_text) > 50:
+                    request_preview = _escape_newlines(pair.request_text[:preview_chars])
+                    if len(pair.request_text) > preview_chars:
                         request_preview += "..."
-                    response_preview = _escape_newlines(pair.response_text[:50])
-                    if len(pair.response_text) > 50:
+                    response_preview = _escape_newlines(pair.response_text[:preview_chars])
+                    if len(pair.response_text) > preview_chars:
                         response_preview += "..."
 
                     new_values = (

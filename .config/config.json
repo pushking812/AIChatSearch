@@ -4,20 +4,20 @@
     "height": 823
   },
   "proportions": {
-    "main_horizontal": 0.24121779859484777,
+    "main_horizontal": 0.24414519906323184,
     "right_vertical": 0.5190184049079755,
-    "text_vertical": 0.46835443037974683
+    "text_vertical": 0.6195965417867435
   },
   "column_widths": {
-    "name": 124,
-    "msg_count": 74,
-    "created": 158
+    "name": 211,
+    "msg_count": 36,
+    "created": 114
   },
   "tree_column_widths": {
     "global_idx": 33,
-    "chat_idx": 58,
-    "request": 486,
-    "response": 558,
-    "date": 118
+    "chat_idx": 59,
+    "request": 488,
+    "response": 557,
+    "date": 116
   }
 }

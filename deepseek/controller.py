@@ -1,12 +1,12 @@
 # deepseek/controller.py
 
 import os
-from typing import List, Dict, Optional, Set
+from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 
 from .gui_components.constants import CONFIG_DIR, SESSION_FILE
 from .model import DataSource, Chat, MessagePair
-from .services.loader_factory import LoaderFactory   # новый импорт
+from .services.loader_factory import LoaderFactory
 from .services.search_service import SearchService
 from .services.session_manager import SessionManager
 
@@ -48,16 +48,7 @@ class ChatController:
 
     # ---------- МЕТОДЫ ДЛЯ ИСТОЧНИКОВ ----------
 
-    def add_source(self, file_path: str) -> tuple[List[Chat], int, int, int, int]:
-        """
-        Загружает архив, добавляет только новые сообщения.
-        Возвращает кортеж:
-            (список добавленных чатов,
-             количество новых чатов,
-             количество новых сообщений в новых чатах,
-             количество обновлённых чатов,
-             количество новых сообщений в обновлённых чатах)
-        """
+    def add_source(self, file_path: str) -> Tuple[List[Chat], int, int, int, int]:
         loader = LoaderFactory.get_loader(file_path)
         if loader is None:
             raise ValueError(f"Unsupported file format: {file_path}")
@@ -65,7 +56,6 @@ class ChatController:
         new_chats = loader.load(file_path)
         chats_to_add = self._extract_new_messages_chats(new_chats)
 
-        # Статистика
         new_chats_count = 0
         new_messages_in_new = 0
         updated_chats_count = 0
@@ -85,11 +75,7 @@ class ChatController:
 
         return chats_to_add, new_chats_count, new_messages_in_new, updated_chats_count, new_messages_in_updated
 
-    def _load_new_chats(self, file_path: str) -> List[Chat]:
-        return load_from_zip(file_path)
-
     def _find_existing_chats(self, chat_id: str) -> List[Chat]:
-        """Возвращает список всех уже загруженных чатов с указанным ID."""
         existing = []
         for source in self.sources:
             for chat in source.chats:
@@ -97,8 +83,7 @@ class ChatController:
                     existing.append(chat)
         return existing
 
-    def _collect_existing_indices(self, chat_id: str) -> Set[str]:
-        """Собирает все индексы пар сообщений из всех существующих версий чата."""
+    def _collect_existing_indices(self, chat_id: str) -> set:
         indices = set()
         for chat in self._find_existing_chats(chat_id):
             for pair in chat.get_pairs():
@@ -106,18 +91,11 @@ class ChatController:
         return indices
 
     def _extract_new_messages_chats(self, new_chats: List[Chat]) -> List[Chat]:
-        """
-        Для каждого нового чата создаёт новый объект Chat, содержащий только те пары,
-        индексы которых отсутствуют во всех ранее загруженных версиях этого чата.
-        Если новых сообщений нет, чат не добавляется.
-        """
         result = []
         for new_chat in new_chats:
             existing_indices = self._collect_existing_indices(new_chat.id)
             new_pairs = [pair for pair in new_chat.get_pairs() if pair.index not in existing_indices]
-
             if new_pairs:
-                # Создаём новый чат с теми же метаданными, но только с новыми парами
                 delta_chat = Chat(
                     chat_id=new_chat.id,
                     title=new_chat.title,
@@ -127,7 +105,6 @@ class ChatController:
                 for pair in new_pairs:
                     delta_chat.add_pair(pair)
                 result.append(delta_chat)
-            # else: полностью дублирующийся чат игнорируется
         return result
 
     def _add_source_with_chats(self, added_chats: List[Chat], file_path: str) -> None:
@@ -151,8 +128,9 @@ class ChatController:
         self._apply_filter()
 
     def _collect_all_chats(self) -> None:
+        """Собирает все чаты из всех источников в self.chats, новые источники сверху."""
         all_chats: List[Chat] = []
-        for source in self.sources:
+        for source in reversed(self.sources):
             all_chats.extend(source.chats)
         self.chats = all_chats
 
@@ -167,14 +145,19 @@ class ChatController:
             self.filtered_chats = list(self.chats)
         self._reset_navigation()
 
-    def get_source_name(self, chat: Chat) -> str:
+    def get_source_info(self, chat: Chat) -> Tuple[str, Optional[str]]:
         source = self._chat_ref_to_source.get(id(chat))
         if source:
-            if source.file_path != "Imported":
-                return os.path.basename(source.file_path)
-            else:
-                return "Imported"
-        return "Unknown"
+            name = os.path.basename(source.file_path) if source.file_path != "Imported" else "Imported"
+            time_str = None
+            if source.file_path != "Imported" and os.path.exists(source.file_path):
+                try:
+                    ts = os.path.getctime(source.file_path)
+                    time_str = datetime.fromtimestamp(ts).strftime("%d-%m-%Y %H:%M")
+                except OSError:
+                    pass
+            return name, time_str
+        return "Unknown", None
 
     # ---------- FILTER ----------
 
@@ -220,7 +203,7 @@ class ChatController:
             return self.current_chat_pairs[self.current_index_in_chat]
         return None
 
-    def get_nav_state(self) -> tuple[bool, bool]:
+    def get_nav_state(self) -> Tuple[bool, bool]:
         if self.current_index_in_chat is None:
             return False, False
         return (
@@ -228,7 +211,7 @@ class ChatController:
             self.current_index_in_chat < len(self.current_chat_pairs) - 1,
         )
 
-    def get_position_info(self) -> tuple[Optional[str], Optional[int], Optional[int]]:
+    def get_position_info(self) -> Tuple[Optional[str], Optional[int], Optional[int]]:
         if self.current_chat is None or self.current_index_in_chat is None:
             return None, None, None
         return (
@@ -258,23 +241,3 @@ class ChatController:
                 for chat in source.chats:
                     self._chat_ref_to_source[id(chat)] = source
             self._rebuild_filtered_chats()
-            
-    # deepseek/controller.py (фрагмент)
-
-    def get_source_info(self, chat: Chat) -> tuple[str, Optional[str]]:
-        """
-        Возвращает кортеж (имя_источника, строка_времени_файла) для чата.
-        Время файла вычисляется по file_path источника.
-        """
-        source = self._chat_ref_to_source.get(id(chat))
-        if source:
-            name = os.path.basename(source.file_path) if source.file_path != "Imported" else "Imported"
-            time_str = None
-            if source.file_path != "Imported" and os.path.exists(source.file_path):
-                try:
-                    ts = os.path.getctime(source.file_path)
-                    time_str = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
-                except OSError:
-                    pass
-            return name, time_str
-        return "Unknown", None

@@ -5,6 +5,7 @@
 import tkinter as tk
 from tkinter import ttk
 from typing import List, Tuple, Dict, Optional
+from datetime import datetime
 
 from ..model import Chat
 
@@ -50,7 +51,7 @@ class ChatListPanel:
             selectmode=tk.EXTENDED
         )
         self.tree.heading("name", text="Название")
-        self.tree.heading("msg_count", text="Сообщений")
+        self.tree.heading("msg_count", text="Сообщ.")
         self.tree.heading("created", text="Создан")
 
         # Настройка ширины колонок
@@ -109,13 +110,16 @@ class ChatListPanel:
                 }
             groups[source_name]['chats'].append(chat)
 
-        # Создаём элементы дерева
+        # Создаём элементы дерева в порядке групп (который уже отсортирован по убыванию времени добавления)
         for source_name, group in groups.items():
+            # Сортируем чаты внутри группы по убыванию даты создания
+            group['chats'].sort(key=lambda c: c.created_at or datetime.min, reverse=True)
+
             # Родительский элемент (группа-источник)
             parent_id = self.tree.insert(
                 "",
                 "end",
-                values=(source_name, "", group['time']),  # name = source_name, msg_count пусто
+                values=(source_name, "", group['time']),
                 open=True,
                 tags=('group',)
             )
@@ -142,7 +146,6 @@ class ChatListPanel:
         selected_iids = self.tree.selection()
         result = []
         for iid in selected_iids:
-            # Проверяем, является ли элемент чатом (присутствует в _item_to_chat)
             chat = self._item_to_chat.get(iid)
             if chat is not None:
                 result.append(chat)
@@ -180,7 +183,8 @@ class ChatListPanel:
     def _on_select(self, event=None):
         """Внутренний обработчик выбора – вызывает внешний callback."""
         self.on_select()
-        
+
+    # ---------- Методы для сохранения ширины колонок ----------
     def get_column_widths(self) -> dict:
         """Возвращает словарь {имя_колонки: ширина} для всех колонок, кроме #0."""
         widths = {}
