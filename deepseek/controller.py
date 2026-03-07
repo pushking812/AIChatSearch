@@ -6,7 +6,7 @@ from datetime import datetime
 
 from .gui_components.constants import CONFIG_DIR, SESSION_FILE
 from .model import DataSource, Chat, MessagePair
-from .services.archive_loader import load_from_zip
+from .services.loader_factory import LoaderFactory   # новый импорт
 from .services.search_service import SearchService
 from .services.session_manager import SessionManager
 
@@ -49,8 +49,12 @@ class ChatController:
     # ---------- МЕТОДЫ ДЛЯ ИСТОЧНИКОВ ----------
 
     def add_source(self, file_path: str) -> List[Chat]:
-        """Загружает архив, добавляет только новые сообщения к существующим чатам, возвращает список добавленных чатов."""
-        new_chats = self._load_new_chats(file_path)
+        """Загружает архив, добавляет только новые сообщения, возвращает список добавленных чатов."""
+        loader = LoaderFactory.get_loader(file_path)
+        if loader is None:
+            raise ValueError(f"Unsupported file format: {file_path}")
+
+        new_chats = loader.load(file_path)   # вместо load_from_zip
         chats_to_add = self._extract_new_messages_chats(new_chats)
 
         if chats_to_add:
