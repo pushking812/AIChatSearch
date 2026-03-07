@@ -3,12 +3,14 @@
 """Панель отображения и редактирования текста сообщения."""
 
 import tkinter as tk
+import tkinter.font as tkfont
 from . import constants
 
 class MessageDetailPanel:
     """Содержит текстовые поля запроса и ответа, метку позиции."""
 
     def __init__(self, parent):
+        self.text_font = tkfont.Font(size=constants.FONT_SIZE)
         self._create_widgets(parent)
         self.current_pair = None
 
@@ -32,13 +34,13 @@ class MessageDetailPanel:
         # Контейнер запроса
         request_container = tk.Frame(self.text_paned)
         tk.Label(request_container, text="Запрос", font=("Arial", 11, "bold")).pack(anchor="w", padx=5)
-        self.request_text = tk.Text(request_container, height=10)
+        self.request_text = tk.Text(request_container, height=10, font=self.text_font)
         self.request_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         # Контейнер ответа
         response_container = tk.Frame(self.text_paned)
         tk.Label(response_container, text="Ответ", font=("Arial", 11, "bold")).pack(anchor="w", padx=5)
-        self.response_text = tk.Text(response_container, height=10)
+        self.response_text = tk.Text(response_container, height=10, font=self.text_font)
         self.response_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         self.text_paned.add(request_container, minsize=constants.MIN_REQUEST_HEIGHT)
@@ -85,5 +87,14 @@ class MessageDetailPanel:
 
     def clear_highlight(self):
         """Убирает подсветку поиска в обоих текстовых полях."""
-        self.request_text.tag_remove("search", "1.0", tk.END)
-        self.response_text.tag_remove("search", "1.0", tk.END)
+        self.request_text.tag_remove("search_match", "1.0", tk.END)
+        self.response_text.tag_remove("search_match", "1.0", tk.END)
+
+    def get_font_size(self) -> int:
+        """Возвращает текущий размер шрифта в пунктах."""
+        return self.text_font.cget('size')
+
+    def set_font_size(self, size: int):
+        """Устанавливает размер шрифта и перерисовывает текстовые поля."""
+        self.text_font.config(size=size)
+        # Не требуется дополнительного обновления, шрифт применяется автоматически

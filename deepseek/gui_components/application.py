@@ -252,15 +252,20 @@ class Application(tk.Tk):
         if not file_path:
             return
         try:
-            added = self.controller.add_source(file_path)
+            added, new_cnt, new_msg, upd_cnt, upd_msg = self.controller.add_source(file_path)
             if added:
                 self._update_chat_list()
-                # Можно показать сообщение о количестве добавленных чатов
-                messagebox.showinfo("Добавление архива", f"Добавлено {len(added)} новых чатов.")
-                # Автосохранение после добавления
+                parts = []
+                if new_cnt:
+                    parts.append(f"Добавлено чатов: {new_cnt} шт. ({new_msg} сообщ.)")
+                if upd_cnt:
+                    parts.append(f"Обновлено чатов: {upd_cnt} шт. ({upd_msg} сообщ.)")
+                message = "\n".join(parts)
+                messagebox.showinfo("Добавление архива", message)
                 self.controller.save_session()
             else:
-                messagebox.showinfo("Добавление архива", "Все чаты из этого архива уже загружены.")
+                messagebox.showinfo("Добавление архива",
+                                    "Все чаты из этого архива уже загружены и не содержат новых сообщений.")
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось загрузить архив:\n{e}")
 

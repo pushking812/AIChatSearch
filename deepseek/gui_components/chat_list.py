@@ -180,3 +180,18 @@ class ChatListPanel:
     def _on_select(self, event=None):
         """Внутренний обработчик выбора – вызывает внешний callback."""
         self.on_select()
+        
+    def get_column_widths(self) -> dict:
+        """Возвращает словарь {имя_колонки: ширина} для всех колонок, кроме #0."""
+        widths = {}
+        for col in ("name", "msg_count", "created"):
+            widths[col] = self.tree.column(col, 'width')
+        return widths
+
+    def set_column_widths(self, widths: dict):
+        """Устанавливает ширину колонок из словаря."""
+        for col, width in widths.items():
+            try:
+                self.tree.column(col, width=width)
+            except Exception:
+                pass

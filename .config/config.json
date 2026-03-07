@@ -4,8 +4,14 @@
     "height": 823
   },
   "proportions": {
-    "main_horizontal": 0.35772833723653397,
+    "main_horizontal": 0.2224824355971897,
     "right_vertical": 0.23803680981595093,
-    "text_vertical": 0.29357798165137616
-  }
+    "text_vertical": 0.28073394495412846
+  },
+  "column_widths": {
+    "name": 122,
+    "msg_count": 96,
+    "created": 123
+  },
+  "font_size": 8
 }

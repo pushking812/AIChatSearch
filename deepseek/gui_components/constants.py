@@ -24,3 +24,6 @@ DEFAULT_HEIGHT = 800
 CONFIG_DIR = ".config"
 CONFIG_FILE = "config.json"
 SESSION_FILE = "session.pkl"   # файл сессии (pickle)
+
+# Размер шрифта по умолчанию (в пунктах)
+FONT_SIZE = 10

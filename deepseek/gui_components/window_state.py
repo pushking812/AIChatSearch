@@ -7,20 +7,23 @@ import os
 import tkinter as tk
 
 from .constants import (
-    CONFIG_DIR, 
-    CONFIG_FILE, 
-    DEFAULT_HEIGHT, 
-    DEFAULT_WIDTH, 
-    MIN_LEFT_WIDTH, 
-    MIN_RIGHT_WIDTH, 
-    MIN_TOP_HEIGHT, 
-    MIN_BOTTOM_HEIGHT, 
-    MIN_REQUEST_HEIGHT, 
-    MIN_RESPONSE_HEIGHT
-    )
+    CONFIG_DIR,
+    CONFIG_FILE,
+    DEFAULT_HEIGHT,
+    DEFAULT_WIDTH,
+    MIN_LEFT_WIDTH,
+    MIN_RIGHT_WIDTH,
+    MIN_TOP_HEIGHT,
+    MIN_BOTTOM_HEIGHT,
+    MIN_REQUEST_HEIGHT,
+    MIN_RESPONSE_HEIGHT,
+    FONT_SIZE,
+)
+
 
 class WindowStateManager:
-    """Отвечает за сохранение и загрузку геометрии окна и пропорций панелей."""
+    """Отвечает за сохранение и загрузку геометрии окна, пропорций панелей,
+       ширины колонок дерева чатов и размера шрифта в текстовых полях."""
 
     def __init__(self, app):
         self.app = app
@@ -45,13 +48,21 @@ class WindowStateManager:
             self.app.text_paned, 0, orient='vertical'
         )
 
+        # Сохраняем ширину колонок дерева чатов
+        column_widths = self.app.chat_panel.get_column_widths()
+
+        # Сохраняем размер шрифта
+        font_size = self.app.detail_panel.get_font_size()
+
         config = {
             "window_size": {"width": win_width, "height": win_height},
             "proportions": {
                 "main_horizontal": left_prop,
                 "right_vertical": top_prop,
                 "text_vertical": req_prop
-            }
+            },
+            "column_widths": column_widths,
+            "font_size": font_size
         }
 
         try:
@@ -84,6 +95,15 @@ class WindowStateManager:
         props = config.get("proportions", {})
         if props:
             self.app.after(50, self._apply_proportions, props)
+
+        # Применяем ширину колонок дерева чатов
+        col_widths = config.get("column_widths", {})
+        if col_widths:
+            self.app.chat_panel.set_column_widths(col_widths)
+
+        # Применяем размер шрифта
+        font_size = config.get("font_size", FONT_SIZE)
+        self.app.detail_panel.set_font_size(font_size)
 
     def _get_sash_proportion(self, paned, index, orient):
         """Вычислить долю позиции саша относительно доступного пространства."""

@@ -48,19 +48,42 @@ class ChatController:
 
     # ---------- МЕТОДЫ ДЛЯ ИСТОЧНИКОВ ----------
 
-    def add_source(self, file_path: str) -> List[Chat]:
-        """Загружает архив, добавляет только новые сообщения, возвращает список добавленных чатов."""
+    def add_source(self, file_path: str) -> tuple[List[Chat], int, int, int, int]:
+        """
+        Загружает архив, добавляет только новые сообщения.
+        Возвращает кортеж:
+            (список добавленных чатов,
+             количество новых чатов,
+             количество новых сообщений в новых чатах,
+             количество обновлённых чатов,
+             количество новых сообщений в обновлённых чатах)
+        """
         loader = LoaderFactory.get_loader(file_path)
         if loader is None:
             raise ValueError(f"Unsupported file format: {file_path}")
 
-        new_chats = loader.load(file_path)   # вместо load_from_zip
+        new_chats = loader.load(file_path)
         chats_to_add = self._extract_new_messages_chats(new_chats)
+
+        # Статистика
+        new_chats_count = 0
+        new_messages_in_new = 0
+        updated_chats_count = 0
+        new_messages_in_updated = 0
+
+        for chat in chats_to_add:
+            existing = self._find_existing_chats(chat.id)
+            if not existing:
+                new_chats_count += 1
+                new_messages_in_new += len(chat.get_pairs())
+            else:
+                updated_chats_count += 1
+                new_messages_in_updated += len(chat.get_pairs())
 
         if chats_to_add:
             self._add_source_with_chats(chats_to_add, file_path)
 
-        return chats_to_add
+        return chats_to_add, new_chats_count, new_messages_in_new, updated_chats_count, new_messages_in_updated
 
     def _load_new_chats(self, file_path: str) -> List[Chat]:
         return load_from_zip(file_path)
