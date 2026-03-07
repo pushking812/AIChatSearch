@@ -10,9 +10,9 @@ from ..model import Chat
 
 
 def _format_datetime(dt) -> str:
-    """Форматирует datetime в строку 'YYYY-MM-DD HH:MM' или возвращает пустую строку."""
+    """Форматирует datetime в строку 'ДД-ММ-ГГГГ ЧЧ:ММ' или возвращает пустую строку."""
     if dt:
-        return dt.strftime("%Y-%m-%d %H:%M")
+        return dt.strftime("%d-%m-%Y %H:%M")
     return ""
 
 
@@ -42,22 +42,20 @@ class ChatListPanel:
         tree_container = tk.Frame(parent)
         tree_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # Колонки: источник, название чата, кол-во сообщений, дата создания
+        # Колонки: название (объединяет источник и название чата), кол-во сообщений, дата создания
         self.tree = ttk.Treeview(
             tree_container,
-            columns=("source", "chat", "msg_count", "created"),
+            columns=("name", "msg_count", "created"),
             show="tree headings",
             selectmode=tk.EXTENDED
         )
-        self.tree.heading("source", text="Источник")
-        self.tree.heading("chat", text="Чат")
+        self.tree.heading("name", text="Название")
         self.tree.heading("msg_count", text="Сообщений")
         self.tree.heading("created", text="Создан")
 
         # Настройка ширины колонок
         self.tree.column("#0", width=25, stretch=False, minwidth=20)   # стрелки
-        self.tree.column("source", width=150, anchor="w")
-        self.tree.column("chat", width=250, anchor="w")
+        self.tree.column("name", width=350, anchor="w")
         self.tree.column("msg_count", width=80, anchor="center")
         self.tree.column("created", width=140, anchor="w")
 
@@ -117,7 +115,7 @@ class ChatListPanel:
             parent_id = self.tree.insert(
                 "",
                 "end",
-                values=(source_name, "", "", group['time']),
+                values=(source_name, "", group['time']),  # name = source_name, msg_count пусто
                 open=True,
                 tags=('group',)
             )
@@ -130,7 +128,7 @@ class ChatListPanel:
                 child_id = self.tree.insert(
                     parent_id,
                     "end",
-                    values=("", chat.title, len(chat.pairs), created_str),
+                    values=(chat.title, len(chat.pairs), created_str),
                     iid=unique_iid,
                     tags=('chat',)
                 )

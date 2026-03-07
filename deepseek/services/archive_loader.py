@@ -46,7 +46,7 @@ def load_from_zip(zip_path: str) -> List[Chat]:
 
             timeline = []
 
-            # --- Формируем timeline из ВСЕХ fragments ---
+            # Формируем timeline из всех fragments
             for node_id, node_data in mapping.items():
                 message = node_data.get("message")
                 if not message:
@@ -54,7 +54,7 @@ def load_from_zip(zip_path: str) -> List[Chat]:
 
                 fragments = message.get("fragments", [])
                 if not fragments:
-                    continue  # узлы типа #5 просто пропускаем
+                    continue
 
                 msg_time = parse_datetime(message.get("inserted_at"))
 
@@ -66,15 +66,37 @@ def load_from_zip(zip_path: str) -> List[Chat]:
                         (node_id, f_type, f_text, msg_time)
                     )
 
-            # --- сортировка по времени ---
+            # Сортировка по времени
             timeline.sort(key=lambda x: x[3] or datetime.min)
 
             pending_request = None
             think_buffer = []
 
-            for node_id, f_type, f_text, msg_time in timeline:
+            def finalize_pending():
+                """Создаёт пару из текущего pending_request и think_buffer (без ответа)."""
+                nonlocal pending_request, think_buffer
+                if pending_request:
+                    req_node_id, req_text, req_time = pending_request
+                    full_response = ""
+                    if think_buffer:
+                        full_response = "=== THINK ===\n" + "\n\n".join(think_buffer)
+                    pair = MessagePair(
+                        index=req_node_id,
+                        request_text=req_text,
+                        response_text=full_response,
+                        request_time=req_time,
+                        response_time=None,
+                        request_node_id=req_node_id,
+                        response_node_id=None,
+                    )
+                    chat.add_pair(pair)
+                    pending_request = None
+                    think_buffer = []
 
+            for node_id, f_type, f_text, msg_time in timeline:
                 if f_type == "REQUEST":
+                    # Завершаем предыдущий незавершённый запрос, если он был
+                    finalize_pending()
                     pending_request = (node_id, f_text, msg_time)
                     think_buffer = []
 
@@ -86,14 +108,12 @@ def load_from_zip(zip_path: str) -> List[Chat]:
                         req_node_id, req_text, req_time = pending_request
 
                         full_response = ""
-
                         if think_buffer:
-                            full_response += (
+                            full_response = (
                                 "=== THINK ===\n"
                                 + "\n\n".join(think_buffer)
                                 + "\n\n=== RESPONSE ===\n"
                             )
-
                         full_response += f_text
 
                         pair = MessagePair(
@@ -105,16 +125,16 @@ def load_from_zip(zip_path: str) -> List[Chat]:
                             request_node_id=req_node_id,
                             response_node_id=node_id,
                         )
-
                         chat.add_pair(pair)
-
                         pending_request = None
                         think_buffer = []
                     else:
-                        # если нет запроса — просто игнорируем
                         logger.debug(
                             f"Orphan response in chat {chat_id} (node {node_id})"
                         )
+
+            # После окончания цикла завершаем последний запрос, если он остался
+            finalize_pending()
 
             chats.append(chat)
 
