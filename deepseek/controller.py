@@ -1,7 +1,7 @@
 # deepseek/controller.py
 
 import os
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Set
 from datetime import datetime
 
 from .gui_components.constants import CONFIG_DIR, SESSION_FILE
@@ -13,14 +13,12 @@ from .services.session_manager import SessionManager
 
 class ChatController:
     def __init__(self) -> None:
-        # Атрибуты для работы с несколькими источниками
-        self.sources: List[DataSource] = []                 # список загруженных источников
-        self._chat_ref_to_source: Dict[int, DataSource] = {}  # id(chat) -> источник
-        self._current_filter_query: str = ""                 # текущий фильтр
+        self.sources: List[DataSource] = []
+        self._chat_ref_to_source: Dict[int, DataSource] = {}
+        self._current_filter_query: str = ""
 
-        # Объединённые списки
-        self.chats: List[Chat] = []                          # все чаты из всех источников
-        self.filtered_chats: List[Chat] = []                 # отфильтрованный список
+        self.chats: List[Chat] = []
+        self.filtered_chats: List[Chat] = []
 
         self.current_chat: Optional[Chat] = None
         self.current_chat_pairs: List[MessagePair] = []
@@ -28,11 +26,9 @@ class ChatController:
 
         self._reset_search_state()
 
-        # Путь к файлу сессии
         config_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', CONFIG_DIR))
         self.session_path = os.path.abspath(os.path.join(config_dir, SESSION_FILE))
 
-        # Сервисы
         self._search_service = SearchService()
         self._session_manager = SessionManager(self.session_path)
 
@@ -53,9 +49,9 @@ class ChatController:
     # ---------- МЕТОДЫ ДЛЯ ИСТОЧНИКОВ ----------
 
     def add_source(self, file_path: str) -> List[Chat]:
-        """Загружает архив, добавляет чаты с новыми сообщениями, возвращает список добавленных чатов."""
+        """Загружает архив, добавляет только новые сообщения к существующим чатам, возвращает список добавленных чатов."""
         new_chats = self._load_new_chats(file_path)
-        chats_to_add = self._filter_chats_with_new_messages(new_chats)
+        chats_to_add = self._extract_new_messages_chats(new_chats)
 
         if chats_to_add:
             self._add_source_with_chats(chats_to_add, file_path)
@@ -63,7 +59,6 @@ class ChatController:
         return chats_to_add
 
     def _load_new_chats(self, file_path: str) -> List[Chat]:
-        """Загружает чаты из ZIP-архива."""
         return load_from_zip(file_path)
 
     def _find_existing_chats(self, chat_id: str) -> List[Chat]:
@@ -75,73 +70,66 @@ class ChatController:
                     existing.append(chat)
         return existing
 
-    @staticmethod
-    def _max_response_time(chat: Chat) -> Optional[datetime]:
-        """Возвращает максимальную дату ответа среди всех пар чата (или None, если пар нет)."""
-        max_time = None
-        for pair in chat.get_pairs():
-            if pair.response_time and (max_time is None or pair.response_time > max_time):
-                max_time = pair.response_time
-        return max_time
+    def _collect_existing_indices(self, chat_id: str) -> Set[str]:
+        """Собирает все индексы пар сообщений из всех существующих версий чата."""
+        indices = set()
+        for chat in self._find_existing_chats(chat_id):
+            for pair in chat.get_pairs():
+                indices.add(pair.index)
+        return indices
 
-    def _filter_chats_with_new_messages(self, new_chats: List[Chat]) -> List[Chat]:
-        """Оставляет только те чаты, которые либо новые, либо содержат более свежие сообщения."""
+    def _extract_new_messages_chats(self, new_chats: List[Chat]) -> List[Chat]:
+        """
+        Для каждого нового чата создаёт новый объект Chat, содержащий только те пары,
+        индексы которых отсутствуют во всех ранее загруженных версиях этого чата.
+        Если новых сообщений нет, чат не добавляется.
+        """
         result = []
         for new_chat in new_chats:
-            existing = self._find_existing_chats(new_chat.id)
-            if not existing:
-                # Новый чат – добавляем всегда
-                result.append(new_chat)
-                continue
+            existing_indices = self._collect_existing_indices(new_chat.id)
+            new_pairs = [pair for pair in new_chat.get_pairs() if pair.index not in existing_indices]
 
-            # Вычисляем максимальную дату среди существующих
-            max_existing = None
-            for chat in existing:
-                chat_max = self._max_response_time(chat)
-                if chat_max and (max_existing is None or chat_max > max_existing):
-                    max_existing = chat_max
-
-            max_new = self._max_response_time(new_chat)
-
-            # Если в новом чате есть сообщение позже, чем все существующие – добавляем
-            if max_new and (max_existing is None or max_new > max_existing):
-                result.append(new_chat)
-
+            if new_pairs:
+                # Создаём новый чат с теми же метаданными, но только с новыми парами
+                delta_chat = Chat(
+                    chat_id=new_chat.id,
+                    title=new_chat.title,
+                    created_at=new_chat.created_at,
+                    updated_at=new_chat.updated_at
+                )
+                for pair in new_pairs:
+                    delta_chat.add_pair(pair)
+                result.append(delta_chat)
+            # else: полностью дублирующийся чат игнорируется
         return result
 
     def _add_source_with_chats(self, added_chats: List[Chat], file_path: str) -> None:
-        """Создаёт новый источник с добавленными чатами и обновляет структуры."""
         source = DataSource(file_path)
         source.chats = added_chats
         self.sources.append(source)
 
-        # Заполняем _chat_ref_to_source для быстрого поиска источника по объекту чата
         for chat in added_chats:
             self._chat_ref_to_source[id(chat)] = source
 
         self._rebuild_filtered_chats()
 
     def clear_all_sources(self) -> None:
-        """Полностью очищает все источники и сбрасывает состояние."""
         self.sources.clear()
         self._chat_ref_to_source.clear()
         self._current_filter_query = ""
         self._rebuild_filtered_chats()
 
     def _rebuild_filtered_chats(self) -> None:
-        """Перестраивает объединённый список чатов и применяет фильтр."""
         self._collect_all_chats()
         self._apply_filter()
 
     def _collect_all_chats(self) -> None:
-        """Собирает все чаты из всех источников в self.chats."""
         all_chats: List[Chat] = []
         for source in self.sources:
             all_chats.extend(source.chats)
         self.chats = all_chats
 
     def _apply_filter(self) -> None:
-        """Применяет текущий фильтр к self.chats и сбрасывает навигацию."""
         query = self._current_filter_query.lower().strip()
         if query:
             self.filtered_chats = [
@@ -150,11 +138,9 @@ class ChatController:
             ]
         else:
             self.filtered_chats = list(self.chats)
-
         self._reset_navigation()
 
     def get_source_name(self, chat: Chat) -> str:
-        """Возвращает имя файла источника для данного чата или 'Imported', если источник не определён."""
         source = self._chat_ref_to_source.get(id(chat))
         if source:
             if source.file_path != "Imported":
@@ -166,18 +152,15 @@ class ChatController:
     # ---------- FILTER ----------
 
     def filter_chats(self, query: str) -> None:
-        """Сохраняет запрос фильтра и перестраивает отфильтрованный список."""
         self._current_filter_query = (query or "").strip()
         self._rebuild_filtered_chats()
 
     # ---------- SEARCH ----------
 
     def search(self, chat: Chat, query: str, field: str) -> List[MessagePair]:
-        """Делегирует выполнение поиска сервису SearchService."""
         return self._search_service.search(chat, query, field)
 
     def search_with_positions(self, chat: Chat, query: str, field: str) -> List:
-        """Делегирует выполнение поиска с позициями сервису SearchService."""
         return self._search_service.search_with_positions(chat, query, field)
 
     # ---------- SELECT MESSAGE ----------
@@ -237,15 +220,12 @@ class ChatController:
     # ---------- СОХРАНЕНИЕ И ЗАГРУЗКА СЕССИИ ----------
 
     def save_session(self) -> None:
-        """Сохраняет текущие источники в файл сессии."""
         self._session_manager.save(self.sources)
 
     def load_session(self) -> None:
-        """Загружает источники из файла сессии и восстанавливает внутренние структуры."""
         sources = self._session_manager.load()
         if sources is not None:
             self.sources = sources
-            # Перестраиваем _chat_ref_to_source
             self._chat_ref_to_source.clear()
             for source in self.sources:
                 for chat in source.chats:
