@@ -2,6 +2,7 @@
 
 """Главный класс приложения, координирующий работу всех компонентов."""
 
+import os
 from tkinter import ttk
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -352,7 +353,7 @@ class Application(tk.Tk):
         except ValueError:
             message_index = 0
 
-        # Подготавливаем данные
+        # Подготавливаем данные для экспорта (сами данные не используют source_name, но он нужен для имени файла)
         data = Exporter.prepare_data(
             chat_title=current_chat.title,
             chat_created_at=current_chat.created_at,
@@ -360,13 +361,25 @@ class Application(tk.Tk):
             message_index=message_index
         )
 
-        # Предлагаем имя файла
-        safe_title = "".join(c for c in current_chat.title if c.isalnum() or c in (' ', '-', '_')).rstrip()
-        default_name = f"{safe_title}_msg{message_index}.txt"
+        # Получаем имя источника и очищаем от расширения
+        source_name_full, _ = self.controller.get_source_info(current_chat)
+        # Убираем расширение файла, если оно есть
+        source_name_base = os.path.splitext(source_name_full)[0] if source_name_full != "Imported" else "Imported"
+
+        # Очищаем название чата от недопустимых символов
+        safe_chat_title = "".join(c for c in current_chat.title if c.isalnum() or c in (' ', '-', '_')).rstrip()
+
+        # Формируем имя файла по шаблону
+        filename = constants.EXPORT_FILENAME_TEMPLATE.format(
+            source_name=source_name_base,
+            chat_title=safe_chat_title,
+            message_index=message_index
+        )
+
         file_path = filedialog.asksaveasfilename(
             defaultextension=".txt",
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
-            initialfile=default_name
+            initialfile=filename
         )
         if not file_path:
             return

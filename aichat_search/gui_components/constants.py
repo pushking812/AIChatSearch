@@ -32,4 +32,8 @@ FONT_SIZE = 10
 PREVIEW_CHARS = 100
 
 # Количество символов контекста вокруг найденного совпадения (слева и справа)
-CONTEXT_CHARS = 20
+CONTEXT_CHARS = 60
+
+# Шаблон имени файла при экспорте сообщения
+# Доступные переменные: source_name, chat_title, message_index
+EXPORT_FILENAME_TEMPLATE = "{source_name}_{chat_title}_сообщение_{message_index:03d}.txt"
