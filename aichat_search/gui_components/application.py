@@ -12,6 +12,8 @@ from .message_detail import MessageDetailPanel
 from .search_controller import SearchController
 from .window_state import WindowStateManager
 from ..controller import ChatController
+from ..services.exporter_factory import ExporterFactory
+from ..services.exporters.base import Exporter
 
 
 class Application(tk.Tk):
@@ -21,7 +23,7 @@ class Application(tk.Tk):
         super().__init__()
 
         self.controller = ChatController()
-        self.title("AI Chat Archive Search")
+        self.title("DeepSeek Chat Archive Navigator")
         self.geometry(f"{constants.DEFAULT_WIDTH}x{constants.DEFAULT_HEIGHT}")
         self.minsize(constants.MIN_LEFT_WIDTH + constants.MIN_RIGHT_WIDTH,
                      constants.MIN_TOP_HEIGHT + constants.MIN_BOTTOM_HEIGHT)
@@ -44,11 +46,25 @@ class Application(tk.Tk):
     # ---------- Инициализация ----------
     def _create_menu(self):
         menubar = tk.Menu(self)
+
+        # Меню Файл
         file_menu = tk.Menu(menubar, tearoff=0)
         file_menu.add_command(label="Загрузить архив...", command=self.add_archive)
         file_menu.add_command(label="Новая сессия", command=self.new_session)
         menubar.add_cascade(label="Файл", menu=file_menu)
+
+        # Меню Сообщение
+        self._create_message_menu(menubar)
+
         self.config(menu=menubar)
+
+    def _create_message_menu(self, menubar):
+        message_menu = tk.Menu(menubar, tearoff=0)
+        export_menu = tk.Menu(message_menu, tearoff=0)
+        export_menu.add_command(label="В простой текст", command=self._export_current_as_text)
+        # Здесь можно добавить другие форматы позже
+        message_menu.add_cascade(label="Экспорт данных", menu=export_menu)
+        menubar.add_cascade(label="Сообщение", menu=message_menu)
 
     def _create_layout(self):
         # Основная горизонтальная панель
@@ -183,22 +199,16 @@ class Application(tk.Tk):
             self._update_nav_buttons()
 
             # ---- ВОССТАНОВЛЕНИЕ ПЕРЕХОДА К РЕЗУЛЬТАТУ ПОИСКА ----
-            # Проверяем, есть ли у search_ctrl результаты поиска
             if hasattr(self.search_ctrl, 'results') and self.search_ctrl.results:
                 results = self.search_ctrl.results
-                # Ищем первое вхождение для данной пары (чат + сообщение)
                 for idx, (s_chat, s_pair, field, start, end) in enumerate(results):
                     if s_chat is chat and s_pair is pair:
-                        # Нашли – обновляем текущий индекс в search_ctrl (если есть такой атрибут)
                         if hasattr(self.search_ctrl, 'current_index'):
                             self.search_ctrl.current_index = idx
-                        # Обновляем счётчик
                         self.search_counter.config(text=f"{idx + 1} / {len(results)}")
-                        # Подсвечиваем найденный фрагмент
                         self.detail_panel.highlight_search_match(field, start, end, move_focus=False)
                         break
                 else:
-                    # Если ни одного вхождения не найдено – убираем подсветку
                     self.detail_panel.clear_highlight()
             # ------------------------------------------------------
 
@@ -216,7 +226,6 @@ class Application(tk.Tk):
         if results:
             self.tree_panel.display_search_results(results)
         else:
-            # Если результатов нет, показываем все сообщения выбранных чатов
             self.tree_panel.display_chats(selected_chats)
             self.search_counter.config(text="0 / 0")
 
@@ -235,9 +244,7 @@ class Application(tk.Tk):
 
     def _on_search_result_change(self, result, index, total, move_focus=True):
         chat, pair, field, start, end = result
-        # Выделяем пару в дереве
         if self.tree_panel.select_item_by_pair(chat, pair):
-            # Обновляем детали
             self.controller.select_pair(chat, pair)
             self.detail_panel.display_pair(pair)
             self._update_position_label()
@@ -245,7 +252,7 @@ class Application(tk.Tk):
             self.detail_panel.highlight_search_match(field, start, end, move_focus=move_focus)
         self.search_counter.config(text=f"{index + 1} / {total}")
 
-    # ---------- Новые методы для работы с архивами и сессией ----------
+    # ---------- Методы для работы с архивами и сессией ----------
     def add_archive(self):
         """Загружает новый ZIP-архив и добавляет его чаты к существующим."""
         file_path = filedialog.askopenfilename(filetypes=[("ZIP files", "*.zip")])
@@ -273,20 +280,17 @@ class Application(tk.Tk):
         """Очищает все загруженные источники и сбрасывает интерфейс."""
         self.controller.clear_all_sources()
         self._update_chat_list()
-        # Очищаем дерево сообщений и детали
         self.tree_panel.clear()
         self.detail_panel.clear()
-        # Сбрасываем поиск
         self.search_var.set("")
         self.search_ctrl.clear()
         self.search_counter.config(text="0 / 0")
-        # Обновляем навигацию
         self._update_nav_buttons()
         self._update_position_label()
 
     def save_current_pair(self):
         """Сохранить изменения текущей пары."""
-        current_pair = self.controller.get_current_pair()  # было self.nav_ctrl.get_current()
+        current_pair = self.controller.get_current_pair()
         if current_pair is None:
             messagebox.showwarning("Предупреждение", "Нет выбранной пары для сохранения.")
             return
@@ -305,14 +309,13 @@ class Application(tk.Tk):
             current_pair.modified = True
             self.tree_panel.update_pair_item(current_pair)
             messagebox.showinfo("Сохранение", "Изменения сохранены.")
-            # Автосохранение после изменения
             self.controller.save_session()
         else:
             messagebox.showinfo("Сохранение", "Нет изменений для сохранения.")
 
     def prev_pair(self):
         """Перейти к предыдущей паре."""
-        pair = self.controller.prev_pair()  # было self.nav_ctrl.prev()
+        pair = self.controller.prev_pair()
         if pair:
             self.detail_panel.display_pair(pair)
             self._update_position_label()
@@ -320,7 +323,7 @@ class Application(tk.Tk):
 
     def next_pair(self):
         """Перейти к следующей паре."""
-        pair = self.controller.next_pair()  # было self.nav_ctrl.next()
+        pair = self.controller.next_pair()
         if pair:
             self.detail_panel.display_pair(pair)
             self._update_position_label()
@@ -330,14 +333,59 @@ class Application(tk.Tk):
         """Обновить состояние кнопок навигации (вызывается извне)."""
         self._update_nav_buttons()
 
+    # ---------- Экспорт ----------
+    def _export_current_as_text(self):
+        """Экспортировать текущее выбранное сообщение в текстовый файл."""
+        current_pair = self.controller.get_current_pair()
+        if current_pair is None:
+            messagebox.showwarning("Экспорт", "Нет выбранного сообщения для экспорта.")
+            return
+
+        current_chat = self.controller.current_chat
+        if current_chat is None:
+            messagebox.showwarning("Экспорт", "Не удалось определить текущий чат.")
+            return
+
+        # Получаем индекс сообщения в чате (нумерация с 1 для пользователя)
+        try:
+            message_index = current_chat.pairs.index(current_pair) + 1
+        except ValueError:
+            message_index = 0
+
+        # Подготавливаем данные
+        data = Exporter.prepare_data(
+            chat_title=current_chat.title,
+            chat_created_at=current_chat.created_at,
+            pair=current_pair,
+            message_index=message_index
+        )
+
+        # Предлагаем имя файла
+        safe_title = "".join(c for c in current_chat.title if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        default_name = f"{safe_title}_msg{message_index}.txt"
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".txt",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+            initialfile=default_name
+        )
+        if not file_path:
+            return
+
+        try:
+            exporter = ExporterFactory.get_exporter('txt')
+            exporter.export(data, file_path)
+            messagebox.showinfo("Экспорт", f"Сообщение успешно экспортировано в:\n{file_path}")
+        except Exception as e:
+            messagebox.showerror("Ошибка экспорта", f"Не удалось сохранить файл:\n{e}")
+
     # ---------- Внутренние вспомогательные методы ----------
     def _update_nav_buttons(self):
-        can_prev, can_next = self.controller.get_nav_state()  # было self.nav_ctrl.get_state()
+        can_prev, can_next = self.controller.get_nav_state()
         self.prev_button.config(state=tk.NORMAL if can_prev else tk.DISABLED)
         self.next_button.config(state=tk.NORMAL if can_next else tk.DISABLED)
 
     def _update_position_label(self):
-        title, index, total = self.controller.get_position_info()  # было self.nav_ctrl.get_position_info()
+        title, index, total = self.controller.get_position_info()
         if title is None:
             self.detail_panel.set_position_label("")
         else:

@@ -33,8 +33,11 @@ class WindowStateManager:
         """Сохранить текущее состояние в JSON."""
         os.makedirs(self.config_dir, exist_ok=True)
 
+        # Размер и позиция окна
         win_width = self.app.winfo_width()
         win_height = self.app.winfo_height()
+        win_x = self.app.winfo_x()
+        win_y = self.app.winfo_y()
 
         # Вычисляем пропорции для каждой панели
         left_prop = self._get_sash_proportion(
@@ -55,6 +58,7 @@ class WindowStateManager:
 
         config = {
             "window_size": {"width": win_width, "height": win_height},
+            "window_position": {"x": win_x, "y": win_y},
             "proportions": {
                 "main_horizontal": left_prop,
                 "right_vertical": top_prop,
@@ -82,11 +86,23 @@ class WindowStateManager:
             print(f"Ошибка загрузки состояния: {e}")
             return
 
-        # Восстанавливаем размер окна
+        # Восстанавливаем размер и позицию окна
         win_size = config.get("window_size", {})
         width = win_size.get("width", DEFAULT_WIDTH)
         height = win_size.get("height", DEFAULT_HEIGHT)
-        self.app.geometry(f"{width}x{height}")
+
+        win_pos = config.get("window_position", {})
+        x = win_pos.get("x")
+        y = win_pos.get("y")
+
+        if x is not None and y is not None:
+            # Проверяем, что окно не уходит за пределы экрана (опционально)
+            # Можно добавить проверку видимости, но пока просто применяем
+            geometry = f"{width}x{height}+{x}+{y}"
+        else:
+            geometry = f"{width}x{height}"
+
+        self.app.geometry(geometry)
 
         self.app.update_idletasks()
 
