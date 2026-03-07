@@ -4,21 +4,20 @@
     "height": 823
   },
   "proportions": {
-    "main_horizontal": 0.2224824355971897,
-    "right_vertical": 0.23803680981595093,
-    "text_vertical": 0.22385321100917432
+    "main_horizontal": 0.24121779859484777,
+    "right_vertical": 0.5190184049079755,
+    "text_vertical": 0.46835443037974683
   },
   "column_widths": {
-    "name": 122,
-    "msg_count": 96,
-    "created": 123
+    "name": 124,
+    "msg_count": 74,
+    "created": 158
   },
   "tree_column_widths": {
-    "global_idx": 47,
-    "chat_idx": 61,
-    "request": 473,
-    "response": 539,
-    "date": 115
-  },
-  "font_size": 8
+    "global_idx": 33,
+    "chat_idx": 58,
+    "request": 486,
+    "response": 558,
+    "date": 118
+  }
 }

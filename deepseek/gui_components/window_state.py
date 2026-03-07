@@ -17,13 +17,12 @@ from .constants import (
     MIN_BOTTOM_HEIGHT,
     MIN_REQUEST_HEIGHT,
     MIN_RESPONSE_HEIGHT,
-    FONT_SIZE,
 )
 
 
 class WindowStateManager:
     """Отвечает за сохранение и загрузку геометрии окна, пропорций панелей,
-       ширины колонок дерева чатов и размера шрифта в текстовых полях."""
+       и ширины колонок деревьев чатов и сообщений."""
 
     def __init__(self, app):
         self.app = app
@@ -54,9 +53,6 @@ class WindowStateManager:
         # Сохраняем ширину колонок правого дерева сообщений
         tree_column_widths = self.app.tree_panel.get_column_widths()
 
-        # Сохраняем размер шрифта
-        font_size = self.app.detail_panel.get_font_size()
-
         config = {
             "window_size": {"width": win_width, "height": win_height},
             "proportions": {
@@ -66,7 +62,6 @@ class WindowStateManager:
             },
             "column_widths": column_widths,
             "tree_column_widths": tree_column_widths,
-            "font_size": font_size
         }
 
         try:
@@ -109,10 +104,6 @@ class WindowStateManager:
         tree_widths = config.get("tree_column_widths", {})
         if tree_widths:
             self.app.tree_panel.set_column_widths(tree_widths)
-
-        # Применяем размер шрифта
-        font_size = config.get("font_size", FONT_SIZE)
-        self.app.detail_panel.set_font_size(font_size)
 
     def _get_sash_proportion(self, paned, index, orient):
         """Вычислить долю позиции саша относительно доступного пространства."""
