@@ -4,9 +4,16 @@
 
 import tkinter as tk
 from tkinter import ttk
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Optional
 
 from ..model import Chat
+
+
+def _format_datetime(dt) -> str:
+    """Форматирует datetime в строку 'YYYY-MM-DD HH:MM' или возвращает пустую строку."""
+    if dt:
+        return dt.strftime("%Y-%m-%d %H:%M")
+    return ""
 
 
 class ChatListPanel:
@@ -17,7 +24,7 @@ class ChatListPanel:
         self.on_select = on_select_callback
         self.filter_var = tk.StringVar()
 
-        # Словарь для быстрого поиска чата по iid элемента дерева
+        # Словарь для быстрого поиска чата по iid элемента дерева (только для листьев)
         self._item_to_chat: Dict[str, Chat] = {}
 
         self._create_widgets(parent)
@@ -35,21 +42,28 @@ class ChatListPanel:
         tree_container = tk.Frame(parent)
         tree_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
+        # Колонки: источник, название чата, кол-во сообщений, дата создания
         self.tree = ttk.Treeview(
             tree_container,
-            columns=("source", "title"),
+            columns=("source", "chat", "msg_count", "created"),
             show="tree headings",
             selectmode=tk.EXTENDED
         )
         self.tree.heading("source", text="Источник")
-        self.tree.heading("title", text="Название чата")
+        self.tree.heading("chat", text="Чат")
+        self.tree.heading("msg_count", text="Сообщений")
+        self.tree.heading("created", text="Создан")
 
-        self.tree.column("#0", width=25, stretch=False, minwidth=20)
+        # Настройка ширины колонок
+        self.tree.column("#0", width=25, stretch=False, minwidth=20)   # стрелки
         self.tree.column("source", width=150, anchor="w")
-        self.tree.column("title", width=250, anchor="w")
+        self.tree.column("chat", width=250, anchor="w")
+        self.tree.column("msg_count", width=80, anchor="center")
+        self.tree.column("created", width=140, anchor="w")
 
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
+        # Скроллбар
         scrollbar = ttk.Scrollbar(tree_container, orient=tk.VERTICAL, command=self.tree.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree.configure(yscrollcommand=scrollbar.set)
@@ -76,57 +90,77 @@ class ChatListPanel:
         )
         self.btn_clear.pack(side=tk.LEFT, padx=2)
 
-    def update_list(self, items: List[Tuple[Chat, str]]):
+    def update_list(self, items: List[Tuple[Chat, str, Optional[str]]]):
         """
         Обновляет отображение списка чатов с группировкой по источникам.
-        items: список кортежей (chat, source_name)
+        items: список кортежей (chat, source_name, source_time)
+               source_time – строка с датой/временем файла источника.
         """
         # Очищаем дерево и словарь
         for item in self.tree.get_children():
             self.tree.delete(item)
         self._item_to_chat.clear()
 
-        # Группируем чаты по источнику
-        groups: Dict[str, List[Chat]] = {}
-        for chat, source_name in items:
-            groups.setdefault(source_name, []).append(chat)
+        # Группируем чаты по источнику, сохраняя время файла (берём из первого чата группы)
+        groups: Dict[str, dict] = {}
+        for chat, source_name, source_time in items:
+            if source_name not in groups:
+                groups[source_name] = {
+                    'chats': [],
+                    'time': source_time
+                }
+            groups[source_name]['chats'].append(chat)
 
         # Создаём элементы дерева
-        for source_name, chat_list in groups.items():
-            # Создаём родительский элемент (группу)
+        for source_name, group in groups.items():
+            # Родительский элемент (группа-источник)
             parent_id = self.tree.insert(
                 "",
                 "end",
-                values=(source_name, ""),
-                open=True
+                values=(source_name, "", "", group['time']),
+                open=True,
+                tags=('group',)
             )
-            # Добавляем чаты как дочерние элементы
-            for chat in chat_list:
+            # Дочерние элементы (чаты)
+            for chat in group['chats']:
                 # Уникальный iid на основе имени источника и ID чата
                 unique_iid = f"{source_name}_{chat.id}"
-                # Добавляем количество сообщений к названию для наглядности
-                display_title = f"{chat.title} ({len(chat.pairs)} сообщ.)"
+                # Форматируем дату создания чата
+                created_str = _format_datetime(chat.created_at)
                 child_id = self.tree.insert(
                     parent_id,
                     "end",
-                    values=(source_name, display_title),
-                    iid=unique_iid
+                    values=("", chat.title, len(chat.pairs), created_str),
+                    iid=unique_iid,
+                    tags=('chat',)
                 )
                 self._item_to_chat[unique_iid] = chat
 
     def get_selected_chats(self) -> List[Chat]:
-        """Вернуть список выбранных объектов Chat (только чаты, не группы)."""
+        """
+        Возвращает список объектов Chat, соответствующих выбранным элементам.
+        Если выбран элемент группы, включаются все чаты этой группы.
+        """
         selected_iids = self.tree.selection()
         result = []
         for iid in selected_iids:
+            # Проверяем, является ли элемент чатом (присутствует в _item_to_chat)
             chat = self._item_to_chat.get(iid)
             if chat is not None:
                 result.append(chat)
+            else:
+                # Это группа – собираем все дочерние чаты
+                children = self.tree.get_children(iid)
+                for child_iid in children:
+                    child_chat = self._item_to_chat.get(child_iid)
+                    if child_chat is not None:
+                        result.append(child_chat)
         return result
 
     def select_all(self):
-        """Выбрать все чаты в списке (группы не выбираются)."""
-        self.tree.selection_set(list(self._item_to_chat.keys()))
+        """Выбрать все чаты во всех группах."""
+        all_chat_iids = list(self._item_to_chat.keys())
+        self.tree.selection_set(all_chat_iids)
         self._on_select()
 
     def clear_selection(self):
@@ -138,7 +172,10 @@ class ChatListPanel:
         """Обработка изменения фильтра."""
         self.controller.filter_chats(self.filter_var.get())
         filtered = self.controller.get_filtered_chats()
-        items = [(chat, self.controller.get_source_name(chat)) for chat in filtered]
+        items = []
+        for chat in filtered:
+            source_name, source_time = self.controller.get_source_info(chat)
+            items.append((chat, source_name, source_time))
         self.update_list(items)
         self.clear_selection()
 

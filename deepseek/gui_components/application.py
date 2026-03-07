@@ -149,9 +149,12 @@ class Application(tk.Tk):
 
     # ---------- Вспомогательные методы для обновления интерфейса ----------
     def _update_chat_list(self):
-        """Обновляет список чатов в панели, формируя кортежи (chat, source_name)."""
+        """Обновляет список чатов в панели, формируя кортежи (chat, source_name, source_time)."""
         filtered = self.controller.get_filtered_chats()
-        items = [(chat, self.controller.get_source_name(chat)) for chat in filtered]
+        items = []
+        for chat in filtered:
+            source_name, source_time = self.controller.get_source_info(chat)
+            items.append((chat, source_name, source_time))
         self.chat_panel.update_list(items)
 
     # ---------- Обработчики событий ----------

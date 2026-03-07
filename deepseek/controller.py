@@ -231,3 +231,23 @@ class ChatController:
                 for chat in source.chats:
                     self._chat_ref_to_source[id(chat)] = source
             self._rebuild_filtered_chats()
+            
+    # deepseek/controller.py (фрагмент)
+
+    def get_source_info(self, chat: Chat) -> tuple[str, Optional[str]]:
+        """
+        Возвращает кортеж (имя_источника, строка_времени_файла) для чата.
+        Время файла вычисляется по file_path источника.
+        """
+        source = self._chat_ref_to_source.get(id(chat))
+        if source:
+            name = os.path.basename(source.file_path) if source.file_path != "Imported" else "Imported"
+            time_str = None
+            if source.file_path != "Imported" and os.path.exists(source.file_path):
+                try:
+                    ts = os.path.getctime(source.file_path)
+                    time_str = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+                except OSError:
+                    pass
+            return name, time_str
+        return "Unknown", None
