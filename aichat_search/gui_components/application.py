@@ -403,6 +403,7 @@ class Application(tk.Tk):
 
     # ---------- Экспорт в простой текст ----------
     def _export_selected_messages(self):
+        """Экспорт выбранных сообщений в текстовые файлы."""
         selected = self.tree_panel.get_selected_pairs()
         if not selected:
             messagebox.showwarning("Экспорт", "Нет выбранных сообщений для экспорта.")
@@ -410,7 +411,10 @@ class Application(tk.Tk):
 
         exporter = ExporterFactory.get_exporter('txt')
         exported_count = 0
-        for chat, pair in selected:
+
+        # Если выбрано одно сообщение – сохраняем через диалог как раньше
+        if len(selected) == 1:
+            chat, pair = selected[0]
             try:
                 message_index = chat.pairs.index(pair) + 1
             except ValueError:
@@ -425,12 +429,7 @@ class Application(tk.Tk):
 
             source_name_full, _ = self.controller.get_source_info(chat)
             source_name_base = os.path.splitext(source_name_full)[0] if source_name_full != "Imported" else "Imported"
-            safe_chat_title = "".join(c for c in chat.title if c.isalnum() or c in (' ', '-', '_')).rstrip()
-            filename = constants.EXPORT_FILENAME_TEMPLATE.format(
-                source_name=source_name_base,
-                chat_title=safe_chat_title,
-                message_index=message_index
-            )
+            filename = self._generate_export_filename(source_name_base, chat.title, message_index)
 
             file_path = filedialog.asksaveasfilename(
                 defaultextension=".txt",
@@ -439,22 +438,56 @@ class Application(tk.Tk):
                 title=f"Сохранить сообщение {message_index} из чата '{chat.title}'"
             )
             if not file_path:
-                answer = messagebox.askyesno("Экспорт", "Продолжить экспорт остальных сообщений?")
-                if not answer:
-                    break
-                continue
+                return
 
             try:
                 exporter.export(data, file_path)
-                exported_count += 1
+                exported_count = 1
             except Exception as e:
                 messagebox.showerror("Ошибка экспорта", f"Не удалось сохранить файл:\n{e}")
-                answer = messagebox.askyesno("Экспорт", "Продолжить экспорт остальных сообщений?")
-                if not answer:
-                    break
+                return
+
+        else:
+            # Множественный экспорт – запрашиваем папку
+            root_dir = filedialog.askdirectory(title="Выберите папку для сохранения сообщений")
+            if not root_dir:
+                return
+
+            for idx, (chat, pair) in enumerate(selected):
+                try:
+                    message_index = chat.pairs.index(pair) + 1
+                except ValueError:
+                    message_index = 0
+
+                data = Exporter.prepare_data(
+                    chat_title=chat.title,
+                    chat_created_at=chat.created_at,
+                    pair=pair,
+                    message_index=message_index
+                )
+
+                source_name_full, _ = self.controller.get_source_info(chat)
+                source_name_base = os.path.splitext(source_name_full)[0] if source_name_full != "Imported" else "Imported"
+                filename = self._generate_export_filename(source_name_base, chat.title, message_index)
+                file_path = os.path.join(root_dir, filename)
+
+                try:
+                    exporter.export(data, file_path)
+                    exported_count += 1
+                except Exception as e:
+                    messagebox.showerror("Ошибка экспорта", f"Не удалось сохранить файл:\n{e}")
+                    answer = messagebox.askyesno(
+                        "Ошибка",
+                        f"Продолжить экспорт остальных сообщений? (Обработано {exported_count} из {len(selected)})"
+                    )
+                    if not answer:
+                        break
 
         if exported_count:
-            messagebox.showinfo("Экспорт", f"Успешно экспортировано {exported_count} сообщений.")
+            if len(selected) == 1:
+                messagebox.showinfo("Экспорт", "Сообщение успешно экспортировано.")
+            else:
+                messagebox.showinfo("Экспорт", f"Успешно экспортировано {exported_count} из {len(selected)} сообщений в папку:\n{root_dir}")
         else:
             messagebox.showinfo("Экспорт", "Ни одно сообщение не было экспортировано.")
 
@@ -557,3 +590,12 @@ class Application(tk.Tk):
         self.controller.save_session()
         self.state_manager.save()
         self.destroy()
+        
+    def _generate_export_filename(self, source_name: str, chat_title: str, message_index: int) -> str:
+        """Генерирует имя файла для экспорта одного сообщения."""
+        safe_chat_title = "".join(c for c in chat_title if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        return constants.EXPORT_FILENAME_TEMPLATE.format(
+            source_name=source_name,
+            chat_title=safe_chat_title,
+            message_index=message_index
+        )
