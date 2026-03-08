@@ -1,4 +1,4 @@
-﻿# aichat_search/gui_components/constants.py
+# aichat_search/gui_components/constants.py
 
 """Константы, используемые в GUI."""
 
@@ -34,6 +34,6 @@ PREVIEW_CHARS = 100
 # Количество символов контекста вокруг найденного совпадения (слева и справа)
 CONTEXT_CHARS = 60
 
-# Шаблон имени файла при экспорте сообщения
+# Шаблон имени файла при экспорте одного сообщения
 # Доступные переменные: source_name, chat_title, message_index
 EXPORT_FILENAME_TEMPLATE = "{source_name}_{chat_title}_сообщение_{message_index:03d}.txt"

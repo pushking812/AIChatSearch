@@ -3,9 +3,11 @@
 """Главный класс приложения, координирующий работу всех компонентов."""
 
 import os
+from datetime import datetime
 from tkinter import ttk
 import tkinter as tk
 from tkinter import filedialog, messagebox
+
 from . import constants
 from .chat_list import ChatListPanel
 from .message_tree import MessageTreePanel
@@ -15,6 +17,7 @@ from .window_state import WindowStateManager
 from ..controller import ChatController
 from ..services.exporter_factory import ExporterFactory
 from ..services.exporters.base import Exporter
+from ..services.exporters.block_exporter import BlockExporter   # для экспорта по блокам
 
 
 class Application(tk.Tk):
@@ -34,11 +37,9 @@ class Application(tk.Tk):
         self._create_layout()
         self._init_controllers()
 
-        # Загрузка сессии после создания контроллера
         self.controller.load_session()
-        self._update_chat_list()          # обновить список чатов после загрузки
+        self._update_chat_list()
 
-        # Восстановление состояния окна
         self.state_manager = WindowStateManager(self)
         self.after_idle(self.state_manager.load_and_apply)
 
@@ -62,9 +63,9 @@ class Application(tk.Tk):
     def _create_message_menu(self, menubar):
         message_menu = tk.Menu(menubar, tearoff=0)
         export_menu = tk.Menu(message_menu, tearoff=0)
-        export_menu.add_command(label="В простой текст", command=self._export_current_as_text)
-        # Здесь можно добавить другие форматы позже
-        message_menu.add_cascade(label="Экспорт данных", menu=export_menu)
+        export_menu.add_command(label="В простой текст", command=self._export_selected_messages)
+        export_menu.add_command(label="По блокам", command=self._export_selected_blocks)
+        message_menu.add_cascade(label="Экспорт", menu=export_menu)
         menubar.add_cascade(label="Сообщение", menu=message_menu)
 
     def _create_layout(self):
@@ -162,7 +163,6 @@ class Application(tk.Tk):
     def _init_controllers(self):
         """Создание вспомогательных контроллеров."""
         self.search_ctrl = SearchController(self.controller, self._on_search_result_change)
-        # NavigationController больше не используется
 
     # ---------- Вспомогательные методы для обновления интерфейса ----------
     def _update_chat_list(self):
@@ -178,14 +178,10 @@ class Application(tk.Tk):
     def _on_chats_selected(self):
         """Вызывается при изменении выбора в списке чатов."""
         selected = self.chat_panel.get_selected_chats()
-        # Обновляем дерево
         self.tree_panel.display_chats(selected)
-        # Очищаем детали
         self.detail_panel.clear()
-        # Сбрасываем поиск
         self.search_ctrl.clear()
         self.search_counter.config(text="0 / 0")
-        # Обновляем навигацию
         self._update_nav_buttons()
 
     def _on_tree_selected(self):
@@ -199,7 +195,6 @@ class Application(tk.Tk):
             self._update_position_label()
             self._update_nav_buttons()
 
-            # ---- ВОССТАНОВЛЕНИЕ ПЕРЕХОДА К РЕЗУЛЬТАТУ ПОИСКА ----
             if hasattr(self.search_ctrl, 'results') and self.search_ctrl.results:
                 results = self.search_ctrl.results
                 for idx, (s_chat, s_pair, field, start, end) in enumerate(results):
@@ -211,15 +206,12 @@ class Application(tk.Tk):
                         break
                 else:
                     self.detail_panel.clear_highlight()
-            # ------------------------------------------------------
 
     def _on_search_key(self, event):
-        """Обработка ввода в поле поиска при live-режиме."""
         if self.live_search_var.get():
             self._perform_search()
 
     def _perform_search(self):
-        """Выполнить поиск."""
         query = self.search_var.get().strip()
         field = self.search_field_var.get()
         selected_chats = self.chat_panel.get_selected_chats()
@@ -231,16 +223,13 @@ class Application(tk.Tk):
             self.search_counter.config(text="0 / 0")
 
     def _reset_search(self):
-        """Сбросить поиск."""
         self.search_var.set("")
         self._perform_search()
 
     def _prev_search_result(self):
-        """Предыдущий результат поиска."""
         self.search_ctrl.prev()
 
     def _next_search_result(self):
-        """Следующий результат поиска."""
         self.search_ctrl.next()
 
     def _on_search_result_change(self, result, index, total, move_focus=True):
@@ -255,7 +244,6 @@ class Application(tk.Tk):
 
     # ---------- Методы для работы с архивами и сессией ----------
     def add_archive(self):
-        """Загружает новый ZIP-архив и добавляет его чаты к существующим."""
         file_path = filedialog.askopenfilename(filetypes=[("ZIP files", "*.zip")])
         if not file_path:
             return
@@ -278,7 +266,6 @@ class Application(tk.Tk):
             messagebox.showerror("Ошибка", f"Не удалось загрузить архив:\n{e}")
 
     def new_session(self):
-        """Очищает все загруженные источники и сбрасывает интерфейс."""
         self.controller.clear_all_sources()
         self._update_chat_list()
         self.tree_panel.clear()
@@ -290,7 +277,6 @@ class Application(tk.Tk):
         self._update_position_label()
 
     def save_current_pair(self):
-        """Сохранить изменения текущей пары."""
         current_pair = self.controller.get_current_pair()
         if current_pair is None:
             messagebox.showwarning("Предупреждение", "Нет выбранной пары для сохранения.")
@@ -315,7 +301,6 @@ class Application(tk.Tk):
             messagebox.showinfo("Сохранение", "Нет изменений для сохранения.")
 
     def prev_pair(self):
-        """Перейти к предыдущей паре."""
         pair = self.controller.prev_pair()
         if pair:
             self.detail_panel.display_pair(pair)
@@ -323,7 +308,6 @@ class Application(tk.Tk):
             self._update_nav_buttons()
 
     def next_pair(self):
-        """Перейти к следующей паре."""
         pair = self.controller.next_pair()
         if pair:
             self.detail_panel.display_pair(pair)
@@ -331,65 +315,124 @@ class Application(tk.Tk):
             self._update_nav_buttons()
 
     def update_nav_buttons(self):
-        """Обновить состояние кнопок навигации (вызывается извне)."""
         self._update_nav_buttons()
 
-    # ---------- Экспорт ----------
-    def _export_current_as_text(self):
-        """Экспортировать текущее выбранное сообщение в текстовый файл."""
-        current_pair = self.controller.get_current_pair()
-        if current_pair is None:
-            messagebox.showwarning("Экспорт", "Нет выбранного сообщения для экспорта.")
+    # ---------- Экспорт в простой текст ----------
+    def _export_selected_messages(self):
+        """Экспортировать каждое выбранное сообщение в отдельный текстовый файл."""
+        selected = self.tree_panel.get_selected_pairs()
+        if not selected:
+            messagebox.showwarning("Экспорт", "Нет выбранных сообщений для экспорта.")
             return
 
-        current_chat = self.controller.current_chat
-        if current_chat is None:
-            messagebox.showwarning("Экспорт", "Не удалось определить текущий чат.")
+        exporter = ExporterFactory.get_exporter('txt')
+
+        exported_count = 0
+        for chat, pair in selected:
+            try:
+                message_index = chat.pairs.index(pair) + 1
+            except ValueError:
+                message_index = 0
+
+            data = Exporter.prepare_data(
+                chat_title=chat.title,
+                chat_created_at=chat.created_at,
+                pair=pair,
+                message_index=message_index
+            )
+
+            source_name_full, _ = self.controller.get_source_info(chat)
+            source_name_base = os.path.splitext(source_name_full)[0] if source_name_full != "Imported" else "Imported"
+
+            safe_chat_title = "".join(c for c in chat.title if c.isalnum() or c in (' ', '-', '_')).rstrip()
+            filename = constants.EXPORT_FILENAME_TEMPLATE.format(
+                source_name=source_name_base,
+                chat_title=safe_chat_title,
+                message_index=message_index
+            )
+
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".txt",
+                filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+                initialfile=filename,
+                title=f"Сохранить сообщение {message_index} из чата '{chat.title}'"
+            )
+            if not file_path:
+                answer = messagebox.askyesno("Экспорт", "Продолжить экспорт остальных сообщений?")
+                if not answer:
+                    break
+                continue
+
+            try:
+                exporter.export(data, file_path)
+                exported_count += 1
+            except Exception as e:
+                messagebox.showerror("Ошибка экспорта", f"Не удалось сохранить файл:\n{e}")
+                answer = messagebox.askyesno("Экспорт", "Продолжить экспорт остальных сообщений?")
+                if not answer:
+                    break
+
+        if exported_count:
+            messagebox.showinfo("Экспорт", f"Успешно экспортировано {exported_count} сообщений.")
+        else:
+            messagebox.showinfo("Экспорт", "Ни одно сообщение не было экспортировано.")
+
+    # ---------- Экспорт по блокам ----------
+    def _export_selected_blocks(self):
+        """Экспортировать каждое выбранное сообщение в отдельную папку с блоками."""
+        selected = self.tree_panel.get_selected_pairs()
+        if not selected:
+            messagebox.showwarning("Экспорт", "Нет выбранных сообщений для экспорта.")
             return
 
-        # Получаем индекс сообщения в чате (нумерация с 1 для пользователя)
-        try:
-            message_index = current_chat.pairs.index(current_pair) + 1
-        except ValueError:
-            message_index = 0
-
-        # Подготавливаем данные для экспорта (сами данные не используют source_name, но он нужен для имени файла)
-        data = Exporter.prepare_data(
-            chat_title=current_chat.title,
-            chat_created_at=current_chat.created_at,
-            pair=current_pair,
-            message_index=message_index
-        )
-
-        # Получаем имя источника и очищаем от расширения
-        source_name_full, _ = self.controller.get_source_info(current_chat)
-        # Убираем расширение файла, если оно есть
-        source_name_base = os.path.splitext(source_name_full)[0] if source_name_full != "Imported" else "Imported"
-
-        # Очищаем название чата от недопустимых символов
-        safe_chat_title = "".join(c for c in current_chat.title if c.isalnum() or c in (' ', '-', '_')).rstrip()
-
-        # Формируем имя файла по шаблону
-        filename = constants.EXPORT_FILENAME_TEMPLATE.format(
-            source_name=source_name_base,
-            chat_title=safe_chat_title,
-            message_index=message_index
-        )
-
-        file_path = filedialog.asksaveasfilename(
-            defaultextension=".txt",
-            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
-            initialfile=filename
-        )
-        if not file_path:
+        # Выбираем корневую папку
+        root_dir = filedialog.askdirectory(title="Выберите корневую папку для сохранения блоков")
+        if not root_dir:
             return
 
-        try:
-            exporter = ExporterFactory.get_exporter('txt')
-            exporter.export(data, file_path)
-            messagebox.showinfo("Экспорт", f"Сообщение успешно экспортировано в:\n{file_path}")
-        except Exception as e:
-            messagebox.showerror("Ошибка экспорта", f"Не удалось сохранить файл:\n{e}")
+        exporter = ExporterFactory.get_exporter('blocks')
+        exported_count = 0
+
+        for chat, pair in selected:
+            try:
+                message_index = chat.pairs.index(pair) + 1
+            except ValueError:
+                message_index = 0
+
+            data = BlockExporter.prepare_data(
+                chat_title=chat.title,
+                chat_created_at=chat.created_at,
+                pair=pair,
+                message_index=message_index
+            )
+
+            source_name_full, _ = self.controller.get_source_info(chat)
+            source_name_base = os.path.splitext(source_name_full)[0] if source_name_full != "Imported" else "Imported"
+
+            safe_chat_title = "".join(c for c in chat.title if c.isalnum() or c in (' ', '-', '_')).rstrip()
+
+            # Формируем имя папки по шаблону (без расширения .txt)
+            folder_name = constants.EXPORT_FILENAME_TEMPLATE.format(
+                source_name=source_name_base,
+                chat_title=safe_chat_title,
+                message_index=message_index
+            ).replace('.txt', '')
+
+            folder_path = os.path.join(root_dir, folder_name)
+
+            try:
+                exporter.export(data, folder_path)
+                exported_count += 1
+            except Exception as e:
+                messagebox.showerror("Ошибка экспорта", f"Не удалось сохранить блоки для сообщения {message_index}:\n{e}")
+                answer = messagebox.askyesno("Экспорт", "Продолжить экспорт остальных сообщений?")
+                if not answer:
+                    break
+
+        if exported_count:
+            messagebox.showinfo("Экспорт", f"Успешно экспортировано {exported_count} сообщений по блокам в папку:\n{root_dir}")
+        else:
+            messagebox.showinfo("Экспорт", "Ни одно сообщение не было экспортировано.")
 
     # ---------- Внутренние вспомогательные методы ----------
     def _update_nav_buttons(self):
@@ -405,7 +448,6 @@ class Application(tk.Tk):
             self.detail_panel.set_position_label(f"Чат: {title} | Сообщение {index} из {total}")
 
     def _on_closing(self):
-        """Обработчик закрытия окна."""
         self.controller.save_session()
         self.state_manager.save()
         self.destroy()

@@ -1,8 +1,8 @@
-# aichat_search/exporters/factory.py
+# aichat_search/services/exporter_factory.py
 
-from typing import Type
 from .exporters.base import Exporter
 from .exporters.text_exporter import TextExporter
+from .exporters.block_exporter import BlockExporter
 
 
 class ExporterFactory:
@@ -10,7 +10,8 @@ class ExporterFactory:
 
     _exporters = {
         'txt': TextExporter,
-        # в будущем можно добавить 'json': JsonExporter, 'csv': CsvExporter и т.д.
+        'blocks': BlockExporter,
+        # в будущем можно добавить 'json', 'csv' и т.д.
     }
 
     @classmethod

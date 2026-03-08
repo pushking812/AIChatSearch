@@ -1,4 +1,4 @@
-# aichat_search/exporters/text_exporter.py
+# aichat_search/services/exporters/text_exporter.py
 
 import os
 from typing import Any, Dict
@@ -9,8 +9,9 @@ from .base import Exporter
 class TextExporter(Exporter):
     """Экспорт сообщения в простой текстовый файл."""
 
-    def export(self, data: Dict[str, Any], file_path: str) -> None:
-        """Сохраняет данные в текстовый файл с форматированием."""
+    @staticmethod
+    def format_message(data: Dict[str, Any]) -> str:
+        """Форматирует одно сообщение в строку для экспорта."""
         lines = []
         lines.append("=" * 60)
         lines.append(f"Чат: {data['chat_title']}")
@@ -29,9 +30,11 @@ class TextExporter(Exporter):
         if data['modified']:
             lines.append("(сообщение было изменено)")
         lines.append("=" * 60)
+        return "\n".join(lines)
 
-        content = "\n".join(lines)
-
+    def export(self, data: Dict[str, Any], file_path: str) -> None:
+        """Сохраняет одно сообщение в файл."""
+        content = self.format_message(data)
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(content)

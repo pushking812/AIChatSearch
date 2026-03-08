@@ -1,4 +1,4 @@
-﻿# aichat_search/gui_components/message_tree.py
+# aichat_search/gui_components/message_tree.py
 
 """Панель дерева сообщений с отображением чатов и пар."""
 
@@ -220,11 +220,22 @@ class MessageTreePanel:
                 break
 
     def get_selected_pair(self):
+        """Вернуть (chat, pair) для первого выбранного элемента или None."""
         selection = self.tree.selection()
         if not selection:
             return None
         item_id = selection[0]
         return self.tree_item_map.get(item_id)
+
+    def get_selected_pairs(self) -> List[Tuple[Chat, MessagePair]]:
+        """Вернуть список (chat, pair) для всех выбранных элементов (только сообщения)."""
+        selected_iids = self.tree.selection()
+        result = []
+        for iid in selected_iids:
+            item = self.tree_item_map.get(iid)
+            if item is not None:
+                result.append(item)
+        return result
 
     def select_item_by_pair(self, chat, pair):
         for item_id, (c, p) in self.tree_item_map.items():
