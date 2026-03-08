@@ -62,6 +62,7 @@ class ChatListPanel:
         self.tree.configure(yscrollcommand=scrollbar.set)
 
         self.tree.bind("<<TreeviewSelect>>", self._on_select)
+        self.tree.bind('<Double-1>', self._on_double_click_heading)
 
         buttons_frame = tk.Frame(parent)
         buttons_frame.pack(pady=(0, 5))
@@ -165,19 +166,44 @@ class ChatListPanel:
 
     # ---------- Получение выбранных чатов ----------
     def get_selected_chats(self) -> List[Chat]:
+        """Возвращает список уникальных чатов, выбранных в дереве.
+
+        Правила отбора:
+        - Явно выделенные чаты всегда включаются.
+        - Если выделена группа (источник, группа по префиксу, пользовательская группа)
+          и при этом не выделен ни один из её дочерних чатов, то включаются все чаты этой группы.
+        - Если выделена группа и одновременно выделены какие-то из её дочерних чатов,
+          то группа игнорируется, включаются только явно выделенные чаты.
+        - Дубликаты исключаются.
+        """
         selected_iids = self.tree.selection()
-        result = []
+        selected_chat_iids = set()
+        selected_group_iids = set()
+
+        # Разделяем выделенные элементы на чаты и группы
         for iid in selected_iids:
-            chat = self._item_to_chat.get(iid)
-            if chat is not None:
-                result.append(chat)
+            if iid in self._item_to_chat:
+                selected_chat_iids.add(iid)
             else:
-                children = self.tree.get_children(iid)
-                for child_iid in children:
-                    child_chat = self._item_to_chat.get(child_iid)
-                    if child_chat is not None:
-                        result.append(child_chat)
-        return result
+                selected_group_iids.add(iid)
+
+        result_set = set()
+
+        # Добавляем все явно выделенные чаты
+        for iid in selected_chat_iids:
+            result_set.add(self._item_to_chat[iid])
+
+        # Обрабатываем группы
+        for group_iid in selected_group_iids:
+            child_iids = self.tree.get_children(group_iid)
+            # Проверяем, есть ли среди выделенных чатов дети этой группы
+            if not any(child_iid in selected_chat_iids for child_iid in child_iids):
+                # Если ни один ребёнок не выделен, добавляем всех детей группы
+                for child_iid in child_iids:
+                    if child_iid in self._item_to_chat:
+                        result_set.add(self._item_to_chat[child_iid])
+
+        return list(result_set)
 
     # ---------- Кнопки ----------
     def select_all(self):
@@ -215,3 +241,23 @@ class ChatListPanel:
                 self.tree.column(col, width=width)
             except Exception:
                 pass
+                
+    def _toggle_all_items(self):
+        """Переключает состояние всех корневых элементов дерева: если все открыты – закрывает, иначе открывает."""
+        roots = self.tree.get_children('')
+        if not roots:
+            return
+        # Проверяем, все ли открыты
+        all_open = all(self.tree.item(item, 'open') for item in roots)
+        new_state = not all_open
+        for item in roots:
+            self.tree.item(item, open=new_state)
+
+    def _on_double_click_heading(self, event):
+        """Обрабатывает двойной щелчок мыши по заголовку колонки #0."""
+        # Определяем регион и колонку под курсором
+        region = self.tree.identify_region(event.x, event.y)
+        column = self.tree.identify_column(event.x)
+        if region == "heading" and column == "#0":
+            self._toggle_all_items()            
+           

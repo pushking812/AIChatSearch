@@ -183,7 +183,7 @@ class Application(tk.Tk):
         self.search_combobox.pack(side=tk.LEFT, padx=(0, 5))
 
         tk.Button(search_frame, text="Найти", command=self._perform_search).pack(side=tk.LEFT, padx=(0, 5))
-        tk.Button(search_frame, text="Сбросить", command=self._reset_search).pack(side=tk.LEFT)
+        # tk.Button(search_frame, text="Сбросить", command=self._reset_search).pack(side=tk.LEFT)
         tk.Checkbutton(search_frame, text="Live", variable=self.live_search_var).pack(side=tk.LEFT, padx=5)
         tk.Button(search_frame, text="<", width=2, command=self._prev_search_result).pack(side=tk.LEFT)
         tk.Button(search_frame, text=">", width=2, command=self._next_search_result).pack(side=tk.LEFT)

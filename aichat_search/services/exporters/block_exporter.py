@@ -1,10 +1,13 @@
 # aichat_search/services/exporters/block_exporter.py
 
 import os
+import logging
 from typing import Dict, Any, List
 
 from .base import Exporter
 from ..block_parser import BlockParser, MessageBlock
+
+logger = logging.getLogger(__name__)
 
 
 class BlockExporter(Exporter):
@@ -17,6 +20,11 @@ class BlockExporter(Exporter):
 
         parser = BlockParser()
         response_blocks = parser.parse(pair.response_text)
+        if parser.unclosed_blocks > 0:
+            logger.warning(
+                f"В сообщении (чат: {chat_title}, индекс: {pair.index}) "
+                f"обнаружено {parser.unclosed_blocks} незакрытых блоков кода"
+            )
 
         # Создаём блок запроса с индексом 0
         request_block = MessageBlock(0, pair.request_text, language=None, block_type='request')

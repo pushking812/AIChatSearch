@@ -1,6 +1,5 @@
 # aichat_search/services/block_parser.py
 
-import re
 from typing import List, Optional
 
 
@@ -90,32 +89,81 @@ class MessageBlock:
 
 
 class BlockParser:
-    """Разбирает текст на блоки, выделяя блоки кода, обозначенные ```, и остальной текст."""
+    """Разбирает текст на блоки, выделяя блоки кода, обозначенные ```, и остальной текст.
+    
+    Атрибуты:
+        unclosed_blocks: количество незакрытых блоков кода, обнаруженных при последнем вызове parse.
+    """
 
-    @staticmethod
-    def parse(text: str) -> List[MessageBlock]:
+    def __init__(self):
+        self.unclosed_blocks = 0
+
+    def parse(self, text: str) -> List[MessageBlock]:
+        """Разбирает текст на блоки, используя конечный автомат.
+        
+        Возвращает список блоков MessageBlock.
+        Если блок кода не закрыт до конца текста, в его содержимое добавляется маркер ошибки,
+        и счётчик unclosed_blocks увеличивается.
+        """
+        self.unclosed_blocks = 0
         blocks = []
-        pattern = re.compile(r'`{0,3}(?<=```)([^\n]*)\n(.*?)(?=```)`{0,3}', re.DOTALL)
-        pos = 0
-        block_index = 0
+        i = 0
+        length = len(text)
+        state = 'TEXT'
+        start = 0
+        lang = None
 
-        for match in pattern.finditer(text):
-            start, end = match.span()
-            if start > pos:
-                content = text[pos:start].strip()
-                if content:
-                    blocks.append(MessageBlock(block_index, content, language=None))
-                    block_index += 1
-            lang = match.group(1).strip() or None
-            code = match.group(2).strip()
-            if code:
-                blocks.append(MessageBlock(block_index, code, language=lang))
-                block_index += 1
-            pos = end
+        while i < length:
+            if state == 'TEXT':
+                # Ищем открывающие ``` в начале строки
+                if text[i:i+3] == '```' and (i == 0 or text[i-1] == '\n'):
+                    # Сохраняем предшествующий текст
+                    if i > start:
+                        content = text[start:i].rstrip('\n')
+                        if content:
+                            blocks.append(MessageBlock(len(blocks), content, language=None))
+                    i += 3
+                    start = i
+                    state = 'CODE_START'
+                else:
+                    i += 1
 
-        if pos < len(text):
-            content = text[pos:].strip()
-            if content:
-                blocks.append(MessageBlock(block_index, content, language=None))
+            elif state == 'CODE_START':
+                # Считываем язык до конца строки
+                lang_start = i
+                while i < length and text[i] != '\n':
+                    i += 1
+                lang = text[lang_start:i].strip() or None
+                # Пропускаем перевод строки, если он есть
+                if i < length and text[i] == '\n':
+                    i += 1
+                start = i
+                state = 'CODE'
+
+            elif state == 'CODE':
+                # Ищем закрывающие ``` в начале строки
+                if text[i:i+3] == '```' and (i == 0 or text[i-1] == '\n'):
+                    # Код до этого момента (без закрывающих)
+                    code = text[start:i].rstrip('\n')
+                    blocks.append(MessageBlock(len(blocks), code, language=lang))
+                    i += 3
+                    start = i
+                    state = 'TEXT'
+                    lang = None
+                else:
+                    i += 1
+
+        # Обработка остатка текста после цикла
+        if start < length:
+            remaining = text[start:]
+            if state == 'CODE':
+                # Незакрытый блок кода
+                self.unclosed_blocks += 1
+                # Добавляем маркер ошибки в конец содержимого
+                remaining += "\n<<<ОШИБКА ПАРСИНГА БЛОКА - ОТСУТСВУЮТ ЗАКРЫВАЮЩИЕ СИМВОЛЫ \"```\">>>"
+                blocks.append(MessageBlock(len(blocks), remaining, language=lang))
+            elif state == 'TEXT' and remaining.strip():
+                blocks.append(MessageBlock(len(blocks), remaining, language=None))
+            # Если остаток пустой, ничего не добавляем
 
         return blocks

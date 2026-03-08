@@ -81,7 +81,9 @@ class MessageTreePanel:
         scrollbar = tk.Scrollbar(parent, command=self.tree.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree.config(yscrollcommand=scrollbar.set)
+        
         self.tree.bind("<<TreeviewSelect>>", self._on_tree_select)
+        self.tree.bind('<Double-1>', self._on_double_click_heading)
 
     def display_chats(self, chats: List[Chat]):
         """Отобразить все пары из выбранных чатов (обычный режим)."""
@@ -279,3 +281,19 @@ class MessageTreePanel:
                 self.tree.column(col, width=width)
             except Exception:
                 pass
+                
+    def _toggle_all_items(self):
+        """Переключает состояние всех корневых элементов дерева."""
+        roots = self.tree.get_children('')
+        if not roots:
+            return
+        all_open = all(self.tree.item(item, 'open') for item in roots)
+        new_state = not all_open
+        for item in roots:
+            self.tree.item(item, open=new_state)
+            
+    def _on_double_click_heading(self, event):
+        region = self.tree.identify_region(event.x, event.y)
+        column = self.tree.identify_column(event.x)
+        if region == "heading" and column == "#0":
+            self._toggle_all_items()
