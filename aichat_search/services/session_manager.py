@@ -2,11 +2,14 @@
 
 import pickle
 import os
+import logging
 from datetime import datetime
 from typing import List, Optional, Dict, Any, Union
 
 from ..model import DataSource, Chat, MessagePair
 from ..utils import parse_datetime
+
+logger = logging.getLogger(__name__)
 
 
 class SessionManager:
@@ -16,9 +19,22 @@ class SessionManager:
     преобразуются в словарь с версией, что позволяет в будущем
     легко переключиться на JSON.
     Поддерживается обратная совместимость со старым форматом (список источников).
+
+    Формат сессии (словарь):
+        {
+            "version": "1.0",
+            "sources": [...]
+        }
+
+    При изменении структуры данных следует увеличивать версию и добавлять
+    соответствующие функции миграции в словарь _MIGRATIONS.
     """
 
     _CURRENT_VERSION = "1.0"
+
+    # Словарь миграций: ключ (from_version, to_version) -> функция миграции
+    # Пока пуст, в будущем будут добавляться пары для обновления формата.
+    _MIGRATIONS = {}
 
     def __init__(self, session_path: str):
         """
@@ -68,6 +84,24 @@ class SessionManager:
             "modified": pair.modified
         }
 
+    def _migrate_if_needed(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Проверяет версию загруженных данных и при необходимости применяет миграции.
+        В текущей реализации только логирует несовпадение версий.
+        """
+        version = data.get("version")
+        if version == self._CURRENT_VERSION:
+            return data
+
+        # Если версия отсутствует или отличается, логируем предупреждение
+        if version is None:
+            logger.warning("Загруженные данные не содержат версии. Будет выполнена попытка загрузки в текущем формате.")
+        else:
+            logger.warning(f"Версия сессии {version} отличается от текущей {self._CURRENT_VERSION}. "
+                           f"Попытка загрузки без миграции.")
+        # В будущем здесь будет вызов цепочки миграций
+        return data
+
     def _from_dict(self, data: Union[List, Dict, Any]) -> Optional[List[DataSource]]:
         """
         Восстанавливает список источников из загруженных данных.
@@ -75,17 +109,15 @@ class SessionManager:
         """
         # Старый формат: просто список источников
         if isinstance(data, list):
-            print("Загружен старый формат сессии (список). При следующем сохранении формат будет обновлён.")
+            logger.info("Загружен старый формат сессии (список). При следующем сохранении формат будет обновлён.")
             # Проверим, что все элементы действительно DataSource (опционально)
             # В старом формате так и было
             return data
 
         # Новый формат: словарь
         if isinstance(data, dict):
-            version = data.get("version")
-            if version != self._CURRENT_VERSION:
-                # В будущем здесь можно добавить логику миграции
-                print(f"Предупреждение: версия файла сессии ({version}) отличается от текущей ({self._CURRENT_VERSION})")
+            # Применяем миграцию, если необходимо
+            data = self._migrate_if_needed(data)
 
             sources_data = data.get("sources", [])
             sources = []
@@ -96,7 +128,7 @@ class SessionManager:
             return sources
 
         # Неизвестный формат
-        print("Ошибка: неизвестный формат данных сессии.")
+        logger.error("Неизвестный формат данных сессии.")
         return None
 
     def _source_from_dict(self, data: Dict[str, Any]) -> Optional[DataSource]:
@@ -111,7 +143,7 @@ class SessionManager:
                     source.chats.append(chat)
             return source
         except (KeyError, TypeError) as e:
-            print(f"Ошибка загрузки источника: {e}")
+            logger.error(f"Ошибка загрузки источника: {e}")
             return None
 
     def _chat_from_dict(self, data: Dict[str, Any]) -> Optional[Chat]:
@@ -130,7 +162,7 @@ class SessionManager:
                     chat.add_pair(pair)
             return chat
         except (KeyError, TypeError) as e:
-            print(f"Ошибка загрузки чата: {e}")
+            logger.error(f"Ошибка загрузки чата: {e}")
             return None
 
     def _pair_from_dict(self, data: Dict[str, Any]) -> Optional[MessagePair]:
@@ -148,7 +180,7 @@ class SessionManager:
             pair.modified = data.get("modified", False)
             return pair
         except (KeyError, TypeError) as e:
-            print(f"Ошибка загрузки пары: {e}")
+            logger.error(f"Ошибка загрузки пары: {e}")
             return None
 
     # ------------------------------------------------------------------
