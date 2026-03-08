@@ -55,13 +55,14 @@ class MessageTreePanel:
         self._create_widgets(parent)
 
     def _create_widgets(self, parent):
-        # Колонки: глобальный номер, номер в чате, запрос, ответ/контекст, дата
+        # Колонки: глобальный номер, источник, номер в чате, запрос, ответ/контекст, дата
         self.tree = ttk.Treeview(
             parent,
-            columns=("global_idx", "chat_idx", "request", "response", "date"),
+            columns=("global_idx", "source", "chat_idx", "request", "response", "date"),
             show="tree headings",
         )
         self.tree.heading("global_idx", text="№")
+        self.tree.heading("source", text="Источник")
         self.tree.heading("chat_idx", text="В чате")
         self.tree.heading("request", text="Запрос")
         self.tree.heading("response", text="Ответ / Контекст")
@@ -70,18 +71,20 @@ class MessageTreePanel:
         # Устанавливаем начальную ширину колонок
         self.tree.column("#0", width=20, stretch=False, minwidth=20)  # только стрелки
         self.tree.column("global_idx", width=50, anchor="center")
+        self.tree.column("source", width=120, anchor="w")
         self.tree.column("chat_idx", width=60, anchor="center")
         self.tree.column("request", width=200, anchor="w")
         self.tree.column("response", width=300, anchor="w")
         self.tree.column("date", width=130, anchor="w")
 
-        # Упаковываем дерево без отступов слева, только вертикальный отступ
+        # Упаковываем дерево
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, pady=5)
 
         scrollbar = tk.Scrollbar(parent, command=self.tree.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree.config(yscrollcommand=scrollbar.set)
-        
+
+        # Привязка событий
         self.tree.bind("<<TreeviewSelect>>", self._on_tree_select)
         self.tree.bind('<Double-1>', self._on_double_click_heading)
 
@@ -105,9 +108,12 @@ class MessageTreePanel:
             parent_id = self.tree.insert(
                 "",
                 "end",
-                values=("", "", parent_text, "", ""),
+                values=("", "", "", parent_text, "", ""),
                 open=True
             )
+
+            # Получаем имя источника для этого чата
+            source_name, _ = self.controller.get_source_info(chat)
 
             for pair in pairs:
                 global_counter += 1
@@ -125,6 +131,7 @@ class MessageTreePanel:
                     chat,
                     pair,
                     global_idx=global_counter,
+                    source_name=source_name,
                     request_text=request_preview,
                     response_text=response_preview,
                     field=None,
@@ -157,9 +164,12 @@ class MessageTreePanel:
             parent_id = self.tree.insert(
                 "",
                 "end",
-                values=("", "", parent_text, "", ""),
+                values=("", "", "", parent_text, "", ""),
                 open=True
             )
+
+            # Получаем имя источника для этого чата
+            source_name, _ = self.controller.get_source_info(chat)
 
             for pair, field, start, end in data['pairs']:
                 global_counter += 1
@@ -181,6 +191,7 @@ class MessageTreePanel:
                     chat,
                     pair,
                     global_idx=global_counter,
+                    source_name=source_name,
                     request_text=request_preview,
                     response_text=context,
                     field=field,
@@ -190,7 +201,7 @@ class MessageTreePanel:
                 )
 
     def _insert_pair(self, parent_id, chat: Chat, pair: MessagePair,
-                     global_idx: int, request_text: str, response_text: str,
+                     global_idx: int, source_name: str, request_text: str, response_text: str,
                      field: Optional[str], start: Optional[int], end: Optional[int],
                      iid: str):
         """Вспомогательный метод для вставки одной пары в дерево."""
@@ -202,6 +213,7 @@ class MessageTreePanel:
             "end",
             values=(
                 global_idx,
+                source_name,
                 idx_display,
                 request_text,
                 response_text,
@@ -226,12 +238,14 @@ class MessageTreePanel:
                     if len(pair.response_text) > preview_chars:
                         response_preview += "..."
 
+                    # Сохраняем источник (второй элемент) без изменений
                     new_values = (
-                        current_values[0],
+                        current_values[0],  # global_idx
+                        current_values[1],  # source (без изменений)
                         idx_display,
                         request_preview,
                         response_preview,
-                        current_values[4]
+                        current_values[5]   # date
                     )
                     self.tree.item(item_id, values=new_values)
                 break
@@ -268,10 +282,26 @@ class MessageTreePanel:
     def clear(self):
         self._clear()
 
+    # ---------- Сворачивание/разворачивание всех ----------
+    def _toggle_all_items(self):
+        roots = self.tree.get_children('')
+        if not roots:
+            return
+        all_open = all(self.tree.item(item, 'open') for item in roots)
+        new_state = not all_open
+        for item in roots:
+            self.tree.item(item, open=new_state)
+
+    def _on_double_click_heading(self, event):
+        region = self.tree.identify_region(event.x, event.y)
+        column = self.tree.identify_column(event.x)
+        if region == "heading" and column == "#0":
+            self._toggle_all_items()
+
     # ---------- Методы для сохранения ширины колонок ----------
     def get_column_widths(self) -> dict:
         widths = {}
-        for col in ("global_idx", "chat_idx", "request", "response", "date"):
+        for col in ("global_idx", "source", "chat_idx", "request", "response", "date"):
             widths[col] = self.tree.column(col, 'width')
         return widths
 
@@ -281,19 +311,3 @@ class MessageTreePanel:
                 self.tree.column(col, width=width)
             except Exception:
                 pass
-                
-    def _toggle_all_items(self):
-        """Переключает состояние всех корневых элементов дерева."""
-        roots = self.tree.get_children('')
-        if not roots:
-            return
-        all_open = all(self.tree.item(item, 'open') for item in roots)
-        new_state = not all_open
-        for item in roots:
-            self.tree.item(item, open=new_state)
-            
-    def _on_double_click_heading(self, event):
-        region = self.tree.identify_region(event.x, event.y)
-        column = self.tree.identify_column(event.x)
-        if region == "heading" and column == "#0":
-            self._toggle_all_items()

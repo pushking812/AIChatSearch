@@ -37,23 +37,23 @@ class ChatListPanel:
         tree_container = tk.Frame(parent)
         tree_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # Колонки: название, группа, кол-во сообщений, дата создания
+        # Колонки: название, группа, кол-во сообщений, дата обновления
         self.tree = ttk.Treeview(
             tree_container,
-            columns=("name", "group", "msg_count", "created"),
+            columns=("name", "group", "msg_count", "updated"),
             show="tree headings",
             selectmode=tk.EXTENDED
         )
         self.tree.heading("name", text="Название")
         self.tree.heading("group", text="Группа")
         self.tree.heading("msg_count", text="Сообщ.")
-        self.tree.heading("created", text="Создан")
+        self.tree.heading("updated", text="Обновлён")  # было "Создан"
 
         self.tree.column("#0", width=25, stretch=False, minwidth=20)
         self.tree.column("name", width=250, anchor="w")
         self.tree.column("group", width=120, anchor="w")
         self.tree.column("msg_count", width=80, anchor="center")
-        self.tree.column("created", width=140, anchor="w")
+        self.tree.column("updated", width=140, anchor="w")
 
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
@@ -62,6 +62,8 @@ class ChatListPanel:
         self.tree.configure(yscrollcommand=scrollbar.set)
 
         self.tree.bind("<<TreeviewSelect>>", self._on_select)
+
+        # Привязка двойного щелчка по заголовку для сворачивания/разворачивания
         self.tree.bind('<Double-1>', self._on_double_click_heading)
 
         buttons_frame = tk.Frame(parent)
@@ -99,7 +101,7 @@ class ChatListPanel:
             self._build_prefix_tree(items)
 
     def _build_source_tree(self, items):
-        """Группировка по источнику (исходное поведение)."""
+        """Группировка по источнику."""
         groups: Dict[str, dict] = {}
         for chat, source_name, source_time in items:
             if source_name not in groups:
@@ -112,10 +114,11 @@ class ChatListPanel:
                                          open=True, tags=('group',))
             for chat in group['chats']:
                 unique_iid = f"{source_name}_{chat.id}"
-                created_str = _format_datetime(chat.created_at)
+                # Используем updated_at, если есть, иначе created_at
+                display_date = _format_datetime(chat.updated_at or chat.created_at)
                 child_id = self.tree.insert(
                     parent_id, "end",
-                    values=(chat.title, chat.group or "", len(chat.pairs), created_str),
+                    values=(chat.title, chat.group or "", len(chat.pairs), display_date),
                     iid=unique_iid, tags=('chat',)
                 )
                 self._item_to_chat[unique_iid] = chat
@@ -132,10 +135,10 @@ class ChatListPanel:
                                          open=True, tags=('group',))
             for chat, source_name, source_time in groups[group_name]:
                 unique_iid = f"{source_name}_{chat.id}"
-                created_str = _format_datetime(chat.created_at)
+                display_date = _format_datetime(chat.updated_at or chat.created_at)
                 child_id = self.tree.insert(
                     parent_id, "end",
-                    values=(chat.title, chat.group or "", len(chat.pairs), created_str),
+                    values=(chat.title, chat.group or "", len(chat.pairs), display_date),
                     iid=unique_iid, tags=('chat',)
                 )
                 self._item_to_chat[unique_iid] = chat
@@ -156,31 +159,21 @@ class ChatListPanel:
                                          open=True, tags=('group',))
             for chat, source_name, source_time in groups[prefix]:
                 unique_iid = f"{source_name}_{chat.id}"
-                created_str = _format_datetime(chat.created_at)
+                display_date = _format_datetime(chat.updated_at or chat.created_at)
                 child_id = self.tree.insert(
                     parent_id, "end",
-                    values=(chat.title, chat.group or "", len(chat.pairs), created_str),
+                    values=(chat.title, chat.group or "", len(chat.pairs), display_date),
                     iid=unique_iid, tags=('chat',)
                 )
                 self._item_to_chat[unique_iid] = chat
 
     # ---------- Получение выбранных чатов ----------
     def get_selected_chats(self) -> List[Chat]:
-        """Возвращает список уникальных чатов, выбранных в дереве.
-
-        Правила отбора:
-        - Явно выделенные чаты всегда включаются.
-        - Если выделена группа (источник, группа по префиксу, пользовательская группа)
-          и при этом не выделен ни один из её дочерних чатов, то включаются все чаты этой группы.
-        - Если выделена группа и одновременно выделены какие-то из её дочерних чатов,
-          то группа игнорируется, включаются только явно выделенные чаты.
-        - Дубликаты исключаются.
-        """
+        """Возвращает список уникальных чатов, выбранных в дереве."""
         selected_iids = self.tree.selection()
         selected_chat_iids = set()
         selected_group_iids = set()
 
-        # Разделяем выделенные элементы на чаты и группы
         for iid in selected_iids:
             if iid in self._item_to_chat:
                 selected_chat_iids.add(iid)
@@ -189,16 +182,12 @@ class ChatListPanel:
 
         result_set = set()
 
-        # Добавляем все явно выделенные чаты
         for iid in selected_chat_iids:
             result_set.add(self._item_to_chat[iid])
 
-        # Обрабатываем группы
         for group_iid in selected_group_iids:
             child_iids = self.tree.get_children(group_iid)
-            # Проверяем, есть ли среди выделенных чатов дети этой группы
             if not any(child_iid in selected_chat_iids for child_iid in child_iids):
-                # Если ни один ребёнок не выделен, добавляем всех детей группы
                 for child_iid in child_iids:
                     if child_iid in self._item_to_chat:
                         result_set.add(self._item_to_chat[child_iid])
@@ -228,10 +217,26 @@ class ChatListPanel:
     def _on_select(self, event=None):
         self.on_select()
 
+    # ---------- Сворачивание/разворачивание всех ----------
+    def _toggle_all_items(self):
+        roots = self.tree.get_children('')
+        if not roots:
+            return
+        all_open = all(self.tree.item(item, 'open') for item in roots)
+        new_state = not all_open
+        for item in roots:
+            self.tree.item(item, open=new_state)
+
+    def _on_double_click_heading(self, event):
+        region = self.tree.identify_region(event.x, event.y)
+        column = self.tree.identify_column(event.x)
+        if region == "heading" and column == "#0":
+            self._toggle_all_items()
+
     # ---------- Методы для сохранения ширины колонок ----------
     def get_column_widths(self) -> dict:
         widths = {}
-        for col in ("name", "group", "msg_count", "created"):
+        for col in ("name", "group", "msg_count", "updated"):
             widths[col] = self.tree.column(col, 'width')
         return widths
 
@@ -241,23 +246,3 @@ class ChatListPanel:
                 self.tree.column(col, width=width)
             except Exception:
                 pass
-                
-    def _toggle_all_items(self):
-        """Переключает состояние всех корневых элементов дерева: если все открыты – закрывает, иначе открывает."""
-        roots = self.tree.get_children('')
-        if not roots:
-            return
-        # Проверяем, все ли открыты
-        all_open = all(self.tree.item(item, 'open') for item in roots)
-        new_state = not all_open
-        for item in roots:
-            self.tree.item(item, open=new_state)
-
-    def _on_double_click_heading(self, event):
-        """Обрабатывает двойной щелчок мыши по заголовку колонки #0."""
-        # Определяем регион и колонку под курсором
-        region = self.tree.identify_region(event.x, event.y)
-        column = self.tree.identify_column(event.x)
-        if region == "heading" and column == "#0":
-            self._toggle_all_items()            
-           
