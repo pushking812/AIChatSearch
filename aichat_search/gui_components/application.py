@@ -14,6 +14,7 @@ from .message_tree import MessageTreePanel
 from .message_detail import MessageDetailPanel
 from .search_controller import SearchController
 from .window_state import WindowStateManager
+from .group_dialog import GroupDialog
 from ..controller import ChatController
 from ..services.exporter_factory import ExporterFactory
 from ..services.exporters.base import Exporter
@@ -27,10 +28,13 @@ class Application(tk.Tk):
         super().__init__()
 
         self.controller = ChatController()
-        self.title("DeepSeek Chat Archive Navigator")
+        self.title("AI Chat Archive Search")
         self.geometry(f"{constants.DEFAULT_WIDTH}x{constants.DEFAULT_HEIGHT}")
         self.minsize(constants.MIN_LEFT_WIDTH + constants.MIN_RIGHT_WIDTH,
                      constants.MIN_TOP_HEIGHT + constants.MIN_BOTTOM_HEIGHT)
+
+        # Переменная для режима группировки
+        self.grouping_var = tk.StringVar(value=self.controller.get_grouping_mode())
 
         # Инициализация компонентов
         self._create_menu()
@@ -54,6 +58,33 @@ class Application(tk.Tk):
         file_menu.add_command(label="Загрузить архив...", command=self.add_archive)
         file_menu.add_command(label="Новая сессия", command=self.new_session)
         menubar.add_cascade(label="Файл", menu=file_menu)
+
+        # Меню Чат
+        chat_menu = tk.Menu(menubar, tearoff=0)
+        grouping_submenu = tk.Menu(chat_menu, tearoff=0)
+        grouping_submenu.add_radiobutton(
+            label="По источнику данных",
+            variable=self.grouping_var,
+            value="source",
+            command=self._change_grouping_mode
+        )
+        grouping_submenu.add_radiobutton(
+            label="По группе",
+            variable=self.grouping_var,
+            value="group",
+            command=self._change_grouping_mode
+        )
+        grouping_submenu.add_radiobutton(
+            label="По префиксу",
+            variable=self.grouping_var,
+            value="prefix",
+            command=self._change_grouping_mode
+        )
+        chat_menu.add_cascade(label="Группировать", menu=grouping_submenu)
+        chat_menu.add_separator()
+        chat_menu.add_command(label="Создать/переименовать группу", command=self._open_group_dialog)
+        chat_menu.add_command(label="Добавить чат в группу", command=self._assign_group_to_selected)
+        menubar.add_cascade(label="Чат", menu=chat_menu)
 
         # Меню Сообщение
         self._create_message_menu(menubar)
@@ -127,11 +158,10 @@ class Application(tk.Tk):
         self.left_frame = left_frame
         self.top_frame = top_frame
         self.bottom_frame = bottom_frame
-        self.request_container = self.detail_panel.request_text.master  # родительский Frame
+        self.request_container = self.detail_panel.request_text.master
         self.response_container = self.detail_panel.response_text.master
 
     def _create_search_bar(self, parent):
-        """Создаёт строку поиска над деревом."""
         search_frame = tk.Frame(parent)
         search_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
 
@@ -161,12 +191,10 @@ class Application(tk.Tk):
         self.search_counter.pack(side=tk.LEFT, padx=5)
 
     def _init_controllers(self):
-        """Создание вспомогательных контроллеров."""
         self.search_ctrl = SearchController(self.controller, self._on_search_result_change)
 
     # ---------- Вспомогательные методы для обновления интерфейса ----------
     def _update_chat_list(self):
-        """Обновляет список чатов в панели, формируя кортежи (chat, source_name, source_time)."""
         filtered = self.controller.get_filtered_chats()
         items = []
         for chat in filtered:
@@ -176,7 +204,6 @@ class Application(tk.Tk):
 
     # ---------- Обработчики событий ----------
     def _on_chats_selected(self):
-        """Вызывается при изменении выбора в списке чатов."""
         selected = self.chat_panel.get_selected_chats()
         self.tree_panel.display_chats(selected)
         self.detail_panel.clear()
@@ -317,16 +344,52 @@ class Application(tk.Tk):
     def update_nav_buttons(self):
         self._update_nav_buttons()
 
+    # ---------- Группировка ----------
+    def _change_grouping_mode(self):
+        mode = self.grouping_var.get()
+        self.controller.set_grouping_mode(mode)
+        self.state_manager.save()  # сохраняем режим в конфиг
+        self._update_chat_list()
+
+    def _open_group_dialog(self):
+        GroupDialog(self, self.controller, self._update_chat_list)
+
+    def _assign_group_to_selected(self):
+        selected_chats = self.chat_panel.get_selected_chats()
+        if not selected_chats:
+            messagebox.showwarning("Назначение группы", "Нет выбранных чатов.")
+            return
+        groups = self.controller.get_all_groups()
+        dialog = tk.Toplevel(self)
+        dialog.title("Выберите группу")
+        dialog.geometry("300x200")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        tk.Label(dialog, text="Группа:").pack(pady=5)
+        var = tk.StringVar()
+        combobox = ttk.Combobox(dialog, textvariable=var, values=[""] + groups, state="readonly")
+        combobox.pack(pady=5)
+
+        def on_ok():
+            group = var.get().strip()
+            if group == "":
+                group = None
+            self.controller.assign_group_to_chats(selected_chats, group)
+            self._update_chat_list()
+            dialog.destroy()
+
+        tk.Button(dialog, text="OK", command=on_ok).pack(pady=5)
+        tk.Button(dialog, text="Отмена", command=dialog.destroy).pack(pady=5)
+
     # ---------- Экспорт в простой текст ----------
     def _export_selected_messages(self):
-        """Экспортировать каждое выбранное сообщение в отдельный текстовый файл."""
         selected = self.tree_panel.get_selected_pairs()
         if not selected:
             messagebox.showwarning("Экспорт", "Нет выбранных сообщений для экспорта.")
             return
 
         exporter = ExporterFactory.get_exporter('txt')
-
         exported_count = 0
         for chat, pair in selected:
             try:
@@ -343,7 +406,6 @@ class Application(tk.Tk):
 
             source_name_full, _ = self.controller.get_source_info(chat)
             source_name_base = os.path.splitext(source_name_full)[0] if source_name_full != "Imported" else "Imported"
-
             safe_chat_title = "".join(c for c in chat.title if c.isalnum() or c in (' ', '-', '_')).rstrip()
             filename = constants.EXPORT_FILENAME_TEMPLATE.format(
                 source_name=source_name_base,
@@ -379,23 +441,19 @@ class Application(tk.Tk):
 
     # ---------- Экспорт по блокам (множественный в одну папку) ----------
     def _export_selected_blocks(self):
-        """Экспортировать выбранные сообщения в виде блоков в одну общую папку."""
         selected = self.tree_panel.get_selected_pairs()
         if not selected:
             messagebox.showwarning("Экспорт", "Нет выбранных сообщений для экспорта.")
             return
 
-        # Выбор корневой папки
         root_dir = filedialog.askdirectory(title="Выберите папку для сохранения блоков")
         if not root_dir:
             return
 
-        # Генерируем имя подпапки по умолчанию
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         default_folder_name = f"messages-block-export-{timestamp}"
         folder_path = os.path.join(root_dir, default_folder_name)
 
-        # Собираем все блоки
         all_blocks = []
         block_index = 0
         metadata_lines = []
@@ -406,7 +464,6 @@ class Application(tk.Tk):
             except ValueError:
                 message_index_in_chat = 0
 
-            # Используем BlockExporter.prepare_data для получения блоков с учётом запроса
             data = BlockExporter.prepare_data(
                 chat_title=chat.title,
                 chat_created_at=chat.created_at,
@@ -417,7 +474,6 @@ class Application(tk.Tk):
             if not blocks:
                 continue
 
-            # Метаданные о сообщении
             source_name_full, _ = self.controller.get_source_info(chat)
             source_name_base = os.path.splitext(source_name_full)[0] if source_name_full != "Imported" else "Imported"
             metadata_lines.append(f"Сообщение {idx+1}:")
@@ -427,7 +483,6 @@ class Application(tk.Tk):
             metadata_lines.append(f"  Блоки: {blocks[0].filename()} – {blocks[-1].filename()}")
             metadata_lines.append("")
 
-            # Перенумеровываем блоки с общим индексом
             for block in blocks:
                 block.index = block_index
                 all_blocks.append(block)
@@ -437,14 +492,12 @@ class Application(tk.Tk):
             messagebox.showwarning("Экспорт", "Нет блоков для экспорта.")
             return
 
-        # Создаём папку
         try:
             os.makedirs(folder_path, exist_ok=True)
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось создать папку:\n{e}")
             return
 
-        # Записываем блоки
         for block in all_blocks:
             file_path = os.path.join(folder_path, block.filename())
             try:
@@ -455,7 +508,6 @@ class Application(tk.Tk):
                 if not messagebox.askyesno("Ошибка", "Продолжить экспорт остальных блоков?"):
                     break
 
-        # Метаданные экспорта
         meta_path = os.path.join(folder_path, "metadata.txt")
         try:
             with open(meta_path, 'w', encoding='utf-8') as f:

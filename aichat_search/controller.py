@@ -1,7 +1,7 @@
 # aichat_search/controller.py
 
 import os
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Set
 from datetime import datetime
 
 from .gui_components.constants import CONFIG_DIR, SESSION_FILE
@@ -9,6 +9,7 @@ from .model import DataSource, Chat, MessagePair
 from .services.loader_factory import LoaderFactory
 from .services.search_service import SearchService
 from .services.session_manager import SessionManager
+from .services.group_manager import GroupManager
 
 
 class ChatController:
@@ -31,6 +32,9 @@ class ChatController:
 
         self._search_service = SearchService()
         self._session_manager = SessionManager(self.session_path)
+        self.group_manager = GroupManager(config_dir)
+
+        self.grouping_mode: str = "source"  # source / group / prefix
 
     # ---------- DATA ----------
 
@@ -54,6 +58,11 @@ class ChatController:
             raise ValueError(f"Unsupported file format: {file_path}")
 
         new_chats = loader.load(file_path)
+
+        # Применяем сохранённые группы к новым чатам
+        for chat in new_chats:
+            self.group_manager.apply_to_chat(chat)
+
         chats_to_add = self._extract_new_messages_chats(new_chats)
 
         new_chats_count = 0
@@ -83,7 +92,7 @@ class ChatController:
                     existing.append(chat)
         return existing
 
-    def _collect_existing_indices(self, chat_id: str) -> set:
+    def _collect_existing_indices(self, chat_id: str) -> Set[str]:
         indices = set()
         for chat in self._find_existing_chats(chat_id):
             for pair in chat.get_pairs():
@@ -104,6 +113,8 @@ class ChatController:
                 )
                 for pair in new_pairs:
                     delta_chat.add_pair(pair)
+                # Копируем группу из нового чата (она уже установлена через group_manager)
+                delta_chat.group = new_chat.group
                 result.append(delta_chat)
         return result
 
@@ -128,7 +139,6 @@ class ChatController:
         self._apply_filter()
 
     def _collect_all_chats(self) -> None:
-        """Собирает все чаты из всех источников в self.chats, новые источники сверху."""
         all_chats: List[Chat] = []
         for source in reversed(self.sources):
             all_chats.extend(source.chats)
@@ -240,4 +250,50 @@ class ChatController:
             for source in self.sources:
                 for chat in source.chats:
                     self._chat_ref_to_source[id(chat)] = source
+                    # Восстанавливаем группу из group_manager
+                    self.group_manager.apply_to_chat(chat)
             self._rebuild_filtered_chats()
+
+    # ---------- РАБОТА С ГРУППАМИ ----------
+
+    def get_all_groups(self) -> List[str]:
+        """Возвращает отсортированный список всех существующих групп."""
+        return self.group_manager.get_all_groups()
+
+    def assign_group_to_chats(self, chats: List[Chat], group_name: Optional[str]) -> None:
+        """Назначает группу указанным чатам."""
+        for chat in chats:
+            self.group_manager.set_group(chat.id, group_name)
+            chat.group = group_name
+        self._rebuild_filtered_chats()  # добавить эту строку
+
+    def rename_group(self, old_name: str, new_name: str) -> bool:
+        """Переименовывает группу, обновляя все затронутые чаты в памяти."""
+        if self.group_manager.rename_group(old_name, new_name):
+            # Обновляем все чаты, у которых была эта группа
+            for source in self.sources:
+                for chat in source.chats:
+                    if chat.group == old_name:
+                        chat.group = new_name
+            return True
+        return False
+
+    def delete_group(self, group_name: str) -> None:
+        """Удаляет группу у всех чатов."""
+        self.group_manager.delete_group(group_name)
+        for source in self.sources:
+            for chat in source.chats:
+                if chat.group == group_name:
+                    chat.group = None
+        self._rebuild_filtered_chats()  # добавить эту строку
+
+    def add_group(self, group_name: str) -> bool:
+        """Добавляет новую группу в список групп (без привязки к чатам)."""
+        return self.group_manager.add_group(group_name)
+
+    def set_grouping_mode(self, mode: str) -> None:
+        """Устанавливает режим группировки (source/group/prefix)."""
+        self.grouping_mode = mode
+
+    def get_grouping_mode(self) -> str:
+        return self.grouping_mode

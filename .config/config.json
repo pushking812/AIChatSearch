@@ -8,20 +8,21 @@
     "y": -8
   },
   "proportions": {
-    "main_horizontal": 0.21786833855799373,
+    "main_horizontal": 0.2779519331243469,
     "right_vertical": 0.30784913353720694,
     "text_vertical": 0.33167495854063017
   },
   "column_widths": {
-    "name": 211,
-    "msg_count": 36,
-    "created": 114
+    "name": 244,
+    "group": 95,
+    "msg_count": 29,
+    "created": 113
   },
   "tree_column_widths": {
-    "global_idx": 40,
-    "chat_idx": 65,
-    "request": 601,
-    "response": 539,
-    "date": 209
+    "global_idx": 25,
+    "chat_idx": 44,
+    "request": 581,
+    "response": 520,
+    "date": 186
   }
 }
