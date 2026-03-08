@@ -95,7 +95,7 @@ class BlockParser:
     @staticmethod
     def parse(text: str) -> List[MessageBlock]:
         blocks = []
-        pattern = re.compile(r'```(\w*)\n(.*?)```', re.DOTALL)
+        pattern = re.compile(r'`{0,3}(?<=```)([^\n]*)\n(.*?)(?=```)`{0,3}', re.DOTALL)
         pos = 0
         block_index = 0
 

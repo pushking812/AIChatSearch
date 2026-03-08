@@ -19,10 +19,10 @@
     "created": 113
   },
   "tree_column_widths": {
-    "global_idx": 25,
+    "global_idx": 30,
     "chat_idx": 44,
-    "request": 581,
-    "response": 520,
+    "request": 615,
+    "response": 481,
     "date": 186
   }
 }
