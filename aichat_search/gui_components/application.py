@@ -385,7 +385,6 @@ class Application(tk.Tk):
             messagebox.showwarning("Экспорт", "Нет выбранных сообщений для экспорта.")
             return
 
-        # Выбираем корневую папку
         root_dir = filedialog.askdirectory(title="Выберите корневую папку для сохранения блоков")
         if not root_dir:
             return
@@ -411,7 +410,6 @@ class Application(tk.Tk):
 
             safe_chat_title = "".join(c for c in chat.title if c.isalnum() or c in (' ', '-', '_')).rstrip()
 
-            # Формируем имя папки по шаблону (без расширения .txt)
             folder_name = constants.EXPORT_FILENAME_TEMPLATE.format(
                 source_name=source_name_base,
                 chat_title=safe_chat_title,

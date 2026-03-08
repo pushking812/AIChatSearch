@@ -7,10 +7,11 @@ from typing import List, Optional
 class MessageBlock:
     """Представляет один блок сообщения (текст или код)."""
 
-    def __init__(self, index: int, content: str, language: Optional[str] = None):
+    def __init__(self, index: int, content: str, language: Optional[str] = None, block_type: str = 'response'):
         self.index = index
         self.content = content
-        self.language = language  # например 'python', 'markdown', None для простого текста
+        self.language = language
+        self.block_type = block_type  # 'request' или 'response'
 
     @property
     def file_extension(self) -> str:
@@ -78,10 +79,13 @@ class MessageBlock:
 
     def filename(self) -> str:
         """Генерирует имя файла для блока с трёхзначным номером."""
-        if self.language:
-            desc = f"БлокКода{self.language.capitalize()}"
+        if self.block_type == 'request':
+            desc = "Запрос"
         else:
-            desc = "БлокТекста"
+            if self.language:
+                desc = f"БлокКода{self.language.capitalize()}"
+            else:
+                desc = "БлокТекста"
         return f"{self.index:03d}_{desc}.{self.file_extension}"
 
 
@@ -91,20 +95,17 @@ class BlockParser:
     @staticmethod
     def parse(text: str) -> List[MessageBlock]:
         blocks = []
-        # Поиск блоков ```language\ncontent```
         pattern = re.compile(r'```(\w*)\n(.*?)```', re.DOTALL)
         pos = 0
         block_index = 0
 
         for match in pattern.finditer(text):
             start, end = match.span()
-            # Текст до блока
             if start > pos:
                 content = text[pos:start].strip()
                 if content:
                     blocks.append(MessageBlock(block_index, content, language=None))
                     block_index += 1
-            # Сам блок кода
             lang = match.group(1).strip() or None
             code = match.group(2).strip()
             if code:
@@ -112,7 +113,6 @@ class BlockParser:
                 block_index += 1
             pos = end
 
-        # Остаток после последнего блока
         if pos < len(text):
             content = text[pos:].strip()
             if content:

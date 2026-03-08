@@ -12,23 +12,32 @@ class BlockExporter(Exporter):
 
     @staticmethod
     def prepare_data(chat_title: str, chat_created_at, pair, message_index: int) -> Dict[str, Any]:
-        """Добавляет к стандартным данным распарсенные блоки."""
+        """Добавляет к стандартным данным распарсенные блоки, включая запрос."""
         data = Exporter.prepare_data(chat_title, chat_created_at, pair, message_index)
+
         parser = BlockParser()
-        data['blocks'] = parser.parse(pair.response_text)
+        response_blocks = parser.parse(pair.response_text)
+
+        # Создаём блок запроса с индексом 0
+        request_block = MessageBlock(0, pair.request_text, language=None, block_type='request')
+
+        # Сдвигаем индексы ответных блоков на 1
+        for block in response_blocks:
+            block.index += 1
+
+        # Объединяем
+        all_blocks = [request_block] + response_blocks
+        data['blocks'] = all_blocks
         return data
 
     def export(self, data: Dict[str, Any], folder_path: str) -> None:
-        """
-        Сохраняет блоки в указанную папку.
-        Если папка не существует, создаёт её.
-        """
+        """Сохраняет блоки в указанную папку. Если папка не существует, создаёт её."""
         os.makedirs(folder_path, exist_ok=True)
 
         blocks: List[MessageBlock] = data.get('blocks', [])
         if not blocks:
-            # Если блоков нет (пустой ответ или не удалось распарсить), сохраняем весь ответ как один блок
-            blocks = [MessageBlock(0, data['response_text'], language=None)]
+            # Если блоков нет (пустой запрос и ответ), создаём пустой блок запроса
+            blocks = [MessageBlock(0, data['request_text'], language=None, block_type='request')]
 
         for block in blocks:
             file_path = os.path.join(folder_path, block.filename())
