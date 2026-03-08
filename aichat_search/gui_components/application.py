@@ -17,7 +17,7 @@ from .window_state import WindowStateManager
 from ..controller import ChatController
 from ..services.exporter_factory import ExporterFactory
 from ..services.exporters.base import Exporter
-from ..services.exporters.block_exporter import BlockExporter   # для экспорта по блокам
+from ..services.exporters.block_exporter import BlockExporter
 
 
 class Application(tk.Tk):
@@ -377,60 +377,97 @@ class Application(tk.Tk):
         else:
             messagebox.showinfo("Экспорт", "Ни одно сообщение не было экспортировано.")
 
-    # ---------- Экспорт по блокам ----------
+    # ---------- Экспорт по блокам (множественный в одну папку) ----------
     def _export_selected_blocks(self):
-        """Экспортировать каждое выбранное сообщение в отдельную папку с блоками."""
+        """Экспортировать выбранные сообщения в виде блоков в одну общую папку."""
         selected = self.tree_panel.get_selected_pairs()
         if not selected:
             messagebox.showwarning("Экспорт", "Нет выбранных сообщений для экспорта.")
             return
 
-        root_dir = filedialog.askdirectory(title="Выберите корневую папку для сохранения блоков")
+        # Выбор корневой папки
+        root_dir = filedialog.askdirectory(title="Выберите папку для сохранения блоков")
         if not root_dir:
             return
 
-        exporter = ExporterFactory.get_exporter('blocks')
-        exported_count = 0
+        # Генерируем имя подпапки по умолчанию
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        default_folder_name = f"messages-block-export-{timestamp}"
+        folder_path = os.path.join(root_dir, default_folder_name)
 
-        for chat, pair in selected:
+        # Собираем все блоки
+        all_blocks = []
+        block_index = 0
+        metadata_lines = []
+
+        for idx, (chat, pair) in enumerate(selected):
             try:
-                message_index = chat.pairs.index(pair) + 1
+                message_index_in_chat = chat.pairs.index(pair) + 1
             except ValueError:
-                message_index = 0
+                message_index_in_chat = 0
 
+            # Используем BlockExporter.prepare_data для получения блоков с учётом запроса
             data = BlockExporter.prepare_data(
                 chat_title=chat.title,
                 chat_created_at=chat.created_at,
                 pair=pair,
-                message_index=message_index
+                message_index=message_index_in_chat
             )
+            blocks = data.get('blocks', [])
+            if not blocks:
+                continue
 
+            # Метаданные о сообщении
             source_name_full, _ = self.controller.get_source_info(chat)
             source_name_base = os.path.splitext(source_name_full)[0] if source_name_full != "Imported" else "Imported"
+            metadata_lines.append(f"Сообщение {idx+1}:")
+            metadata_lines.append(f"  Чат: {chat.title}")
+            metadata_lines.append(f"  Источник: {source_name_base}")
+            metadata_lines.append(f"  Номер в чате: {message_index_in_chat}")
+            metadata_lines.append(f"  Блоки: {blocks[0].filename()} – {blocks[-1].filename()}")
+            metadata_lines.append("")
 
-            safe_chat_title = "".join(c for c in chat.title if c.isalnum() or c in (' ', '-', '_')).rstrip()
+            # Перенумеровываем блоки с общим индексом
+            for block in blocks:
+                block.index = block_index
+                all_blocks.append(block)
+                block_index += 1
 
-            folder_name = constants.EXPORT_FILENAME_TEMPLATE.format(
-                source_name=source_name_base,
-                chat_title=safe_chat_title,
-                message_index=message_index
-            ).replace('.txt', '')
+        if not all_blocks:
+            messagebox.showwarning("Экспорт", "Нет блоков для экспорта.")
+            return
 
-            folder_path = os.path.join(root_dir, folder_name)
+        # Создаём папку
+        try:
+            os.makedirs(folder_path, exist_ok=True)
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось создать папку:\n{e}")
+            return
 
+        # Записываем блоки
+        for block in all_blocks:
+            file_path = os.path.join(folder_path, block.filename())
             try:
-                exporter.export(data, folder_path)
-                exported_count += 1
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(block.content)
             except Exception as e:
-                messagebox.showerror("Ошибка экспорта", f"Не удалось сохранить блоки для сообщения {message_index}:\n{e}")
-                answer = messagebox.askyesno("Экспорт", "Продолжить экспорт остальных сообщений?")
-                if not answer:
+                messagebox.showerror("Ошибка", f"Не удалось записать файл {block.filename()}:\n{e}")
+                if not messagebox.askyesno("Ошибка", "Продолжить экспорт остальных блоков?"):
                     break
 
-        if exported_count:
-            messagebox.showinfo("Экспорт", f"Успешно экспортировано {exported_count} сообщений по блокам в папку:\n{root_dir}")
-        else:
-            messagebox.showinfo("Экспорт", "Ни одно сообщение не было экспортировано.")
+        # Метаданные экспорта
+        meta_path = os.path.join(folder_path, "metadata.txt")
+        try:
+            with open(meta_path, 'w', encoding='utf-8') as f:
+                f.write(f"Экспорт блоков от {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}\n")
+                f.write(f"Всего сообщений: {len(selected)}\n")
+                f.write(f"Всего блоков: {len(all_blocks)}\n")
+                f.write("\n" + "="*60 + "\n\n")
+                f.write("\n".join(metadata_lines))
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось записать метаданные:\n{e}")
+
+        messagebox.showinfo("Экспорт", f"Успешно экспортировано {len(all_blocks)} блоков в папку:\n{folder_path}")
 
     # ---------- Внутренние вспомогательные методы ----------
     def _update_nav_buttons(self):
