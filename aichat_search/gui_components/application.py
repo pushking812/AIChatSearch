@@ -176,7 +176,7 @@ class Application(tk.Tk):
         self.search_combobox = ttk.Combobox(
             search_frame,
             textvariable=self.search_field_var,
-            values=["Название чата", "Запрос", "Ответ"],
+            values=["Запрос", "Ответ"],
             state="readonly",
             width=18
         )
