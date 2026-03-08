@@ -212,27 +212,32 @@ class Application(tk.Tk):
         self._update_nav_buttons()
 
     def _on_tree_selected(self):
-        selected = self.tree_panel.get_selected_pair()
+        selected = self.tree_panel.get_selected_item()
         if not selected:
             return
-        chat, pair = selected
+        chat, pair, field, start, end = selected
         pair = self.controller.select_pair(chat, pair)
         if pair:
             self.detail_panel.display_pair(pair)
             self._update_position_label()
             self._update_nav_buttons()
 
-            if hasattr(self.search_ctrl, 'results') and self.search_ctrl.results:
-                results = self.search_ctrl.results
-                for idx, (s_chat, s_pair, field, start, end) in enumerate(results):
-                    if s_chat is chat and s_pair is pair:
-                        if hasattr(self.search_ctrl, 'current_index'):
-                            self.search_ctrl.current_index = idx
-                        self.search_counter.config(text=f"{idx + 1} / {len(results)}")
+            if field is not None and self.search_ctrl.results:
+                # Находим индекс этого совпадения в результатах поиска
+                for idx, (s_chat, s_pair, s_field, s_start, s_end) in enumerate(self.search_ctrl.results):
+                    if (s_chat is chat and s_pair is pair and 
+                        s_field == field and s_start == start and s_end == end):
+                        self.search_ctrl.current_index = idx
+                        self.search_counter.config(text=f"{idx + 1} / {len(self.search_ctrl.results)}")
                         self.detail_panel.highlight_search_match(field, start, end, move_focus=False)
                         break
                 else:
-                    self.detail_panel.clear_highlight()
+                    self.detail_panel.highlight_search_match(field, start, end, move_focus=False)
+            else:
+                self.detail_panel.clear_highlight()
+                if hasattr(self.search_ctrl, 'results') and self.search_ctrl.results:
+                    self.search_counter.config(text="0 / 0")
+
 
     def _on_search_key(self, event):
         if self.live_search_var.get():
@@ -261,7 +266,21 @@ class Application(tk.Tk):
 
     def _on_search_result_change(self, result, index, total, move_focus=True):
         chat, pair, field, start, end = result
-        if self.tree_panel.select_item_by_pair(chat, pair):
+        # Формируем уникальный iid, использованный при создании элемента
+        iid = f"{chat.id}_{pair.index}_{start}_{end}"
+        # Проверяем, существует ли такой элемент в дереве
+        if iid in self.tree_panel.tree_item_map:
+            # Выделяем этот элемент
+            self.tree_panel.tree.selection_set(iid)
+            self.tree_panel.tree.see(iid)
+            # Обновляем детали
+            self.controller.select_pair(chat, pair)
+            self.detail_panel.display_pair(pair)
+            self._update_position_label()
+            self._update_nav_buttons()
+            self.detail_panel.highlight_search_match(field, start, end, move_focus=move_focus)
+        else:
+            # Fallback: если элемент не найден, хотя бы показываем сообщение
             self.controller.select_pair(chat, pair)
             self.detail_panel.display_pair(pair)
             self._update_position_label()

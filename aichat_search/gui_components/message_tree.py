@@ -47,7 +47,8 @@ class MessageTreePanel:
     def __init__(self, parent, controller, on_select_callback):
         self.controller = controller
         self.on_select = on_select_callback
-        self.tree_item_map: Dict[str, Tuple[Chat, MessagePair]] = {}
+        # Карта: iid -> (chat, pair, field, start, end)
+        self.tree_item_map: Dict[str, Tuple[Chat, MessagePair, Optional[str], Optional[int], Optional[int]]] = {}
         self._internal_update = False
         self._search_mode = False
 
@@ -99,7 +100,6 @@ class MessageTreePanel:
             if not pairs:
                 continue
             parent_text = f"{chat.title} ({len(pairs)} сообщ.)"
-            # Родительский элемент: название чата в колонке "request", остальные пустые
             parent_id = self.tree.insert(
                 "",
                 "end",
@@ -116,13 +116,19 @@ class MessageTreePanel:
                 if len(pair.response_text) > preview_chars:
                     response_preview += "..."
 
+                # Уникальный iid для каждой пары
+                unique_iid = f"{id(chat)}_{pair.index}"
                 self._insert_pair(
                     parent_id,
                     chat,
                     pair,
                     global_idx=global_counter,
                     request_text=request_preview,
-                    response_text=response_preview
+                    response_text=response_preview,
+                    field=None,
+                    start=None,
+                    end=None,
+                    iid=unique_iid
                 )
 
     def display_search_results(self, results: List[Tuple[Chat, MessagePair, str, int, int]]):
@@ -166,17 +172,25 @@ class MessageTreePanel:
                 if len(pair.request_text) > preview_chars:
                     request_preview += "..."
 
+                # Уникальный iid для каждой строки поиска
+                unique_iid = f"{chat.id}_{pair.index}_{start}_{end}"
                 self._insert_pair(
                     parent_id,
                     chat,
                     pair,
                     global_idx=global_counter,
                     request_text=request_preview,
-                    response_text=context
+                    response_text=context,
+                    field=field,
+                    start=start,
+                    end=end,
+                    iid=unique_iid
                 )
 
     def _insert_pair(self, parent_id, chat: Chat, pair: MessagePair,
-                     global_idx: int, request_text: str, response_text: str):
+                     global_idx: int, request_text: str, response_text: str,
+                     field: Optional[str], start: Optional[int], end: Optional[int],
+                     iid: str):
         """Вспомогательный метод для вставки одной пары в дерево."""
         idx_display = str(pair.index) + ('*' if pair.modified else '')
         date_str = _format_datetime(pair.request_time)
@@ -190,14 +204,15 @@ class MessageTreePanel:
                 request_text,
                 response_text,
                 date_str
-            )
+            ),
+            iid=iid
         )
-        self.tree_item_map[item_id] = (chat, pair)
+        self.tree_item_map[item_id] = (chat, pair, field, start, end)
 
     def update_pair_item(self, pair):
         """Обновить отображение конкретной пары (после изменения)."""
         preview_chars = constants.PREVIEW_CHARS
-        for item_id, (chat, p) in self.tree_item_map.items():
+        for item_id, (chat, p, field, start, end) in self.tree_item_map.items():
             if p is pair:
                 idx_display = str(pair.index) + ('*' if pair.modified else '')
                 current_values = self.tree.item(item_id, 'values')
@@ -219,8 +234,8 @@ class MessageTreePanel:
                     self.tree.item(item_id, values=new_values)
                 break
 
-    def get_selected_pair(self):
-        """Вернуть (chat, pair) для первого выбранного элемента или None."""
+    def get_selected_item(self):
+        """Вернуть (chat, pair, field, start, end) для выбранного элемента или None."""
         selection = self.tree.selection()
         if not selection:
             return None
@@ -234,19 +249,9 @@ class MessageTreePanel:
         for iid in selected_iids:
             item = self.tree_item_map.get(iid)
             if item is not None:
-                result.append(item)
+                chat, pair, _, _, _ = item
+                result.append((chat, pair))
         return result
-
-    def select_item_by_pair(self, chat, pair):
-        for item_id, (c, p) in self.tree_item_map.items():
-            if c == chat and p == pair:
-                if item_id not in self.tree.selection():
-                    self._internal_update = True
-                    self.tree.selection_set(item_id)
-                    self.tree.see(item_id)
-                    self._internal_update = False
-                return True
-        return False
 
     def _clear(self):
         for item in self.tree.get_children():

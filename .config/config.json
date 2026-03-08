@@ -9,8 +9,8 @@
   },
   "proportions": {
     "main_horizontal": 0.2779519331243469,
-    "right_vertical": 0.30784913353720694,
-    "text_vertical": 0.33167495854063017
+    "right_vertical": 0.4740061162079511,
+    "text_vertical": 0.5727272727272728
   },
   "column_widths": {
     "name": 244,
@@ -19,10 +19,10 @@
     "created": 113
   },
   "tree_column_widths": {
-    "global_idx": 30,
+    "global_idx": 35,
     "chat_idx": 44,
-    "request": 615,
-    "response": 481,
+    "request": 189,
+    "response": 902,
     "date": 186
   }
 }
