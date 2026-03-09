@@ -14,6 +14,7 @@ class MessageBlock:
         self.content = content
         self.language = language
         self.block_type = block_type  # 'request' или 'response'
+        self.has_error = False        # True, если блок содержит ошибку парсинга (незакрытый код)
 
     def _sanitize_filename(self, text: str) -> str:
         """Удаляет из текста символы, недопустимые в именах файлов.
@@ -91,7 +92,7 @@ class MessageBlock:
             desc = "Запрос"
         else:
             if self.language:
-                # Используем только первое слово языка для описания (чтобы избежать лишних фрагментов)
+                # Используем только первое слово языка для описания
                 base_lang = self.language.split()[0] if self.language else None
                 desc = f"БлокКода{base_lang.capitalize()}" if base_lang else "БлокКода"
             else:
@@ -222,7 +223,9 @@ class BlockParser:
                     logger.debug(f"Добавляю маркер в блок. Длина до: {len(remaining)}")
                     remaining += marker
                     logger.debug(f"Длина после: {len(remaining)}")
-                    blocks.append(MessageBlock(len(blocks), remaining, language=lang))
+                    block = MessageBlock(len(blocks), remaining, language=lang)
+                    block.has_error = True  # помечаем как ошибочный
+                    blocks.append(block)
                 else:
                     logger.debug("Остаток пустой или состоит из пробелов, не считаем незакрытым блоком")
             elif state == 'TEXT' and remaining.strip():
