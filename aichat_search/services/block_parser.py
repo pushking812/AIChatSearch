@@ -91,7 +91,9 @@ class MessageBlock:
             desc = "Запрос"
         else:
             if self.language:
-                desc = f"БлокКода{self.language.capitalize()}"
+                # Используем только первое слово языка для описания (чтобы избежать лишних фрагментов)
+                base_lang = self.language.split()[0] if self.language else None
+                desc = f"БлокКода{base_lang.capitalize()}" if base_lang else "БлокКода"
             else:
                 desc = "БлокТекста"
         desc = self._sanitize_filename(desc)
@@ -133,10 +135,6 @@ class BlockParser:
         while i < len(text) and text[i] in (' ', '\t'):
             i += 1
         if i + 3 <= len(text) and text[i:i+3] == '```':
-            # Проверим, что после ``` нет символов (кроме пробелов) до конца строки,
-            # чтобы отличать от закрывающих? Для открывающих допустимо, что после ``` может быть язык.
-            # В любом случае, если мы нашли ``` в начале строки, это может быть как открывающий, так и закрывающий.
-            # Мы используем это в состоянии CODE, чтобы принудительно закрыть блок при встрече новой ```.
             return i
         return -1
 
@@ -159,9 +157,8 @@ class BlockParser:
 
         while i < length:
             if state == 'TEXT':
-                # Ищем открывающие ``` в начале строки (с учётом пробелов)
                 opening_pos = self._find_opening_backticks(text, i)
-                if opening_pos != -1 and opening_pos == i:  # проверяем, что это именно в текущей позиции
+                if opening_pos != -1 and opening_pos == i:
                     logger.debug(f"Найдены открывающие ``` на позиции {i}")
                     if i > start:
                         content = text[start:i].rstrip('\n')
@@ -174,22 +171,22 @@ class BlockParser:
                     i += 1
 
             elif state == 'CODE_START':
-                # Считываем язык до конца строки
+                # Считываем строку с языком до конца строки
                 lang_start = i
                 while i < length and text[i] != '\n':
                     i += 1
-                lang = text[lang_start:i].strip() or None
-                logger.debug(f"Прочитан язык блока: {lang}")
+                lang_str = text[lang_start:i].strip()
+                # Берём только первое слово (язык), остальное игнорируем
+                lang = lang_str.split()[0] if lang_str else None
+                logger.debug(f"Прочитан язык блока: {lang} (исходная строка: '{lang_str}')")
                 if i < length and text[i] == '\n':
                     i += 1
                 start = i
                 state = 'CODE'
 
             elif state == 'CODE':
-                # Сначала ищем закрывающие ``` в текущей позиции
                 closing_pos = self._find_closing_backticks(text, i)
                 if closing_pos != -1:
-                    # Нашли закрывающие
                     logger.debug(f"Найдены закрывающие ``` на позиции {closing_pos}")
                     code = text[start:closing_pos].rstrip('\n')
                     blocks.append(MessageBlock(len(blocks), code, language=lang))
@@ -200,14 +197,11 @@ class BlockParser:
                     state = 'TEXT'
                     lang = None
                 else:
-                    # Нет закрывающих в текущей позиции. Проверим, не начинается ли новый блок.
                     opening_pos = self._find_opening_backticks(text, i)
                     if opening_pos != -1 and opening_pos == i:
-                        # Начинается новый блок. Закрываем текущий принудительно.
                         logger.debug(f"В состоянии CODE найдены новые открывающие на позиции {i}, принудительно закрываем текущий блок")
                         code = text[start:i].rstrip('\n')
                         blocks.append(MessageBlock(len(blocks), code, language=lang))
-                        # Не увеличиваем unclosed_blocks, так как это нормальное принудительное закрытие
                         i = opening_pos + 3
                         start = i
                         state = 'CODE_START'
