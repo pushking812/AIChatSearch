@@ -219,7 +219,7 @@ class BlockParser:
                     logger.debug(
                         f"Незакрытый блок кода в конце текста. Язык: {lang}, длина остатка: {len(remaining)}"
                     )
-                    marker = "\n<<<ОШИБКА ПАРСИНГА БЛОКА - ОТСУТСВУЮТ ЗАКРЫВАЮЩИЕ СИМВОЛЫ \"```\">>>"
+                    marker = "\n<<<ОШИБКА ПАРСИНГА БЛОКА - ОТСУТСТВУЮТ ЗАКРЫВАЮЩИЕ СИМВОЛЫ \"```\">>>"
                     logger.debug(f"Добавляю маркер в блок. Длина до: {len(remaining)}")
                     remaining += marker
                     logger.debug(f"Длина после: {len(remaining)}")
