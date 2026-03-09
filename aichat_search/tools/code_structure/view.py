@@ -1,7 +1,7 @@
 # aichat_search/tools/code_structure/view.py
 
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 
 
 class CodeStructureWindow(tk.Toplevel):
@@ -10,38 +10,38 @@ class CodeStructureWindow(tk.Toplevel):
         self.title("Структура кода")
         self.geometry("700x500")
         self.transient(parent)
-        self.grab_set()  # делаем окно модальным
+        self.grab_set()
 
         # Настраиваем сетку
         self.columnconfigure(0, weight=1)
         self.columnconfigure(1, weight=1)
-        self.columnconfigure(2, weight=0)  # колонка для кнопки не растягивается
-        self.rowconfigure(2, weight=1)      # дерево должно расширяться
+        self.columnconfigure(2, weight=0)
+        self.rowconfigure(2, weight=1)
 
-        # Метки (строка 0)
+        # Метки
         ttk.Label(self, text="Тип блока:").grid(row=0, column=0, padx=5, pady=(10, 0), sticky="w")
         ttk.Label(self, text="Блок:").grid(row=0, column=1, padx=5, pady=(10, 0), sticky="w")
 
-        # Комбобоксы и кнопка (строка 1)
+        # Комбобоксы
         self.type_combo = ttk.Combobox(self, state="readonly", width=15)
         self.type_combo.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
 
         self.block_combo = ttk.Combobox(self, state="readonly", width=50)
         self.block_combo.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
 
+        # Кнопка
         self.show_button = ttk.Button(self, text="Показать структуру")
         self.show_button.grid(row=1, column=2, padx=5, pady=5, sticky="ew")
 
-        # Дерево для структуры (строка 2, занимает все колонки)
+        # Дерево
         self.tree = ttk.Treeview(self, columns=("type", "name", "signature"), show="tree headings")
         self.tree.grid(row=2, column=0, columnspan=3, padx=5, pady=5, sticky="nsew")
 
-        # Настройка заголовков и колонок
         self.tree.heading("type", text="Тип")
         self.tree.heading("name", text="Имя")
         self.tree.heading("signature", text="Сигнатура")
 
-        self.tree.column("#0", width=0, stretch=False)  # скрываем стандартную колонку
+        self.tree.column("#0", width=0, stretch=False)
         self.tree.column("type", width=100)
         self.tree.column("name", width=200)
         self.tree.column("signature", width=300)
@@ -50,3 +50,22 @@ class CodeStructureWindow(tk.Toplevel):
         scrollbar = ttk.Scrollbar(self, orient=tk.VERTICAL, command=self.tree.yview)
         scrollbar.grid(row=2, column=3, sticky="ns")
         self.tree.configure(yscrollcommand=scrollbar.set)
+
+    def set_type_combo_values(self, values):
+        """Устанавливает значения для первого комбобокса."""
+        self.type_combo['values'] = values
+        if values:
+            self.type_combo.current(0)
+
+    def set_block_combo_values(self, values):
+        """Устанавливает значения для второго комбобокса."""
+        self.block_combo['values'] = values
+
+    def set_current_block_index(self, index):
+        """Выбирает элемент во втором комбобоксе по индексу."""
+        if 0 <= index < len(self.block_combo['values']):
+            self.block_combo.current(index)
+
+    def show_error(self, message):
+        """Показывает сообщение об ошибке."""
+        messagebox.showerror("Ошибка", message, parent=self)

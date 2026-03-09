@@ -404,8 +404,8 @@ class Application(tk.Tk):
         self.destroy()
         
     def _open_code_structure(self):
-        current_pair = self.controller.get_current_pair()
-        if current_pair is None:
+        pair = self.controller.get_current_pair()
+        if pair is None:
             messagebox.showwarning("Структура кода", "Сначала выберите сообщение.")
             return
-        CodeStructureController(self, self.controller, current_pair)
+        CodeStructureController(self, pair)  # передаём только pair
