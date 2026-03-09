@@ -23,7 +23,9 @@ class PythonParser(CodeParser):
         except SyntaxError as e:
             raise ValueError(f"Синтаксическая ошибка: {e}")
 
-        module_node = ModuleNode()
+        # Определяем последнюю строку для модуля
+        last_line = code.count('\n') + 1
+        module_node = ModuleNode(lineno_start=1, lineno_end=last_line)
         self._process_body(tree.body, module_node, is_class_body=False)
         return module_node
 
@@ -37,7 +39,7 @@ class PythonParser(CodeParser):
             # Определения классов
             if isinstance(node, ast.ClassDef):
                 bases = ", ".join(self._format_base(b) for b in node.bases)
-                class_node = ClassNode(node.name, bases)
+                class_node = ClassNode(node.name, bases, node.lineno, node.end_lineno)
                 self._process_body(node.body, class_node, is_class_body=True)
                 parent_node.add_child(class_node)
                 i += 1
@@ -46,9 +48,9 @@ class PythonParser(CodeParser):
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 args_str = self._format_args(node.args, node.returns)
                 if is_class_body:
-                    func_node = MethodNode(node.name, args_str)
+                    func_node = MethodNode(node.name, args_str, node.lineno, node.end_lineno)
                 else:
-                    func_node = FunctionNode(node.name, args_str)
+                    func_node = FunctionNode(node.name, args_str, node.lineno, node.end_lineno)
                 self._process_body(node.body, func_node, is_class_body=False)
                 parent_node.add_child(func_node)
                 i += 1
@@ -61,8 +63,10 @@ class PythonParser(CodeParser):
                 if i > start:
                     first_node = body[start]
                     last_node = body[i-1]
-                    line_range = f"строки {first_node.lineno}-{last_node.lineno}"
-                    block_node = CodeBlockNode("Блок кода", line_range)
+                    # Используем end_lineno последнего узла для корректного диапазона
+                    end_line = last_node.end_lineno if hasattr(last_node, 'end_lineno') else last_node.lineno
+                    line_range = f"строки {first_node.lineno}-{end_line}"
+                    block_node = CodeBlockNode("Блок кода", line_range, first_node.lineno, end_line)
                     parent_node.add_child(block_node)
 
         return

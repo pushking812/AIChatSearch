@@ -14,11 +14,14 @@ class CodeStructureController:
         self.pair = pair
 
         self.view = CodeStructureWindow(parent)
+        self.view.set_controller(self)
+
         self.blocks = []
         self.python_blocks = []
         self.block_names = []
         self._parsed_cache = {}               # успешно распарсенные блоки
         self.block_has_syntax_error = {}      # индекс блока -> True, если синтаксическая ошибка
+        self.current_block = None              # текущий блок (для доступа к исходному коду)
 
         self._load_blocks()
         if self.python_blocks:
@@ -42,7 +45,6 @@ class CodeStructureController:
     def _extract_block_name(self, block):
         """Извлекает имя блока из его содержимого.
         Если блок содержит ошибку парсинга (незакрытый код), возвращает 'блок_кода (ошибка)'."""
-        # Если блок ошибочный (незакрытый код), сразу возвращаем специальное имя
         if block.has_error:
             return "блок_кода (ошибка)"
 
@@ -60,7 +62,7 @@ class CodeStructureController:
         # 1. Поиск однострочных комментариев (идущих подряд)
         comment_lines = []
         i = start_idx
-        while i < len(lines) and i - start_idx < 10:  # ограничим 10 строками
+        while i < len(lines) and i - start_idx < 10:
             stripped = lines[i].strip()
             if stripped.startswith('#'):
                 comment_lines.append(stripped[1:].strip())
@@ -122,6 +124,7 @@ class CodeStructureController:
             return
 
         block = self.python_blocks[index]
+        self.current_block = block
 
         # Проверка на ошибку от парсера блоков (незакрытый код)
         if block.has_error:
@@ -145,8 +148,31 @@ class CodeStructureController:
             self._parsed_cache[index] = root
             self.view.display_structure(root)
         except Exception as e:
-            logger.error(f"Ошибка парсинга Python: {e}")
+            logger.exception("Ошибка парсинга Python")
             # Помечаем блок как содержащий синтаксическую ошибку
             self.block_has_syntax_error[index] = True
             self._update_block_name_in_combo(index)
             self.view.show_error(f"Синтаксическая ошибка в коде: {e}")
+
+    def on_node_selected(self):
+        """Обработчик выбора узла в дереве."""
+        selected = self.view.tree.selection()
+        if not selected:
+            return
+        item = selected[0]
+        node = self.view.get_node_by_item(item)
+        if node and node.lineno_start and node.lineno_end and self.current_block:
+            code_lines = self.current_block.content.splitlines()
+            # Номера строк в Python обычно с 1
+            start = node.lineno_start - 1
+            end = node.lineno_end
+            # Проверка границ
+            if start < 0:
+                start = 0
+            if end > len(code_lines):
+                end = len(code_lines)
+            if start < end:
+                selected_code = "\n".join(code_lines[start:end])
+                self.view.display_code(selected_code)
+            else:
+                self.view.display_code("")
