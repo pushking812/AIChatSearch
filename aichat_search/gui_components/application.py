@@ -17,6 +17,7 @@ from .window_state import WindowStateManager
 from .group_handler import GroupHandler  # новый импорт
 from ..controller import ChatController
 from ..services.export_manager import ExportManager
+from ..tools.code_structure.controller import CodeStructureController
 
 
 class Application(tk.Tk):
@@ -100,6 +101,11 @@ class Application(tk.Tk):
         self._create_message_menu(menubar)
 
         self.config(menu=menubar)
+        
+        # Меню Инструменты
+        tools_menu = tk.Menu(menubar, tearoff=0)
+        tools_menu.add_command(label="Структура кода", command=self._open_code_structure)
+        menubar.add_cascade(label="Инструменты", menu=tools_menu)
 
     def _create_message_menu(self, menubar):
         message_menu = tk.Menu(menubar, tearoff=0)
@@ -396,3 +402,10 @@ class Application(tk.Tk):
         self.controller.save_session()
         self.state_manager.save()
         self.destroy()
+        
+    def _open_code_structure(self):
+        current_pair = self.controller.get_current_pair()
+        if current_pair is None:
+            messagebox.showwarning("Структура кода", "Сначала выберите сообщение.")
+            return
+        CodeStructureController(self, self.controller, current_pair)
