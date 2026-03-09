@@ -69,3 +69,20 @@ class CodeStructureWindow(tk.Toplevel):
     def show_error(self, message):
         """Показывает сообщение об ошибке."""
         messagebox.showerror("Ошибка", message, parent=self)
+        
+    def clear_tree(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+    def display_structure(self, root_node):
+        self.clear_tree()
+        self._add_node("", root_node)
+
+    def _add_node(self, parent, node):
+        item = self.tree.insert(parent, tk.END,
+                                values=(node.node_type, node.name, node.signature))
+        for child in node.children:
+            self._add_node(item, child)
+            
+    def get_selected_block_index(self):
+        return self.block_combo.current()

@@ -3,6 +3,7 @@
 import logging
 from ...services.block_parser import BlockParser
 from .view import CodeStructureWindow
+from .parser import PythonParser
 
 logger = logging.getLogger(__name__)
 
@@ -16,13 +17,16 @@ class CodeStructureController:
         self.blocks = []          # все блоки сообщения
         self.python_blocks = []   # только Python-блоки
         self.block_names = []     # имена для отображения в комбобоксе
+        self._parsed_cache = {}  # кэш: индекс блока -> корневой узел
 
         self._load_blocks()
         if self.python_blocks:
             self._fill_combos()
+            self.view.show_button.config(command=self.on_show_structure)
         else:
             self.view.show_error("В сообщении нет блоков Python.")
             self.view.destroy()
+
 
     def _load_blocks(self):
         """Разбирает сообщение на блоки и отбирает Python-блоки."""
@@ -78,6 +82,25 @@ class CodeStructureController:
 
     def on_type_selected(self, event):
         pass
-
+        
     def on_show_structure(self):
-        pass
+        """Обработчик кнопки 'Показать структуру'."""
+        index = self.view.get_selected_block_index()
+        if index < 0 or index >= len(self.python_blocks):
+            return
+
+        # Проверяем кэш
+        if index in self._parsed_cache:
+            root = self._parsed_cache[index]
+            self.view.display_structure(root)
+            return
+
+        block = self.python_blocks[index]
+        parser = PythonParser()
+        try:
+            root = parser.parse(block.content)
+            self._parsed_cache[index] = root
+            self.view.display_structure(root)
+        except Exception as e:
+            logger.exception("Ошибка парсинга Python")
+            self.view.show_error(f"Не удалось распарсить код:\n{e}")
