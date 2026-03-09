@@ -1,6 +1,9 @@
 # aichat_search/services/block_parser.py
 
+import logging
 from typing import List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class MessageBlock:
@@ -11,6 +14,11 @@ class MessageBlock:
         self.content = content
         self.language = language
         self.block_type = block_type  # 'request' или 'response'
+
+    def _sanitize_filename(self, text: str) -> str:
+        """Удаляет из текста символы, недопустимые в именах файлов.
+        Оставляет только буквы, цифры, пробелы, дефисы и подчёркивания."""
+        return ''.join(c for c in text if c.isalnum() or c in (' ', '-', '_')).rstrip()
 
     @property
     def file_extension(self) -> str:
@@ -77,7 +85,8 @@ class MessageBlock:
         return lang_map.get(self.language.lower(), 'txt')
 
     def filename(self) -> str:
-        """Генерирует имя файла для блока с трёхзначным номером."""
+        """Генерирует имя файла для блока с трёхзначным номером.
+        Описание очищается от недопустимых символов."""
         if self.block_type == 'request':
             desc = "Запрос"
         else:
@@ -85,6 +94,7 @@ class MessageBlock:
                 desc = f"БлокКода{self.language.capitalize()}"
             else:
                 desc = "БлокТекста"
+        desc = self._sanitize_filename(desc)
         return f"{self.index:03d}_{desc}.{self.file_extension}"
 
 
@@ -98,31 +108,66 @@ class BlockParser:
     def __init__(self):
         self.unclosed_blocks = 0
 
+    def _find_closing_backticks(self, text: str, pos: int) -> int:
+        """Ищет позицию закрывающих ```, начиная с pos, учитывая возможные пробелы в начале строки.
+        Возвращает индекс символа '`' (первого из трёх) или -1, если не найдено."""
+        line_start = pos
+        while line_start > 0 and text[line_start - 1] != '\n':
+            line_start -= 1
+        i = line_start
+        while i < len(text) and text[i] in (' ', '\t'):
+            i += 1
+        if i + 3 <= len(text) and text[i:i+3] == '```':
+            after = i + 3
+            if after == len(text) or text[after] == '\n':
+                return i
+        return -1
+
+    def _find_opening_backticks(self, text: str, pos: int) -> int:
+        """Ищет позицию открывающих ```, начиная с pos, учитывая возможные пробелы в начале строки.
+        Возвращает индекс символа '`' (первого из трёх) или -1, если не найдено."""
+        line_start = pos
+        while line_start > 0 and text[line_start - 1] != '\n':
+            line_start -= 1
+        i = line_start
+        while i < len(text) and text[i] in (' ', '\t'):
+            i += 1
+        if i + 3 <= len(text) and text[i:i+3] == '```':
+            # Проверим, что после ``` нет символов (кроме пробелов) до конца строки,
+            # чтобы отличать от закрывающих? Для открывающих допустимо, что после ``` может быть язык.
+            # В любом случае, если мы нашли ``` в начале строки, это может быть как открывающий, так и закрывающий.
+            # Мы используем это в состоянии CODE, чтобы принудительно закрыть блок при встрече новой ```.
+            return i
+        return -1
+
     def parse(self, text: str) -> List[MessageBlock]:
         """Разбирает текст на блоки, используя конечный автомат.
         
-        Возвращает список блоков MessageBlock.
-        Если блок кода не закрыт до конца текста, в его содержимое добавляется маркер ошибки,
-        и счётчик unclosed_blocks увеличивается.
+        Особенность: если в состоянии CODE встречается новая открывающая последовательность ```,
+        текущий блок считается закрытым (без ошибки) и начинается новый блок.
+        Это позволяет корректно обрабатывать случаи, когда автор забыл закрыть предыдущий блок,
+        но начал новый.
         """
+        logger.debug(f"Начало парсинга, длина текста: {len(text)}")
         self.unclosed_blocks = 0
         blocks = []
         i = 0
         length = len(text)
-        state = 'TEXT'
-        start = 0
+        state = 'TEXT'          # 'TEXT', 'CODE_START', 'CODE'
+        start = 0                # начало текущего фрагмента
         lang = None
 
         while i < length:
             if state == 'TEXT':
-                # Ищем открывающие ``` в начале строки
-                if text[i:i+3] == '```' and (i == 0 or text[i-1] == '\n'):
-                    # Сохраняем предшествующий текст
+                # Ищем открывающие ``` в начале строки (с учётом пробелов)
+                opening_pos = self._find_opening_backticks(text, i)
+                if opening_pos != -1 and opening_pos == i:  # проверяем, что это именно в текущей позиции
+                    logger.debug(f"Найдены открывающие ``` на позиции {i}")
                     if i > start:
                         content = text[start:i].rstrip('\n')
                         if content:
                             blocks.append(MessageBlock(len(blocks), content, language=None))
-                    i += 3
+                    i = opening_pos + 3
                     start = i
                     state = 'CODE_START'
                 else:
@@ -134,36 +179,63 @@ class BlockParser:
                 while i < length and text[i] != '\n':
                     i += 1
                 lang = text[lang_start:i].strip() or None
-                # Пропускаем перевод строки, если он есть
+                logger.debug(f"Прочитан язык блока: {lang}")
                 if i < length and text[i] == '\n':
                     i += 1
                 start = i
                 state = 'CODE'
 
             elif state == 'CODE':
-                # Ищем закрывающие ``` в начале строки
-                if text[i:i+3] == '```' and (i == 0 or text[i-1] == '\n'):
-                    # Код до этого момента (без закрывающих)
-                    code = text[start:i].rstrip('\n')
+                # Сначала ищем закрывающие ``` в текущей позиции
+                closing_pos = self._find_closing_backticks(text, i)
+                if closing_pos != -1:
+                    # Нашли закрывающие
+                    logger.debug(f"Найдены закрывающие ``` на позиции {closing_pos}")
+                    code = text[start:closing_pos].rstrip('\n')
                     blocks.append(MessageBlock(len(blocks), code, language=lang))
-                    i += 3
+                    i = closing_pos + 3
+                    if i < length and text[i] == '\n':
+                        i += 1
                     start = i
                     state = 'TEXT'
                     lang = None
                 else:
-                    i += 1
+                    # Нет закрывающих в текущей позиции. Проверим, не начинается ли новый блок.
+                    opening_pos = self._find_opening_backticks(text, i)
+                    if opening_pos != -1 and opening_pos == i:
+                        # Начинается новый блок. Закрываем текущий принудительно.
+                        logger.debug(f"В состоянии CODE найдены новые открывающие на позиции {i}, принудительно закрываем текущий блок")
+                        code = text[start:i].rstrip('\n')
+                        blocks.append(MessageBlock(len(blocks), code, language=lang))
+                        # Не увеличиваем unclosed_blocks, так как это нормальное принудительное закрытие
+                        i = opening_pos + 3
+                        start = i
+                        state = 'CODE_START'
+                        lang = None
+                    else:
+                        i += 1
 
         # Обработка остатка текста после цикла
         if start < length:
             remaining = text[start:]
             if state == 'CODE':
-                # Незакрытый блок кода
-                self.unclosed_blocks += 1
-                # Добавляем маркер ошибки в конец содержимого
-                remaining += "\n<<<ОШИБКА ПАРСИНГА БЛОКА - ОТСУТСВУЮТ ЗАКРЫВАЮЩИЕ СИМВОЛЫ \"```\">>>"
-                blocks.append(MessageBlock(len(blocks), remaining, language=lang))
+                if remaining.strip():
+                    self.unclosed_blocks += 1
+                    logger.debug(
+                        f"Незакрытый блок кода в конце текста. Язык: {lang}, длина остатка: {len(remaining)}"
+                    )
+                    marker = "\n<<<ОШИБКА ПАРСИНГА БЛОКА - ОТСУТСВУЮТ ЗАКРЫВАЮЩИЕ СИМВОЛЫ \"```\">>>"
+                    logger.debug(f"Добавляю маркер в блок. Длина до: {len(remaining)}")
+                    remaining += marker
+                    logger.debug(f"Длина после: {len(remaining)}")
+                    blocks.append(MessageBlock(len(blocks), remaining, language=lang))
+                else:
+                    logger.debug("Остаток пустой или состоит из пробелов, не считаем незакрытым блоком")
             elif state == 'TEXT' and remaining.strip():
+                logger.debug(f"Остаток текста (не блок): {len(remaining)} символов")
                 blocks.append(MessageBlock(len(blocks), remaining, language=None))
-            # Если остаток пустой, ничего не добавляем
+            else:
+                logger.debug("Остаток пустой или пробелы, игнорируем")
 
+        logger.debug(f"Парсинг завершён. Всего блоков: {len(blocks)}, незакрытых: {self.unclosed_blocks}")
         return blocks

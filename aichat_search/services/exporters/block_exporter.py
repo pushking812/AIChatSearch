@@ -14,17 +14,27 @@ class BlockExporter(Exporter):
     """Экспорт сообщения в виде отдельных файлов-блоков в папке."""
 
     @staticmethod
-    def prepare_data(chat_title: str, chat_created_at, pair, message_index: int) -> Dict[str, Any]:
-        """Добавляет к стандартным данным распарсенные блоки, включая запрос."""
+    def prepare_data(chat_title: str, chat_created_at, pair, message_index: int, source_name: str) -> Dict[str, Any]:
+        """Добавляет к стандартным данным распарсенные блоки, включая запрос.
+        
+        Аргументы:
+            chat_title: название чата
+            chat_created_at: дата создания чата
+            pair: объект MessagePair
+            message_index: номер сообщения в чате (начиная с 1)
+            source_name: имя файла-источника (например, "deepseek_data-2026-03-02.zip")
+        
+        Возвращает словарь с ключами:
+            - стандартные поля от Exporter.prepare_data
+            - 'blocks': список MessageBlock
+            - 'unclosed_blocks': количество незакрытых блоков кода
+        """
         data = Exporter.prepare_data(chat_title, chat_created_at, pair, message_index)
 
         parser = BlockParser()
         response_blocks = parser.parse(pair.response_text)
-        if parser.unclosed_blocks > 0:
-            logger.warning(
-                f"В сообщении (чат: {chat_title}, индекс: {pair.index}) "
-                f"обнаружено {parser.unclosed_blocks} незакрытых блоков кода"
-            )
+        # Предупреждение НЕ выводится здесь, чтобы избежать дублирования.
+        # Оно будет выведено в export_manager.py после назначения глобальных индексов.
 
         # Создаём блок запроса с индексом 0
         request_block = MessageBlock(0, pair.request_text, language=None, block_type='request')
@@ -36,6 +46,7 @@ class BlockExporter(Exporter):
         # Объединяем
         all_blocks = [request_block] + response_blocks
         data['blocks'] = all_blocks
+        data['unclosed_blocks'] = parser.unclosed_blocks
         return data
 
     def export(self, data: Dict[str, Any], folder_path: str) -> None:

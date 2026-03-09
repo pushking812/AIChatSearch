@@ -1,4 +1,4 @@
-﻿# aichat_search/gui_components/message_detail.py
+# aichat_search/gui_components/message_detail.py
 
 """Панель отображения и редактирования текста сообщения."""
 
@@ -89,12 +89,3 @@ class MessageDetailPanel:
         """Убирает подсветку поиска в обоих текстовых полях."""
         self.request_text.tag_remove("search_match", "1.0", tk.END)
         self.response_text.tag_remove("search_match", "1.0", tk.END)
-
-    def get_font_size(self) -> int:
-        """Возвращает текущий размер шрифта в пунктах."""
-        return self.text_font.cget('size')
-
-    def set_font_size(self, size: int):
-        """Устанавливает размер шрифта и перерисовывает текстовые поля."""
-        self.text_font.config(size=size)
-        # Не требуется дополнительного обновления, шрифт применяется автоматически
