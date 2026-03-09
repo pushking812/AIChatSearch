@@ -14,11 +14,8 @@ from .message_tree import MessageTreePanel
 from .message_detail import MessageDetailPanel
 from .search_controller import SearchController
 from .window_state import WindowStateManager
-from .group_dialog import GroupDialog
+from .group_handler import GroupHandler  # новый импорт
 from ..controller import ChatController
-from ..services.exporter_factory import ExporterFactory
-from ..services.exporters.base import Exporter
-from ..services.exporters.block_exporter import BlockExporter
 from ..services.export_manager import ExportManager
 
 
@@ -29,7 +26,6 @@ class Application(tk.Tk):
         super().__init__()
 
         self.controller = ChatController()
-        
         self.title("AI Chat Archive Search")
         self.geometry(f"{constants.DEFAULT_WIDTH}x{constants.DEFAULT_HEIGHT}")
         self.minsize(constants.MIN_LEFT_WIDTH + constants.MIN_RIGHT_WIDTH,
@@ -41,15 +37,16 @@ class Application(tk.Tk):
         # Инициализация компонентов
         self._create_menu()
         self._create_layout()
-        
         self.search_ctrl = SearchController(self.controller, self._on_search_result_change)
-        self.export_manager = ExportManager(self.controller, self)
 
         self.controller.load_session()
         self._update_chat_list()
 
         self.state_manager = WindowStateManager(self)
         self.after_idle(self.state_manager.load_and_apply)
+
+        self.export_manager = ExportManager(self.controller, self)
+        self.group_handler = GroupHandler(self, self.controller)  # создаём обработчик групп
 
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
 
@@ -86,8 +83,17 @@ class Application(tk.Tk):
         )
         chat_menu.add_cascade(label="Группировать", menu=grouping_submenu)
         chat_menu.add_separator()
-        chat_menu.add_command(label="Создать/переименовать группу", command=self._open_group_dialog)
-        chat_menu.add_command(label="Добавить чат в группу", command=self._assign_group_to_selected)
+        chat_menu.add_command(
+            label="Создать/переименовать группу",
+            command=lambda: self.group_handler.open_group_dialog(self._update_chat_list)
+        )
+        chat_menu.add_command(
+            label="Добавить чат в группу",
+            command=lambda: self.group_handler.assign_group_to_selected(
+                self.chat_panel.get_selected_chats(),
+                on_update_callback=self._update_chat_list
+            )
+        )
         menubar.add_cascade(label="Чат", menu=chat_menu)
 
         # Меню Сообщение
@@ -110,18 +116,12 @@ class Application(tk.Tk):
         menubar.add_cascade(label="Сообщение", menu=message_menu)
 
     def _create_layout(self):
-        # Основная горизонтальная панель
         self._create_main_paned()
-        # Левая панель (чаты)
         self._create_left_panel()
-        # Правая вертикальная панель
         self._create_right_paned()
-        # Верхняя часть (дерево сообщений)
         self._create_top_panel()
-        # Нижняя часть (детали сообщения)
         self._create_bottom_panel()
 
-        # Сохраняем ссылки на панели для восстановления геометрии
         self.left_frame = self.left_frame
         self.top_frame = self.top_frame
         self.bottom_frame = self.bottom_frame
@@ -169,7 +169,6 @@ class Application(tk.Tk):
         self.detail_panel = MessageDetailPanel(self.bottom_frame)
         self.text_paned = self.detail_panel.text_paned
 
-        # Кнопки навигации и сохранения
         nav_frame = tk.Frame(self.bottom_frame)
         nav_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
 
@@ -197,7 +196,7 @@ class Application(tk.Tk):
         self.search_combobox = ttk.Combobox(
             search_frame,
             textvariable=self.search_field_var,
-            values=["Запрос", "Ответ"],  # Исключено "Название чата" (итерация 1)
+            values=["Запрос", "Ответ"],
             state="readonly",
             width=18
         )
@@ -209,7 +208,6 @@ class Application(tk.Tk):
         tk.Button(search_frame, text=">", width=2, command=self._next_search_result).pack(side=tk.LEFT)
         self.search_counter = tk.Label(search_frame, text="0 / 0")
         self.search_counter.pack(side=tk.LEFT, padx=5)
-        
 
     # ---------- Вспомогательные методы для обновления интерфейса ----------
     def _update_chat_list(self):
@@ -241,7 +239,6 @@ class Application(tk.Tk):
             self._update_nav_buttons()
 
             if field is not None and self.search_ctrl.results:
-                # Находим индекс этого совпадения в результатах поиска
                 for idx, (s_chat, s_pair, s_field, s_start, s_end) in enumerate(self.search_ctrl.results):
                     if (s_chat is chat and s_pair is pair and 
                         s_field == field and s_start == start and s_end == end):
@@ -283,21 +280,16 @@ class Application(tk.Tk):
 
     def _on_search_result_change(self, result, index, total, move_focus=True):
         chat, pair, field, start, end = result
-        # Формируем уникальный iid, использованный при создании элемента
         iid = f"{chat.id}_{pair.index}_{start}_{end}"
-        # Проверяем, существует ли такой элемент в дереве
         if iid in self.tree_panel.tree_item_map:
-            # Выделяем этот элемент
             self.tree_panel.tree.selection_set(iid)
             self.tree_panel.tree.see(iid)
-            # Обновляем детали
             self.controller.select_pair(chat, pair)
             self.detail_panel.display_pair(pair)
             self._update_position_label()
             self._update_nav_buttons()
             self.detail_panel.highlight_search_match(field, start, end, move_focus=move_focus)
         else:
-            # Fallback: если элемент не найден, хотя бы показываем сообщение
             self.controller.select_pair(chat, pair)
             self.detail_panel.display_pair(pair)
             self._update_position_label()
@@ -384,39 +376,8 @@ class Application(tk.Tk):
     def _change_grouping_mode(self):
         mode = self.grouping_var.get()
         self.controller.set_grouping_mode(mode)
-        self.state_manager.save()  # сохраняем режим в конфиг
+        self.state_manager.save()
         self._update_chat_list()
-
-    def _open_group_dialog(self):
-        GroupDialog(self, self.controller, self._update_chat_list)
-
-    def _assign_group_to_selected(self):
-        selected_chats = self.chat_panel.get_selected_chats()
-        if not selected_chats:
-            messagebox.showwarning("Назначение группы", "Нет выбранных чатов.")
-            return
-        groups = self.controller.get_all_groups()
-        dialog = tk.Toplevel(self)
-        dialog.title("Выберите группу")
-        dialog.geometry("300x200")
-        dialog.transient(self)
-        dialog.grab_set()
-
-        tk.Label(dialog, text="Группа:").pack(pady=5)
-        var = tk.StringVar()
-        combobox = ttk.Combobox(dialog, textvariable=var, values=[""] + groups, state="readonly")
-        combobox.pack(pady=5)
-
-        def on_ok():
-            group = var.get().strip()
-            if group == "":
-                group = None
-            self.controller.assign_group_to_chats(selected_chats, group)
-            self._update_chat_list()
-            dialog.destroy()
-
-        tk.Button(dialog, text="OK", command=on_ok).pack(pady=5)
-        tk.Button(dialog, text="Отмена", command=dialog.destroy).pack(pady=5)
 
     # ---------- Внутренние вспомогательные методы ----------
     def _update_nav_buttons(self):

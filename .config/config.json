@@ -4,8 +4,8 @@
     "height": 774
   },
   "window_position": {
-    "x": 340,
-    "y": 61
+    "x": 272,
+    "y": 71
   },
   "proportions": {
     "main_horizontal": 0.340153452685422,
@@ -19,11 +19,11 @@
     "updated": 140
   },
   "tree_column_widths": {
-    "global_idx": 33,
-    "source": 164,
+    "global_idx": 29,
+    "source": 160,
     "chat_idx": 43,
     "request": 227,
-    "response": 444,
-    "date": 78
+    "response": 448,
+    "date": 82
   }
 }
