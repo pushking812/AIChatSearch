@@ -202,3 +202,9 @@ class PythonParser(CodeParser):
             return node.id
         else:
             return "?"
+            
+# Реестр доступных парсеров: ключ - строка языка (нижний регистр), значение - класс парсера
+PARSERS = {
+    "python": PythonParser,
+    "py": PythonParser,      # синоним
+}

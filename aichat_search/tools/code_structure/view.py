@@ -2,6 +2,8 @@
 
 import tkinter as tk
 from tkinter import ttk, messagebox
+from chlorophyll import CodeView
+import pygments.lexers
 
 
 class CodeStructureWindow(tk.Toplevel):
@@ -19,23 +21,20 @@ class CodeStructureWindow(tk.Toplevel):
         self._item_to_node = {}
 
         # Настраиваем сетку: 4 строки
-        # 0: метки
-        # 1: комбобоксы и кнопка "Показать структуру"
-        # 2: панель управления развёртыванием
-        # 3: горизонтальная панель (дерево + текст)
         self.columnconfigure(0, weight=1)
         self.columnconfigure(1, weight=1)
         self.columnconfigure(2, weight=0)
-        self.columnconfigure(3, weight=0)  # для скроллов (резерв)
-        self.rowconfigure(3, weight=1)     # панель расширяется
+        self.columnconfigure(3, weight=0)
+        self.rowconfigure(3, weight=1)
 
         # ---- Строка 0: метки ----
         ttk.Label(self, text="Тип блока:").grid(row=0, column=0, padx=5, pady=(10,0), sticky="w")
         ttk.Label(self, text="Блок:").grid(row=0, column=1, padx=5, pady=(10,0), sticky="w")
 
-        # ---- Строка 1: комбобоксы и кнопка "Показать структуру" ----
+        # ---- Строка 1: комбобоксы и кнопка ----
         self.type_combo = ttk.Combobox(self, state="readonly", width=15)
         self.type_combo.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
+        self.type_combo.bind("<<ComboboxSelected>>", self._on_type_selected)
 
         self.block_combo = ttk.Combobox(self, state="readonly", width=50)
         self.block_combo.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
@@ -46,12 +45,12 @@ class CodeStructureWindow(tk.Toplevel):
         # ---- Строка 2: панель управления развёртыванием ----
         level_frame = ttk.Frame(self)
         level_frame.grid(row=2, column=0, columnspan=3, padx=5, pady=5, sticky="ew")
-        level_frame.columnconfigure(2, weight=1)  # пространство справа от кнопки растягивается
+        level_frame.columnconfigure(2, weight=1)
 
         ttk.Label(level_frame, text="Уровень раскрытия:").grid(row=0, column=0, padx=5, sticky="w")
         self.level_combo = ttk.Combobox(level_frame, values=[1,2,3,4,5], state="readonly", width=5)
         self.level_combo.grid(row=0, column=1, padx=5, sticky="w")
-        self.level_combo.current(4)  # по умолчанию 5
+        self.level_combo.current(4)
 
         self.expand_button = ttk.Button(level_frame, text="+ / -", command=self._on_expand_level)
         self.expand_button.grid(row=0, column=2, padx=5, sticky="w")
@@ -79,29 +78,30 @@ class CodeStructureWindow(tk.Toplevel):
         tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree.configure(yscrollcommand=tree_scroll.set)
 
-        # Правая панель (текст) – исправленная часть
+        # Правая панель (текст) – используем CodeView
         right_frame = ttk.Frame(self.paned)
         self.paned.add(right_frame, width=500, minsize=300)
+        right_frame.grid_rowconfigure(0, weight=1)
+        right_frame.grid_columnconfigure(0, weight=1)
 
-        # Настраиваем сетку для правильного размещения текста и скроллов
-        right_frame.grid_rowconfigure(0, weight=1)   # строка текста расширяется
-        right_frame.grid_columnconfigure(0, weight=1) # колонка текста расширяется
-
-        self.code_text = tk.Text(right_frame, wrap=tk.NONE, font=("Courier New", 10))
+        # Исправлено: убираем color_scheme или передаём None, чтобы использовать схему по умолчанию
+        self.code_text = CodeView(
+            right_frame,
+            lexer=pygments.lexers.PythonLexer,
+            color_scheme=None,   # или просто опустить этот параметр
+            font=("Courier New", 10),
+            wrap=tk.NONE,
+            autohide_scrollbar=False,
+            linenums_border=1,
+            default_context_menu=True,
+            tab_width=4
+        )
         self.code_text.grid(row=0, column=0, sticky="nsew")
-
-        text_scroll_y = ttk.Scrollbar(right_frame, orient=tk.VERTICAL, command=self.code_text.yview)
-        text_scroll_y.grid(row=0, column=1, sticky="ns")
-        self.code_text.configure(yscrollcommand=text_scroll_y.set)
-
-        text_scroll_x = ttk.Scrollbar(right_frame, orient=tk.HORIZONTAL, command=self.code_text.xview)
-        text_scroll_x.grid(row=1, column=0, columnspan=2, sticky="ew")
-        self.code_text.configure(xscrollcommand=text_scroll_x.set)
 
         # Привязка событий дерева
         self.tree.bind("<<TreeviewSelect>>", self._on_tree_select)
 
-    # ---- Остальные методы без изменений ----
+    # ---- Методы для работы с комбобоксами ----
     def set_type_combo_values(self, values):
         self.type_combo['values'] = values
         if values:
@@ -120,6 +120,11 @@ class CodeStructureWindow(tk.Toplevel):
     def set_controller(self, controller):
         self.controller = controller
 
+    def _on_type_selected(self, event):
+        if self.controller:
+            self.controller.on_type_selected(event)
+
+    # ---- Методы для дерева ----
     def clear_tree(self):
         for item in self.tree.get_children():
             self.tree.delete(item)
@@ -168,9 +173,23 @@ class CodeStructureWindow(tk.Toplevel):
         if self.controller:
             self.controller.on_node_selected()
 
-    def display_code(self, code: str):
+    # ---- Метод для отображения кода с подсветкой ----
+    def display_code(self, code: str, language: str = "python"):
         self.code_text.delete(1.0, tk.END)
+        if not code.strip():
+            return
+
+        # Устанавливаем лексер в зависимости от языка
+        if language.lower() == "python":
+            self.code_text.lexer = pygments.lexers.PythonLexer
+        else:
+            try:
+                self.code_text.lexer = pygments.lexers.get_lexer_by_name(language.lower())
+            except:
+                pass  # оставляем текущий лексер
+
         self.code_text.insert(1.0, code)
 
+    # ---- Вспомогательные методы ----
     def show_error(self, message):
         messagebox.showerror("Ошибка", message, parent=self)
