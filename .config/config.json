@@ -1,29 +1,29 @@
 {
   "window_size": {
-    "width": 1689,
+    "width": 1568,
     "height": 774
   },
   "window_position": {
-    "x": 153,
+    "x": 272,
     "y": 71
   },
   "proportions": {
-    "main_horizontal": 0.30897207367795604,
+    "main_horizontal": 0.3405889884763124,
     "right_vertical": 0.2898172323759791,
     "text_vertical": 0.23931623931623933
   },
   "column_widths": {
-    "name": 202,
-    "group": 87,
-    "msg_count": 55,
-    "updated": 137
+    "name": 204,
+    "group": 93,
+    "msg_count": 92,
+    "updated": 140
   },
   "tree_column_widths": {
-    "global_idx": 44,
-    "source": 173,
-    "chat_idx": 56,
-    "request": 172,
-    "response": 573,
-    "date": 102
+    "global_idx": 28,
+    "source": 159,
+    "chat_idx": 43,
+    "request": 227,
+    "response": 449,
+    "date": 83
   }
 }

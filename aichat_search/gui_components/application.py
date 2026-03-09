@@ -227,6 +227,7 @@ class Application(tk.Tk):
     # ---------- Обработчики событий ----------
     def _on_chats_selected(self):
         selected = self.chat_panel.get_selected_chats()
+        self.controller.reset_current_pair()
         self.tree_panel.display_chats(selected)
         self.detail_panel.clear()
         self.search_ctrl.clear()
@@ -328,6 +329,7 @@ class Application(tk.Tk):
 
     def new_session(self):
         self.controller.clear_all_sources()
+        self.controller.reset_current_pair()
         self._update_chat_list()
         self.tree_panel.clear()
         self.detail_panel.clear()

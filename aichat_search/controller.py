@@ -297,3 +297,9 @@ class ChatController:
 
     def get_grouping_mode(self) -> str:
         return self.grouping_mode
+        
+    def reset_current_pair(self) -> None:
+        """Сбрасывает текущее выбранное сообщение."""
+        self.current_chat = None
+        self.current_chat_pairs = []
+        self.current_index_in_chat = None
