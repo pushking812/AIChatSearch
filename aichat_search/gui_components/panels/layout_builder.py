@@ -2,7 +2,6 @@
 
 import tkinter as tk
 from .chat_tree_panel import ChatListPanel
-from .message_tree_panel import MessageTreePanel
 from .message_details_panel import MessageDetailPanel
 from .. import constants
 
@@ -38,10 +37,17 @@ class LayoutBuilder:
         )
         app.main_paned.add(app.right_paned, minsize=constants.MIN_RIGHT_WIDTH)
 
-        # Верхняя правая панель (дерево сообщений)
+        # Верхняя правая панель (поиск + дерево сообщений)
         app.top_frame = tk.Frame(app.right_paned)
         app.right_paned.add(app.top_frame, height=300, minsize=constants.MIN_TOP_HEIGHT)
-        app.tree_panel = MessageTreePanel(app.top_frame, app.controller, app._on_tree_selected)
+
+        # Фрейм для строки поиска
+        app.search_frame = tk.Frame(app.top_frame)
+        app.search_frame.pack(side=tk.TOP, fill=tk.X, padx=5, pady=(5, 0))
+
+        # Фрейм для дерева сообщений
+        app.tree_frame = tk.Frame(app.top_frame)
+        app.tree_frame.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True, padx=5, pady=(0, 5))
 
         # Нижняя правая панель (детали сообщения)
         app.bottom_frame = tk.Frame(app.right_paned)
@@ -49,7 +55,7 @@ class LayoutBuilder:
         app.detail_panel = MessageDetailPanel(app.bottom_frame)
         app.text_paned = app.detail_panel.text_paned
 
-        # Навигационные кнопки (внизу) - команды не задаются, будут назначены позже
+        # Навигационные кнопки (внизу) - команды будут назначены позже
         nav_frame = tk.Frame(app.bottom_frame)
         nav_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
         app.prev_button = tk.Button(

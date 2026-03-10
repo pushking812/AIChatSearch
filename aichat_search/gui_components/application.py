@@ -8,8 +8,10 @@ from tkinter import filedialog, messagebox
 
 from . import constants
 from .panels.layout_builder import LayoutBuilder
+from .panels.message_tree_panel import MessageTreePanel
 from .managers.navigation_manager import NavigationManager
 from .managers.archive_session_manager import ArchiveSessionManager
+from .managers.search_bar_manager import SearchBarManager
 from .search_controller import SearchController
 from .window_state import WindowStateManager
 from .group_handler import GroupHandler
@@ -32,8 +34,18 @@ class Application(tk.Tk):
         # Построение интерфейса (панели создаются внутри)
         LayoutBuilder.build(self)
 
+        # Создаём дерево сообщений и помещаем его в tree_frame
+        self.tree_panel = MessageTreePanel(self.tree_frame, self.controller, self._on_tree_selected)
+
         # Контроллер поиска
-        self.search_ctrl = SearchController(self.controller, self._on_search_result_change)
+        self.search_controller = SearchController(self.controller, self._on_search_result_change)
+
+        # Менеджер поиска (размещает виджеты в search_frame)
+        self.search_bar = SearchBarManager(
+            parent=self.search_frame,
+            app=self,
+            search_controller=self.search_controller
+        )
 
         # Менеджер навигации
         self.navigation = NavigationManager(
@@ -43,7 +55,6 @@ class Application(tk.Tk):
             next_button=self.next_button,
             position_label=self.detail_panel.position_label
         )
-        # Переназначаем команды кнопок навигации (кнопки созданы в layout_builder без команд)
         self.prev_button.config(command=self.navigation.prev)
         self.next_button.config(command=self.navigation.next)
 
@@ -55,15 +66,14 @@ class Application(tk.Tk):
             on_update_callback=self._update_chat_list,
             on_clear_interface=self._clear_interface
         )
-        # Переназначаем команду кнопки сохранения
         self.save_button.config(command=self.archive_manager.save_current_pair)
 
-        # Остальные менеджеры (пока старые)
+        # Остальные менеджеры
         self.group_handler = GroupHandler(self, self.controller)
         self.export_manager = ExportManager(self.controller, self)
         self.state_manager = WindowStateManager(self)
 
-        # Меню (пока старый метод)
+        # Меню (будет вынесено позже)
         self._create_menu()
 
         # Загрузка сессии и обновление списка
@@ -74,7 +84,7 @@ class Application(tk.Tk):
 
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
 
-    # ---------- Меню (будет вынесено позже) ----------
+    # ---------- Меню ----------
     def _create_menu(self):
         menubar = tk.Menu(self)
 
@@ -144,60 +154,7 @@ class Application(tk.Tk):
         message_menu.add_cascade(label="Экспорт", menu=export_menu)
         menubar.add_cascade(label="Сообщение", menu=message_menu)
 
-    # ---------- Поиск (будет вынесено) ----------
-    def _create_search_bar(self, parent):
-        search_frame = tk.Frame(parent)
-        search_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
-
-        self.search_var = tk.StringVar()
-        self.search_field_var = tk.StringVar(value="Запрос")
-        self.live_search_var = tk.BooleanVar(value=True)
-
-        self.search_entry = tk.Entry(search_frame, textvariable=self.search_var)
-        self.search_entry.bind('<KeyRelease>', lambda e: self._on_search_key(e))
-        self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
-
-        self.search_combobox = ttk.Combobox(
-            search_frame,
-            textvariable=self.search_field_var,
-            values=["Запрос", "Ответ"],
-            state="readonly",
-            width=18
-        )
-        self.search_combobox.pack(side=tk.LEFT, padx=(0, 5))
-
-        tk.Button(search_frame, text="Найти", command=self._perform_search).pack(side=tk.LEFT, padx=(0, 5))
-        tk.Checkbutton(search_frame, text="Live", variable=self.live_search_var).pack(side=tk.LEFT, padx=5)
-        tk.Button(search_frame, text="<", width=2, command=self._prev_search_result).pack(side=tk.LEFT)
-        tk.Button(search_frame, text=">", width=2, command=self._next_search_result).pack(side=tk.LEFT)
-        self.search_counter = tk.Label(search_frame, text="0 / 0")
-        self.search_counter.pack(side=tk.LEFT, padx=5)
-
-    def _on_search_key(self, event):
-        if self.live_search_var.get():
-            self._perform_search()
-
-    def _perform_search(self):
-        query = self.search_var.get().strip()
-        field = self.search_field_var.get()
-        selected_chats = self.chat_panel.get_selected_chats()
-        results = self.search_ctrl.search(query, field, selected_chats)
-        if results:
-            self.tree_panel.display_search_results(results)
-        else:
-            self.tree_panel.display_chats(selected_chats)
-            self.search_counter.config(text="0 / 0")
-
-    def _reset_search(self):
-        self.search_var.set("")
-        self._perform_search()
-
-    def _prev_search_result(self):
-        self.search_ctrl.prev()
-
-    def _next_search_result(self):
-        self.search_ctrl.next()
-
+    # ---------- Обработчик изменения результата поиска ----------
     def _on_search_result_change(self, result, index, total, move_focus=True):
         chat, pair, field, start, end = result
         iid = f"{chat.id}_{pair.index}_{start}_{end}"
@@ -215,7 +172,7 @@ class Application(tk.Tk):
             self.navigation.update_position_label()
             self.navigation.update_buttons()
             self.detail_panel.highlight_search_match(field, start, end, move_focus=move_focus)
-        self.search_counter.config(text=f"{index + 1} / {total}")
+        self.search_bar.counter_label.config(text=f"{index + 1} / {total}")
 
     # ---------- Обработчики событий ----------
     def _on_chats_selected(self):
@@ -223,8 +180,8 @@ class Application(tk.Tk):
         self.controller.reset_current_pair()
         self.tree_panel.display_chats(selected)
         self.detail_panel.clear()
-        self.search_ctrl.clear()
-        self.search_counter.config(text="0 / 0")
+        self.search_controller.clear()
+        self.search_bar.counter_label.config(text="0 / 0")
         self.navigation.update_buttons()
 
     def _on_tree_selected(self):
@@ -238,20 +195,20 @@ class Application(tk.Tk):
             self.navigation.update_position_label()
             self.navigation.update_buttons()
 
-            if field is not None and self.search_ctrl.results:
-                for idx, (s_chat, s_pair, s_field, s_start, s_end) in enumerate(self.search_ctrl.results):
+            if field is not None and self.search_controller.results:
+                for idx, (s_chat, s_pair, s_field, s_start, s_end) in enumerate(self.search_controller.results):
                     if (s_chat is chat and s_pair is pair and 
                         s_field == field and s_start == start and s_end == end):
-                        self.search_ctrl.current_index = idx
-                        self.search_counter.config(text=f"{idx + 1} / {len(self.search_ctrl.results)}")
+                        self.search_controller.current_index = idx
+                        self.search_bar.counter_label.config(text=f"{idx + 1} / {len(self.search_controller.results)}")
                         self.detail_panel.highlight_search_match(field, start, end, move_focus=False)
                         break
                 else:
                     self.detail_panel.highlight_search_match(field, start, end, move_focus=False)
             else:
                 self.detail_panel.clear_highlight()
-                if hasattr(self.search_ctrl, 'results') and self.search_ctrl.results:
-                    self.search_counter.config(text="0 / 0")
+                if hasattr(self.search_controller, 'results') and self.search_controller.results:
+                    self.search_bar.counter_label.config(text="0 / 0")
 
     # ---------- Группировка ----------
     def _change_grouping_mode(self):
@@ -272,8 +229,8 @@ class Application(tk.Tk):
     def _clear_interface(self):
         self.tree_panel.clear()
         self.detail_panel.clear()
-        self.search_ctrl.clear()
-        self.search_counter.config(text="0 / 0")
+        self.search_controller.clear()
+        self.search_bar.counter_label.config(text="0 / 0")
         self.navigation.update_buttons()
         self.navigation.update_position_label()
 
