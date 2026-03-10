@@ -13,9 +13,9 @@ from .managers.navigation_manager import NavigationManager
 from .managers.archive_session_manager import ArchiveSessionManager
 from .managers.search_bar_manager import SearchBarManager
 from .managers.menu_manager import MenuManager
-from .search_controller import SearchController
+from .controllers.search_controller import SearchController
 from .window_state import WindowStateManager
-from .group_handler import GroupHandler
+from .group_management.group_handler import GroupHandler
 from ..controller import ChatController
 from ..services.export_manager import ExportManager
 from ..tools.code_structure.controller import CodeStructureController
@@ -81,7 +81,10 @@ class Application(tk.Tk):
             export_manager=self.export_manager,
             grouping_var=self.grouping_var,
             on_grouping_change=self._change_grouping_mode,
-            open_code_structure=self._open_code_structure
+            open_code_structure=self._open_code_structure,
+            get_selected_chats_callback=lambda: self.chat_panel.get_selected_chats(),
+            get_selected_pairs_callback=lambda: self.tree_panel.get_selected_pairs(),
+            on_update_callback=self._update_chat_list
         )
         menubar = tk.Menu(self)
         self.menu_manager.build_menu(menubar)

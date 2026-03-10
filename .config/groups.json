@@ -1,9 +1,9 @@
 {
   "groups": [
-    "LSP: PLLEN",
-    "SOME_ELSE2",
-    "SOME_ELSE3",
     "PDF",
+    "SOME_ELSE4",
+    "SOME_ELSE2",
+    "LSP: PLLEN",
     "SOME_ELSE"
   ],
   "assignments": {
@@ -43,9 +43,9 @@
     "6a810437-926f-402f-8d60-5a05fc4ef4ff": "SOME_ELSE2",
     "fd35514a-7872-43ee-bcec-4a67fe7c40b7": "SOME_ELSE2",
     "8276593c-791e-41eb-aca3-7ec98a664d0e": "SOME_ELSE2",
-    "00c59e0b-b672-444e-b0d4-2363c077b6c7": "SOME_ELSE3",
-    "8e898713-f552-47f7-a354-b87bc67ae152": "SOME_ELSE3",
-    "23e75260-4775-4710-bc9b-cc0bcc84cab4": "SOME_ELSE3",
-    "84b6e4bb-ce16-4893-bd57-c67ba818f321": "SOME_ELSE3"
+    "00c59e0b-b672-444e-b0d4-2363c077b6c7": "SOME_ELSE4",
+    "8e898713-f552-47f7-a354-b87bc67ae152": "SOME_ELSE4",
+    "23e75260-4775-4710-bc9b-cc0bcc84cab4": "SOME_ELSE4",
+    "84b6e4bb-ce16-4893-bd57-c67ba818f321": "SOME_ELSE4"
   }
 }

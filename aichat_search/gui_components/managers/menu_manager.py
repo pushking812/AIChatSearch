@@ -4,7 +4,9 @@ import tkinter as tk
 
 class MenuManager:
     def __init__(self, archive_manager, group_handler, export_manager,
-                 grouping_var, on_grouping_change, open_code_structure):
+                 grouping_var, on_grouping_change, open_code_structure,
+                 get_selected_chats_callback, get_selected_pairs_callback,
+                 on_update_callback):
         """
         archive_manager: экземпляр ArchiveSessionManager
         group_handler: экземпляр GroupHandler
@@ -12,6 +14,9 @@ class MenuManager:
         grouping_var: tk.StringVar для режима группировки
         on_grouping_change: колбэк при изменении группировки
         open_code_structure: колбэк для открытия окна структуры кода
+        get_selected_chats_callback: функция, возвращающая список выбранных чатов
+        get_selected_pairs_callback: функция, возвращающая список выбранных пар (chat, pair)
+        on_update_callback: колбэк для обновления списка чатов после операций с группами
         """
         self.archive_manager = archive_manager
         self.group_handler = group_handler
@@ -19,6 +24,9 @@ class MenuManager:
         self.grouping_var = grouping_var
         self.on_grouping_change = on_grouping_change
         self.open_code_structure = open_code_structure
+        self.get_selected_chats = get_selected_chats_callback
+        self.get_selected_pairs = get_selected_pairs_callback
+        self.on_update_callback = on_update_callback
 
     def build_menu(self, menubar):
         # Меню Файл
@@ -52,14 +60,12 @@ class MenuManager:
         chat_menu.add_separator()
         chat_menu.add_command(
             label="Создать/переименовать группу",
-            command=lambda: self.group_handler.open_group_dialog(self.on_grouping_change)
+            command=lambda: self.group_handler.open_group_dialog(self.on_update_callback)
         )
         chat_menu.add_command(
             label="Добавить чат в группу",
             command=lambda: self.group_handler.assign_group_to_selected(
-                # Здесь нужно будет передать выбранные чаты, но это будет сделано через app
-                # В текущей реализации group_handler сам обращается к app.chat_panel
-                # Поэтому оставляем как есть
+                self.get_selected_chats(), self.on_update_callback
             )
         )
         menubar.add_cascade(label="Чат", menu=chat_menu)
@@ -70,13 +76,13 @@ class MenuManager:
         export_menu.add_command(
             label="В простой текст",
             command=lambda: self.export_manager.export_messages(
-                # аналогично, export_manager использует app.tree_panel
+                self.get_selected_pairs(), 'txt'
             )
         )
         export_menu.add_command(
             label="По блокам",
             command=lambda: self.export_manager.export_messages(
-                # аналогично
+                self.get_selected_pairs(), 'blocks'
             )
         )
         message_menu.add_cascade(label="Экспорт", menu=export_menu)

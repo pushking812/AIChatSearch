@@ -8,9 +8,9 @@
     "y": 0
   },
   "proportions": {
-    "main_horizontal": 0.2763744427934621,
-    "right_vertical": 0.28171091445427726,
-    "text_vertical": 0.2725060827250608
+    "main_horizontal": 0.32838038632986627,
+    "right_vertical": 0.28023598820059,
+    "text_vertical": 0.4854368932038835
   },
   "column_widths": {
     "name": 251,
@@ -19,11 +19,11 @@
     "updated": 113
   },
   "tree_column_widths": {
-    "global_idx": 61,
-    "source": 57,
-    "chat_idx": 58,
-    "request": 239,
-    "response": 420,
-    "date": 103
+    "global_idx": 47,
+    "source": 47,
+    "chat_idx": 49,
+    "request": 226,
+    "response": 408,
+    "date": 91
   }
 }
