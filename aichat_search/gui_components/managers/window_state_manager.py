@@ -13,8 +13,6 @@ from ..constants import (
     MIN_RIGHT_WIDTH,
     MIN_TOP_HEIGHT,
     MIN_BOTTOM_HEIGHT,
-    MIN_REQUEST_HEIGHT,
-    MIN_RESPONSE_HEIGHT,
 )
 
 class WindowStateManager:
@@ -30,27 +28,20 @@ class WindowStateManager:
         """Сохранить текущее состояние в JSON."""
         os.makedirs(self.config_dir, exist_ok=True)
 
-        # Размер и позиция окна
         win_width = self.app.winfo_width()
         win_height = self.app.winfo_height()
         win_x = self.app.winfo_x()
         win_y = self.app.winfo_y()
 
-        # Вычисляем пропорции для каждой панели
         left_prop = self._get_sash_proportion(
             self.app.main_paned, 0, orient='horizontal'
         )
         top_prop = self._get_sash_proportion(
             self.app.right_paned, 0, orient='vertical'
         )
-        req_prop = self._get_sash_proportion(
-            self.app.text_paned, 0, orient='vertical'
-        )
+        # req_prop удалён, так как text_paned больше нет
 
-        # Сохраняем ширину колонок левого дерева чатов
         column_widths = self.app.left_tree.get_column_widths()
-
-        # Сохраняем ширину колонок правого дерева сообщений
         tree_column_widths = self.app.tree_panel.get_column_widths()
 
         config = {
@@ -59,7 +50,6 @@ class WindowStateManager:
             "proportions": {
                 "main_horizontal": left_prop,
                 "right_vertical": top_prop,
-                "text_vertical": req_prop
             },
             "column_widths": column_widths,
             "tree_column_widths": tree_column_widths,
@@ -83,7 +73,6 @@ class WindowStateManager:
             print(f"Ошибка загрузки состояния: {e}")
             return
 
-        # Восстанавливаем размер и позицию окна
         win_size = config.get("window_size", {})
         width = win_size.get("width", DEFAULT_WIDTH)
         height = win_size.get("height", DEFAULT_HEIGHT)
@@ -101,23 +90,19 @@ class WindowStateManager:
 
         self.app.update_idletasks()
 
-        # Применяем пропорции
         props = config.get("proportions", {})
         if props:
             self.app.after(50, self._apply_proportions, props)
 
-        # Применяем ширину колонок левого дерева чатов
         col_widths = config.get("column_widths", {})
         if col_widths:
             self.app.left_tree.set_column_widths(col_widths)
 
-        # Применяем ширину колонок правого дерева сообщений
         tree_widths = config.get("tree_column_widths", {})
         if tree_widths:
             self.app.tree_panel.set_column_widths(tree_widths)
 
     def _get_sash_proportion(self, paned, index, orient):
-        """Вычислить долю позиции саша относительно доступного пространства."""
         try:
             if orient == 'horizontal':
                 pos = paned.sash_coord(index)[0]
@@ -134,8 +119,6 @@ class WindowStateManager:
             return 0.25 if orient == 'horizontal' else 0.5
 
     def _apply_proportions(self, props):
-        """Применить пропорции с учётом минимальных размеров."""
-        # Главная горизонтальная панель
         left_prop = props.get("main_horizontal")
         if left_prop is not None:
             self._set_sash_proportion(
@@ -145,7 +128,6 @@ class WindowStateManager:
                 minsize2=MIN_RIGHT_WIDTH
             )
 
-        # Вертикальная панель справа
         top_prop = props.get("right_vertical")
         if top_prop is not None:
             self._set_sash_proportion(
@@ -155,18 +137,9 @@ class WindowStateManager:
                 minsize2=MIN_BOTTOM_HEIGHT
             )
 
-        # Текстовая панель
-        req_prop = props.get("text_vertical")
-        if req_prop is not None:
-            self._set_sash_proportion(
-                self.app.text_paned, 0, req_prop,
-                orient='vertical',
-                minsize1=MIN_REQUEST_HEIGHT,
-                minsize2=MIN_RESPONSE_HEIGHT
-            )
+        # req_prop больше не применяем
 
     def _set_sash_proportion(self, paned, index, proportion, orient, minsize1, minsize2):
-        """Установить саш в соответствии с пропорцией и ограничениями."""
         if orient == 'horizontal':
             total = paned.winfo_width()
         else:
@@ -175,7 +148,6 @@ class WindowStateManager:
         available = total - sash_width
         desired = int(proportion * available)
 
-        # Корректировка по минимальным размерам
         if desired < minsize1:
             desired = minsize1
         if available - desired < minsize2:

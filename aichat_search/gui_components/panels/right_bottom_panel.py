@@ -12,8 +12,8 @@ class RightBottomPanel:
         self.frame.grid_rowconfigure(1, weight=0)
         self.frame.grid_columnconfigure(0, weight=1)
 
-        # Панель деталей сообщения (без метки позиции)
-        self.detail_panel = MessageDetailPanel(self.frame, include_position_label=False)
+        # Панель деталей сообщения (теперь с вкладками)
+        self.detail_panel = MessageDetailPanel(self.frame)
         self.detail_panel.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
 
         # Горизонтальный фрейм для кнопок и метки

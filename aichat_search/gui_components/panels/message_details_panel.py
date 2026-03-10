@@ -1,56 +1,42 @@
 # aichat_search/gui_components/panels/message_details_panel.py
 
 import tkinter as tk
+from tkinter import ttk
 import tkinter.font as tkfont
 from .. import constants
 
 class MessageDetailPanel(tk.Frame):
-    """Содержит текстовые поля запроса и ответа."""
-    def __init__(self, parent, include_position_label=True, *args, **kwargs):
+    """Содержит текстовые поля запроса и ответа на вкладках."""
+
+    def __init__(self, parent, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.text_font = tkfont.Font(size=constants.FONT_SIZE)
         self.current_pair = None
-        self.include_position_label = include_position_label
         self._create_widgets()
 
     def _create_widgets(self):
-        # Метка позиции (только если включена)
-        if self.include_position_label:
-            self.position_label = tk.Label(self, text="", font=("Arial", 10, "italic"))
-            self.position_label.pack(anchor="w", padx=5, pady=(5, 0))
+        # Notebook для вкладок
+        self.notebook = ttk.Notebook(self)
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # Панель с текстами (вертикальная)
-        self.text_paned = tk.PanedWindow(
-            self,
-            orient=tk.VERTICAL,
-            sashrelief=tk.RAISED,
-            sashwidth=constants.SASH_WIDTH,
-            bd=1,
-            relief=tk.SUNKEN,
-            showhandle=True,
-        )
-        self.text_paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-
-        # Контейнер запроса
-        request_container = tk.Frame(self.text_paned)
-        tk.Label(request_container, text="Запрос", font=("Arial", 11, "bold")).pack(anchor="w", padx=5)
-        self.request_text = tk.Text(request_container, height=10, font=self.text_font)
+        # Вкладка запроса
+        self.request_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.request_tab, text="Запрос")
+        self.request_text = tk.Text(self.request_tab, wrap=tk.WORD, font=self.text_font)
         self.request_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # Контейнер ответа
-        response_container = tk.Frame(self.text_paned)
-        tk.Label(response_container, text="Ответ", font=("Arial", 11, "bold")).pack(anchor="w", padx=5)
-        self.response_text = tk.Text(response_container, height=10, font=self.text_font)
+        # Вкладка ответа
+        self.response_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.response_tab, text="Ответ")
+        self.response_text = tk.Text(self.response_tab, wrap=tk.WORD, font=self.text_font)
         self.response_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-
-        self.text_paned.add(request_container, minsize=constants.MIN_REQUEST_HEIGHT)
-        self.text_paned.add(response_container, minsize=constants.MIN_RESPONSE_HEIGHT)
 
         # Настройка тегов для подсветки поиска
         self.request_text.tag_configure("search_match", background=constants.SEARCH_HIGHLIGHT_COLOR)
         self.response_text.tag_configure("search_match", background=constants.SEARCH_HIGHLIGHT_COLOR)
 
     def display_pair(self, pair):
+        """Отобразить текст пары в полях."""
         self.current_pair = pair
         self.request_text.delete("1.0", tk.END)
         self.response_text.delete("1.0", tk.END)
@@ -58,28 +44,37 @@ class MessageDetailPanel(tk.Frame):
         self.response_text.insert(tk.END, pair.response_text)
 
     def clear(self):
+        """Очистить текстовые поля и сбросить текущую пару."""
         self.current_pair = None
         self.request_text.delete("1.0", tk.END)
         self.response_text.delete("1.0", tk.END)
 
-    def set_position_label(self, text):
-        if hasattr(self, 'position_label'):
-            self.position_label.config(text=text)
-
     def highlight_search_match(self, field, start, end, move_focus=True):
-        widget = self.request_text if field == "request" else self.response_text
+        """Подсветить совпадение и переключить вкладку."""
+        if field == "request":
+            widget = self.request_text
+            self.notebook.select(self.request_tab)
+        else:
+            widget = self.response_text
+            self.notebook.select(self.response_tab)
+
         if move_focus:
             widget.focus_set()
+
+        # Удаляем предыдущую подсветку
         widget.tag_remove("search_match", "1.0", tk.END)
+        # Добавляем подсветку
         widget.tag_add("search_match", f"1.0 + {start} chars", f"1.0 + {end} chars")
         widget.see(f"1.0 + {start} chars")
 
     def get_current_texts(self):
+        """Вернуть (текст запроса, текст ответа) из полей ввода."""
         return (
             self.request_text.get("1.0", "end-1c"),
             self.response_text.get("1.0", "end-1c")
         )
 
     def clear_highlight(self):
+        """Убирает подсветку поиска в обоих текстовых полях."""
         self.request_text.tag_remove("search_match", "1.0", tk.END)
         self.response_text.tag_remove("search_match", "1.0", tk.END)
