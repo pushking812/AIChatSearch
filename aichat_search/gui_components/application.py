@@ -8,7 +8,6 @@ from tkinter import filedialog, messagebox
 
 from . import constants
 from .panels.layout_builder import LayoutBuilder
-from .panels.message_tree_panel import MessageTreePanel
 from .managers.navigation_manager import NavigationManager
 from .managers.archive_session_manager import ArchiveSessionManager
 from .managers.search_bar_manager import SearchBarManager
@@ -32,11 +31,12 @@ class Application(tk.Tk):
 
         self.grouping_var = tk.StringVar(value=self.controller.get_grouping_mode())
 
-        # Построение интерфейса (панели создаются внутри)
+        # Построение интерфейса
         LayoutBuilder.build(self)
 
-        # Создаём дерево сообщений и помещаем его в tree_frame
-        self.tree_panel = MessageTreePanel(self.tree_frame, self.controller, self._on_tree_selected)
+        # Привязка команд к левым кнопкам
+        self.left_buttons.btn_select_all.config(command=self._select_all_chats)
+        self.left_buttons.btn_clear.config(command=self._clear_chat_selection)
 
         # Контроллер поиска
         self.search_controller = SearchController(self.controller, self._on_search_result_change)
@@ -54,7 +54,7 @@ class Application(tk.Tk):
             detail_panel=self.detail_panel,
             prev_button=self.prev_button,
             next_button=self.next_button,
-            position_label=self.detail_panel.position_label
+            position_label=self.position_label   # метка из нижней панели
         )
         self.prev_button.config(command=self.navigation.prev)
         self.next_button.config(command=self.navigation.next)
@@ -82,7 +82,7 @@ class Application(tk.Tk):
             grouping_var=self.grouping_var,
             on_grouping_change=self._change_grouping_mode,
             open_code_structure=self._open_code_structure,
-            get_selected_chats_callback=lambda: self.chat_panel.get_selected_chats(),
+            get_selected_chats_callback=lambda: self.left_tree.get_selected_chats(),
             get_selected_pairs_callback=lambda: self.tree_panel.get_selected_pairs(),
             on_update_callback=self._update_chat_list
         )
@@ -97,6 +97,30 @@ class Application(tk.Tk):
         self.after_idle(self.state_manager.load_and_apply)
 
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
+
+    # ---------- Обработчики левой панели ----------
+    def _on_filter_changed(self, event=None):
+        query = self.left_filter.get_filter_text()
+        self.controller.filter_chats(query)
+        self._update_chat_list()
+        self._clear_chat_selection()
+
+    def _select_all_chats(self):
+        self.left_tree.tree.selection_set(list(self.left_tree._item_to_chat.keys()))
+        self._on_chats_selected()
+
+    def _clear_chat_selection(self):
+        self.left_tree.tree.selection_set(())
+        self._on_chats_selected()
+
+    def _on_chats_selected(self):
+        selected = self.left_tree.get_selected_chats()
+        self.controller.reset_current_pair()
+        self.tree_panel.display_chats(selected)
+        self.detail_panel.clear()
+        self.search_controller.clear()
+        self.search_bar.counter_label.config(text="0 / 0")
+        self.navigation.update_buttons()
 
     # ---------- Обработчик изменения результата поиска ----------
     def _on_search_result_change(self, result, index, total, move_focus=True):
@@ -119,15 +143,6 @@ class Application(tk.Tk):
         self.search_bar.counter_label.config(text=f"{index + 1} / {total}")
 
     # ---------- Обработчики событий ----------
-    def _on_chats_selected(self):
-        selected = self.chat_panel.get_selected_chats()
-        self.controller.reset_current_pair()
-        self.tree_panel.display_chats(selected)
-        self.detail_panel.clear()
-        self.search_controller.clear()
-        self.search_bar.counter_label.config(text="0 / 0")
-        self.navigation.update_buttons()
-
     def _on_tree_selected(self):
         selected = self.tree_panel.get_selected_item()
         if not selected:
@@ -168,7 +183,7 @@ class Application(tk.Tk):
         for chat in filtered:
             source_name, source_time = self.controller.get_source_info(chat)
             items.append((chat, source_name, source_time))
-        self.chat_panel.update_list(items)
+        self.left_tree.update_list(items)
 
     def _clear_interface(self):
         self.tree_panel.clear()

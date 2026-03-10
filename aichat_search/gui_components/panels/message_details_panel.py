@@ -4,23 +4,24 @@ import tkinter as tk
 import tkinter.font as tkfont
 from .. import constants
 
-
-class MessageDetailPanel:
-    """Содержит текстовые поля запроса и ответа, метку позиции."""
-
-    def __init__(self, parent):
+class MessageDetailPanel(tk.Frame):
+    """Содержит текстовые поля запроса и ответа."""
+    def __init__(self, parent, include_position_label=True, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
         self.text_font = tkfont.Font(size=constants.FONT_SIZE)
-        self._create_widgets(parent)
         self.current_pair = None
+        self.include_position_label = include_position_label
+        self._create_widgets()
 
-    def _create_widgets(self, parent):
-        # Метка позиции
-        self.position_label = tk.Label(parent, text="", font=("Arial", 10, "italic"))
-        self.position_label.pack(anchor="w", padx=5, pady=(5, 0))
+    def _create_widgets(self):
+        # Метка позиции (только если включена)
+        if self.include_position_label:
+            self.position_label = tk.Label(self, text="", font=("Arial", 10, "italic"))
+            self.position_label.pack(anchor="w", padx=5, pady=(5, 0))
 
         # Панель с текстами (вертикальная)
         self.text_paned = tk.PanedWindow(
-            parent,
+            self,
             orient=tk.VERTICAL,
             sashrelief=tk.RAISED,
             sashwidth=constants.SASH_WIDTH,
@@ -50,7 +51,6 @@ class MessageDetailPanel:
         self.response_text.tag_configure("search_match", background=constants.SEARCH_HIGHLIGHT_COLOR)
 
     def display_pair(self, pair):
-        """Отобразить текст пары в полях."""
         self.current_pair = pair
         self.request_text.delete("1.0", tk.END)
         self.response_text.delete("1.0", tk.END)
@@ -58,33 +58,28 @@ class MessageDetailPanel:
         self.response_text.insert(tk.END, pair.response_text)
 
     def clear(self):
-        """Очистить текстовые поля и сбросить текущую пару."""
         self.current_pair = None
         self.request_text.delete("1.0", tk.END)
         self.response_text.delete("1.0", tk.END)
 
     def set_position_label(self, text):
-        """Установить текст метки позиции."""
-        self.position_label.config(text=text)
+        if hasattr(self, 'position_label'):
+            self.position_label.config(text=text)
 
     def highlight_search_match(self, field, start, end, move_focus=True):
         widget = self.request_text if field == "request" else self.response_text
         if move_focus:
             widget.focus_set()
-        # Удаляем предыдущую подсветку
         widget.tag_remove("search_match", "1.0", tk.END)
-        # Добавляем подсветку
         widget.tag_add("search_match", f"1.0 + {start} chars", f"1.0 + {end} chars")
         widget.see(f"1.0 + {start} chars")
 
     def get_current_texts(self):
-        """Вернуть (текст запроса, текст ответа) из полей ввода."""
         return (
             self.request_text.get("1.0", "end-1c"),
             self.response_text.get("1.0", "end-1c")
         )
 
     def clear_highlight(self):
-        """Убирает подсветку поиска в обоих текстовых полях."""
         self.request_text.tag_remove("search_match", "1.0", tk.END)
         self.response_text.tag_remove("search_match", "1.0", tk.END)

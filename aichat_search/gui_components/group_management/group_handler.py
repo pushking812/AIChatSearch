@@ -7,7 +7,6 @@ from typing import List, Optional, Callable
 from .group_dialog import GroupDialog
 from ...model import Chat
 
-
 class GroupHandler:
     """Обрабатывает операции с группами на уровне GUI: открытие диалогов управления и назначения."""
 

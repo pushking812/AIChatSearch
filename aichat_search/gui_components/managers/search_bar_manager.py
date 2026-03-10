@@ -62,7 +62,8 @@ class SearchBarManager:
     def perform_search(self):
         query = self.search_var.get().strip()
         field = self.search_field_var.get()
-        selected_chats = self.app.chat_panel.get_selected_chats()
+        # Исправлено: используем app.left_tree вместо chat_panel
+        selected_chats = self.app.left_tree.get_selected_chats()
         results = self.search_controller.search(query, field, selected_chats)
         if results:
             self.app.tree_panel.display_search_results(results)

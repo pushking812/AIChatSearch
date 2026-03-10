@@ -1,6 +1,4 @@
-﻿# aichat_search/gui_components/managers/window_state.py
-
-"""Менеджер сохранения и восстановления состояния окна и панелей."""
+﻿# aichat_search/gui_components/managers/window_state_manager.py
 
 import json
 import os
@@ -50,7 +48,7 @@ class WindowStateManager:
         )
 
         # Сохраняем ширину колонок левого дерева чатов
-        column_widths = self.app.chat_panel.get_column_widths()
+        column_widths = self.app.left_tree.get_column_widths()
 
         # Сохраняем ширину колонок правого дерева сообщений
         tree_column_widths = self.app.tree_panel.get_column_widths()
@@ -111,7 +109,7 @@ class WindowStateManager:
         # Применяем ширину колонок левого дерева чатов
         col_widths = config.get("column_widths", {})
         if col_widths:
-            self.app.chat_panel.set_column_widths(col_widths)
+            self.app.left_tree.set_column_widths(col_widths)
 
         # Применяем ширину колонок правого дерева сообщений
         tree_widths = config.get("tree_column_widths", {})

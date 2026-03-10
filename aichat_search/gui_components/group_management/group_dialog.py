@@ -3,7 +3,6 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-
 class GroupDialog(tk.Toplevel):
     def __init__(self, parent, controller, on_update_callback):
         super().__init__(parent)
