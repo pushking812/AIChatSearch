@@ -19,14 +19,13 @@ from ..constants import (
     MIN_RESPONSE_HEIGHT,
 )
 
-
 class WindowStateManager:
     """Отвечает за сохранение и загрузку геометрии окна, пропорций панелей,
        и ширины колонок деревьев чатов и сообщений."""
 
     def __init__(self, app):
         self.app = app
-        self.config_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..', CONFIG_DIR))
+        self.config_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..', CONFIG_DIR))
         self.config_path = os.path.abspath(os.path.join(self.config_dir, CONFIG_FILE))
 
     def save(self):
@@ -96,8 +95,6 @@ class WindowStateManager:
         y = win_pos.get("y")
 
         if x is not None and y is not None:
-            # Проверяем, что окно не уходит за пределы экрана (опционально)
-            # Можно добавить проверку видимости, но пока просто применяем
             geometry = f"{width}x{height}+{x}+{y}"
         else:
             geometry = f"{width}x{height}"

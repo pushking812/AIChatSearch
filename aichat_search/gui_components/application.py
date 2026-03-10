@@ -13,8 +13,8 @@ from .managers.navigation_manager import NavigationManager
 from .managers.archive_session_manager import ArchiveSessionManager
 from .managers.search_bar_manager import SearchBarManager
 from .managers.menu_manager import MenuManager
+from .managers.window_state_manager import WindowStateManager
 from .controllers.search_controller import SearchController
-from .window_state import WindowStateManager
 from .group_management.group_handler import GroupHandler
 from ..controller import ChatController
 from ..services.export_manager import ExportManager
