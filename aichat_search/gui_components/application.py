@@ -18,6 +18,7 @@ from .group_handler import GroupHandler  # новый импорт
 from ..controller import ChatController
 from ..services.export_manager import ExportManager
 from ..tools.code_structure.controller import CodeStructureController
+from .panels.layout_builder import LayoutBuilder
 
 
 class Application(tk.Tk):
@@ -37,7 +38,7 @@ class Application(tk.Tk):
 
         # Инициализация компонентов
         self._create_menu()
-        self._create_layout()
+        LayoutBuilder.build(self)
         self.search_ctrl = SearchController(self.controller, self._on_search_result_change)
 
         self.controller.load_session()
@@ -121,71 +122,7 @@ class Application(tk.Tk):
         message_menu.add_cascade(label="Экспорт", menu=export_menu)
         menubar.add_cascade(label="Сообщение", menu=message_menu)
 
-    def _create_layout(self):
-        self._create_main_paned()
-        self._create_left_panel()
-        self._create_right_paned()
-        self._create_top_panel()
-        self._create_bottom_panel()
 
-        self.left_frame = self.left_frame
-        self.top_frame = self.top_frame
-        self.bottom_frame = self.bottom_frame
-        self.request_container = self.detail_panel.request_text.master
-        self.response_container = self.detail_panel.response_text.master
-
-    def _create_main_paned(self):
-        self.main_paned = tk.PanedWindow(
-            self,
-            orient=tk.HORIZONTAL,
-            sashrelief=tk.RAISED,
-            sashwidth=constants.SASH_WIDTH,
-            bd=1,
-            relief=tk.SUNKEN,
-            showhandle=True,
-        )
-        self.main_paned.pack(fill=tk.BOTH, expand=True)
-
-    def _create_left_panel(self):
-        self.left_frame = tk.Frame(self.main_paned)
-        self.main_paned.add(self.left_frame, width=300, minsize=constants.MIN_LEFT_WIDTH)
-        self.chat_panel = ChatListPanel(self.left_frame, self.controller, self._on_chats_selected)
-
-    def _create_right_paned(self):
-        self.right_paned = tk.PanedWindow(
-            self.main_paned,
-            orient=tk.VERTICAL,
-            sashrelief=tk.RAISED,
-            sashwidth=constants.SASH_WIDTH,
-            bd=1,
-            relief=tk.SUNKEN,
-            showhandle=True,
-        )
-        self.main_paned.add(self.right_paned, minsize=constants.MIN_RIGHT_WIDTH)
-
-    def _create_top_panel(self):
-        self.top_frame = tk.Frame(self.right_paned)
-        self.right_paned.add(self.top_frame, height=300, minsize=constants.MIN_TOP_HEIGHT)
-        self._create_search_bar(self.top_frame)
-        self.tree_panel = MessageTreePanel(self.top_frame, self.controller, self._on_tree_selected)
-
-    def _create_bottom_panel(self):
-        self.bottom_frame = tk.Frame(self.right_paned)
-        self.right_paned.add(self.bottom_frame, minsize=constants.MIN_BOTTOM_HEIGHT)
-        self.detail_panel = MessageDetailPanel(self.bottom_frame)
-        self.text_paned = self.detail_panel.text_paned
-
-        nav_frame = tk.Frame(self.bottom_frame)
-        nav_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
-
-        self.prev_button = tk.Button(nav_frame, text="← Предыдущая", command=self.prev_pair, state=tk.DISABLED)
-        self.prev_button.pack(side=tk.LEFT, padx=5)
-
-        self.next_button = tk.Button(nav_frame, text="Следующая →", command=self.next_pair, state=tk.DISABLED)
-        self.next_button.pack(side=tk.LEFT, padx=5)
-
-        self.save_button = tk.Button(nav_frame, text="Сохранить изменения", command=self.save_current_pair)
-        self.save_button.pack(side=tk.LEFT, padx=5)
 
     def _create_search_bar(self, parent):
         search_frame = tk.Frame(parent)
