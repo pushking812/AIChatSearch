@@ -1,44 +1,12 @@
-# aichat_search/gui_components/panels/message_tree.py
-
-"""Панель дерева сообщений с отображением чатов и пар."""
+# aichat_search/gui_components/panels/message_tree_panel.py
 
 import tkinter as tk
 from tkinter import ttk
 from typing import List, Tuple, Dict, Optional
 
-from ...model import Chat, MessagePair
 from .. import constants
-
-
-def _format_datetime(dt) -> str:
-    """Форматирует datetime в строку 'ДД-ММ-ГГГГ ЧЧ:ММ' или возвращает пустую строку."""
-    if dt:
-        return dt.strftime("%d-%m-%Y %H:%M")
-    return ""
-
-
-def _escape_newlines(text: str) -> str:
-    """Заменяет символы перевода строки на видимые последовательности '\n'."""
-    if not text:
-        return ""
-    return text.replace('\n', '\\n')
-
-
-def _get_context(text: str, start: int, end: int) -> str:
-    """
-    Возвращает фрагмент текста вокруг позиции совпадения.
-    Выделяет до CONTEXT_CHARS символов слева и справа.
-    """
-    if not text:
-        return ""
-    context_chars = constants.CONTEXT_CHARS
-    left = max(0, start - context_chars)
-    right = min(len(text), end + context_chars)
-    prefix = "..." if left > 0 else ""
-    suffix = "..." if right < len(text) else ""
-    fragment = text[left:right]
-    fragment = _escape_newlines(fragment)
-    return f"{prefix}{fragment}{suffix}"
+from ..utils import format_datetime, escape_newlines, get_context
+from ...model import Chat, MessagePair
 
 
 class MessageTreePanel:
@@ -51,7 +19,6 @@ class MessageTreePanel:
         self.tree_item_map: Dict[str, Tuple[Chat, MessagePair, Optional[str], Optional[int], Optional[int]]] = {}
         self._internal_update = False
         self._search_mode = False
-
         self._create_widgets(parent)
 
     def _create_widgets(self, parent):
@@ -117,10 +84,10 @@ class MessageTreePanel:
 
             for pair in pairs:
                 global_counter += 1
-                request_preview = _escape_newlines(pair.request_text[:preview_chars])
+                request_preview = escape_newlines(pair.request_text[:preview_chars])
                 if len(pair.request_text) > preview_chars:
                     request_preview += "..."
-                response_preview = _escape_newlines(pair.response_text[:preview_chars])
+                response_preview = escape_newlines(pair.response_text[:preview_chars])
                 if len(pair.response_text) > preview_chars:
                     response_preview += "..."
 
@@ -168,7 +135,6 @@ class MessageTreePanel:
                 open=True
             )
 
-            # Получаем имя источника для этого чата
             source_name, _ = self.controller.get_source_info(chat)
 
             for pair, field, start, end in data['pairs']:
@@ -178,9 +144,9 @@ class MessageTreePanel:
                 else:
                     full_text = pair.response_text
 
-                context = _get_context(full_text, start, end)
+                context = get_context(full_text, start, end)
 
-                request_preview = _escape_newlines(pair.request_text[:preview_chars])
+                request_preview = escape_newlines(pair.request_text[:preview_chars])
                 if len(pair.request_text) > preview_chars:
                     request_preview += "..."
 
@@ -206,7 +172,7 @@ class MessageTreePanel:
                      iid: str):
         """Вспомогательный метод для вставки одной пары в дерево."""
         idx_display = str(pair.index) + ('*' if pair.modified else '')
-        date_str = _format_datetime(pair.request_time)
+        date_str = format_datetime(pair.request_time)
 
         item_id = self.tree.insert(
             parent_id,
@@ -231,10 +197,10 @@ class MessageTreePanel:
                 idx_display = str(pair.index) + ('*' if pair.modified else '')
                 current_values = self.tree.item(item_id, 'values')
                 if current_values:
-                    request_preview = _escape_newlines(pair.request_text[:preview_chars])
+                    request_preview = escape_newlines(pair.request_text[:preview_chars])
                     if len(pair.request_text) > preview_chars:
                         request_preview += "..."
-                    response_preview = _escape_newlines(pair.response_text[:preview_chars])
+                    response_preview = escape_newlines(pair.response_text[:preview_chars])
                     if len(pair.response_text) > preview_chars:
                         response_preview += "..."
 

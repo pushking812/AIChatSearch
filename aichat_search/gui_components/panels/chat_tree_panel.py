@@ -1,20 +1,13 @@
-# aichat_search/gui_components/panels/chat_list.py
-
-"""Панель списка чатов с фильтрацией и множественным выбором (Treeview)."""
+# aichat_search/gui_components/panels/chat_tree_panel.py
 
 import tkinter as tk
 from tkinter import ttk
 from typing import List, Tuple, Dict, Optional
 from datetime import datetime
 
+from .. import constants
+from ..utils import format_datetime
 from ...model import Chat
-
-
-def _format_datetime(dt) -> str:
-    """Форматирует datetime в строку 'ДД-ММ-ГГГГ ЧЧ:ММ'."""
-    if dt:
-        return dt.strftime("%d-%m-%Y %H:%M")
-    return ""
 
 
 class ChatListPanel:
@@ -47,7 +40,7 @@ class ChatListPanel:
         self.tree.heading("name", text="Название")
         self.tree.heading("group", text="Группа")
         self.tree.heading("msg_count", text="Сообщ.")
-        self.tree.heading("updated", text="Обновлён")  # было "Создан"
+        self.tree.heading("updated", text="Обновлён")
 
         self.tree.column("#0", width=25, stretch=False, minwidth=20)
         self.tree.column("name", width=250, anchor="w")
@@ -62,8 +55,6 @@ class ChatListPanel:
         self.tree.configure(yscrollcommand=scrollbar.set)
 
         self.tree.bind("<<TreeviewSelect>>", self._on_select)
-
-        # Привязка двойного щелчка по заголовку для сворачивания/разворачивания
         self.tree.bind('<Double-1>', self._on_double_click_heading)
 
         buttons_frame = tk.Frame(parent)
@@ -114,8 +105,7 @@ class ChatListPanel:
                                          open=True, tags=('group',))
             for chat in group['chats']:
                 unique_iid = f"{source_name}_{chat.id}"
-                # Используем updated_at, если есть, иначе created_at
-                display_date = _format_datetime(chat.updated_at or chat.created_at)
+                display_date = format_datetime(chat.updated_at or chat.created_at)
                 child_id = self.tree.insert(
                     parent_id, "end",
                     values=(chat.title, chat.group or "", len(chat.pairs), display_date),
@@ -135,7 +125,7 @@ class ChatListPanel:
                                          open=True, tags=('group',))
             for chat, source_name, source_time in groups[group_name]:
                 unique_iid = f"{source_name}_{chat.id}"
-                display_date = _format_datetime(chat.updated_at or chat.created_at)
+                display_date = format_datetime(chat.updated_at or chat.created_at)
                 child_id = self.tree.insert(
                     parent_id, "end",
                     values=(chat.title, chat.group or "", len(chat.pairs), display_date),
@@ -159,7 +149,7 @@ class ChatListPanel:
                                          open=True, tags=('group',))
             for chat, source_name, source_time in groups[prefix]:
                 unique_iid = f"{source_name}_{chat.id}"
-                display_date = _format_datetime(chat.updated_at or chat.created_at)
+                display_date = format_datetime(chat.updated_at or chat.created_at)
                 child_id = self.tree.insert(
                     parent_id, "end",
                     values=(chat.title, chat.group or "", len(chat.pairs), display_date),

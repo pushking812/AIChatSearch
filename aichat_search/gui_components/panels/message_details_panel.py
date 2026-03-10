@@ -1,10 +1,9 @@
-# aichat_search/gui_components/panels/message_detail.py
-
-"""Панель отображения и редактирования текста сообщения."""
+# aichat_search/gui_components/panels/message_details_panel.py
 
 import tkinter as tk
 import tkinter.font as tkfont
 from .. import constants
+
 
 class MessageDetailPanel:
     """Содержит текстовые поля запроса и ответа, метку позиции."""
