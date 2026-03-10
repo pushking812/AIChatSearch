@@ -1,7 +1,5 @@
 # aichat_search/gui_components/application.py
 
-"""Главный класс приложения, координирующий работу всех компонентов."""
-
 import os
 from datetime import datetime
 from tkinter import ttk
@@ -9,21 +7,17 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 
 from . import constants
-from .chat_list import ChatListPanel
-from .message_tree import MessageTreePanel
-from .message_detail import MessageDetailPanel
+from .panels.layout_builder import LayoutBuilder
+from .managers.navigation_manager import NavigationManager
+from .managers.archive_session_manager import ArchiveSessionManager
 from .search_controller import SearchController
 from .window_state import WindowStateManager
-from .group_handler import GroupHandler  # новый импорт
+from .group_handler import GroupHandler
 from ..controller import ChatController
 from ..services.export_manager import ExportManager
 from ..tools.code_structure.controller import CodeStructureController
-from .panels.layout_builder import LayoutBuilder
-
 
 class Application(tk.Tk):
-    """Основное окно приложения."""
-
     def __init__(self):
         super().__init__()
 
@@ -33,33 +27,61 @@ class Application(tk.Tk):
         self.minsize(constants.MIN_LEFT_WIDTH + constants.MIN_RIGHT_WIDTH,
                      constants.MIN_TOP_HEIGHT + constants.MIN_BOTTOM_HEIGHT)
 
-        # Переменная для режима группировки
         self.grouping_var = tk.StringVar(value=self.controller.get_grouping_mode())
 
-        # Инициализация компонентов
-        self._create_menu()
+        # Построение интерфейса (панели создаются внутри)
         LayoutBuilder.build(self)
+
+        # Контроллер поиска
         self.search_ctrl = SearchController(self.controller, self._on_search_result_change)
 
+        # Менеджер навигации
+        self.navigation = NavigationManager(
+            controller=self.controller,
+            detail_panel=self.detail_panel,
+            prev_button=self.prev_button,
+            next_button=self.next_button,
+            position_label=self.detail_panel.position_label
+        )
+        # Переназначаем команды кнопок навигации (кнопки созданы в layout_builder без команд)
+        self.prev_button.config(command=self.navigation.prev)
+        self.next_button.config(command=self.navigation.next)
+
+        # Менеджер архивов и сессии
+        self.archive_manager = ArchiveSessionManager(
+            controller=self.controller,
+            tree_panel=self.tree_panel,
+            detail_panel=self.detail_panel,
+            on_update_callback=self._update_chat_list,
+            on_clear_interface=self._clear_interface
+        )
+        # Переназначаем команду кнопки сохранения
+        self.save_button.config(command=self.archive_manager.save_current_pair)
+
+        # Остальные менеджеры (пока старые)
+        self.group_handler = GroupHandler(self, self.controller)
+        self.export_manager = ExportManager(self.controller, self)
+        self.state_manager = WindowStateManager(self)
+
+        # Меню (пока старый метод)
+        self._create_menu()
+
+        # Загрузка сессии и обновление списка
         self.controller.load_session()
         self._update_chat_list()
 
-        self.state_manager = WindowStateManager(self)
         self.after_idle(self.state_manager.load_and_apply)
-
-        self.export_manager = ExportManager(self.controller, self)
-        self.group_handler = GroupHandler(self, self.controller)  # создаём обработчик групп
 
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
 
-    # ---------- Инициализация ----------
+    # ---------- Меню (будет вынесено позже) ----------
     def _create_menu(self):
         menubar = tk.Menu(self)
 
         # Меню Файл
         file_menu = tk.Menu(menubar, tearoff=0)
-        file_menu.add_command(label="Загрузить архив...", command=self.add_archive)
-        file_menu.add_command(label="Новая сессия", command=self.new_session)
+        file_menu.add_command(label="Загрузить архив...", command=self.archive_manager.add_archive)
+        file_menu.add_command(label="Новая сессия", command=self.archive_manager.new_session)
         menubar.add_cascade(label="Файл", menu=file_menu)
 
         # Меню Чат
@@ -101,12 +123,12 @@ class Application(tk.Tk):
         # Меню Сообщение
         self._create_message_menu(menubar)
 
-        self.config(menu=menubar)
-        
         # Меню Инструменты
         tools_menu = tk.Menu(menubar, tearoff=0)
         tools_menu.add_command(label="Структура кода", command=self._open_code_structure)
         menubar.add_cascade(label="Инструменты", menu=tools_menu)
+
+        self.config(menu=menubar)
 
     def _create_message_menu(self, menubar):
         message_menu = tk.Menu(menubar, tearoff=0)
@@ -122,8 +144,7 @@ class Application(tk.Tk):
         message_menu.add_cascade(label="Экспорт", menu=export_menu)
         menubar.add_cascade(label="Сообщение", menu=message_menu)
 
-
-
+    # ---------- Поиск (будет вынесено) ----------
     def _create_search_bar(self, parent):
         search_frame = tk.Frame(parent)
         search_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
@@ -151,51 +172,6 @@ class Application(tk.Tk):
         tk.Button(search_frame, text=">", width=2, command=self._next_search_result).pack(side=tk.LEFT)
         self.search_counter = tk.Label(search_frame, text="0 / 0")
         self.search_counter.pack(side=tk.LEFT, padx=5)
-
-    # ---------- Вспомогательные методы для обновления интерфейса ----------
-    def _update_chat_list(self):
-        filtered = self.controller.get_filtered_chats()
-        items = []
-        for chat in filtered:
-            source_name, source_time = self.controller.get_source_info(chat)
-            items.append((chat, source_name, source_time))
-        self.chat_panel.update_list(items)
-
-    # ---------- Обработчики событий ----------
-    def _on_chats_selected(self):
-        selected = self.chat_panel.get_selected_chats()
-        self.controller.reset_current_pair()
-        self.tree_panel.display_chats(selected)
-        self.detail_panel.clear()
-        self.search_ctrl.clear()
-        self.search_counter.config(text="0 / 0")
-        self._update_nav_buttons()
-
-    def _on_tree_selected(self):
-        selected = self.tree_panel.get_selected_item()
-        if not selected:
-            return
-        chat, pair, field, start, end = selected
-        pair = self.controller.select_pair(chat, pair)
-        if pair:
-            self.detail_panel.display_pair(pair)
-            self._update_position_label()
-            self._update_nav_buttons()
-
-            if field is not None and self.search_ctrl.results:
-                for idx, (s_chat, s_pair, s_field, s_start, s_end) in enumerate(self.search_ctrl.results):
-                    if (s_chat is chat and s_pair is pair and 
-                        s_field == field and s_start == start and s_end == end):
-                        self.search_ctrl.current_index = idx
-                        self.search_counter.config(text=f"{idx + 1} / {len(self.search_ctrl.results)}")
-                        self.detail_panel.highlight_search_match(field, start, end, move_focus=False)
-                        break
-                else:
-                    self.detail_panel.highlight_search_match(field, start, end, move_focus=False)
-            else:
-                self.detail_panel.clear_highlight()
-                if hasattr(self.search_ctrl, 'results') and self.search_ctrl.results:
-                    self.search_counter.config(text="0 / 0")
 
     def _on_search_key(self, event):
         if self.live_search_var.get():
@@ -230,92 +206,52 @@ class Application(tk.Tk):
             self.tree_panel.tree.see(iid)
             self.controller.select_pair(chat, pair)
             self.detail_panel.display_pair(pair)
-            self._update_position_label()
-            self._update_nav_buttons()
+            self.navigation.update_position_label()
+            self.navigation.update_buttons()
             self.detail_panel.highlight_search_match(field, start, end, move_focus=move_focus)
         else:
             self.controller.select_pair(chat, pair)
             self.detail_panel.display_pair(pair)
-            self._update_position_label()
-            self._update_nav_buttons()
+            self.navigation.update_position_label()
+            self.navigation.update_buttons()
             self.detail_panel.highlight_search_match(field, start, end, move_focus=move_focus)
         self.search_counter.config(text=f"{index + 1} / {total}")
 
-    # ---------- Методы для работы с архивами и сессией ----------
-    def add_archive(self):
-        file_path = filedialog.askopenfilename(filetypes=[("ZIP files", "*.zip")])
-        if not file_path:
-            return
-        try:
-            added, new_cnt, new_msg, upd_cnt, upd_msg = self.controller.add_source(file_path)
-            if added:
-                self._update_chat_list()
-                parts = []
-                if new_cnt:
-                    parts.append(f"Добавлено чатов: {new_cnt} шт. ({new_msg} сообщ.)")
-                if upd_cnt:
-                    parts.append(f"Обновлено чатов: {upd_cnt} шт. ({upd_msg} сообщ.)")
-                message = "\n".join(parts)
-                messagebox.showinfo("Добавление архива", message)
-                self.controller.save_session()
-            else:
-                messagebox.showinfo("Добавление архива",
-                                    "Все чаты из этого архива уже загружены и не содержат новых сообщений.")
-        except Exception as e:
-            messagebox.showerror("Ошибка", f"Не удалось загрузить архив:\n{e}")
-
-    def new_session(self):
-        self.controller.clear_all_sources()
+    # ---------- Обработчики событий ----------
+    def _on_chats_selected(self):
+        selected = self.chat_panel.get_selected_chats()
         self.controller.reset_current_pair()
-        self._update_chat_list()
-        self.tree_panel.clear()
+        self.tree_panel.display_chats(selected)
         self.detail_panel.clear()
-        self.search_var.set("")
         self.search_ctrl.clear()
         self.search_counter.config(text="0 / 0")
-        self._update_nav_buttons()
-        self._update_position_label()
+        self.navigation.update_buttons()
 
-    def save_current_pair(self):
-        current_pair = self.controller.get_current_pair()
-        if current_pair is None:
-            messagebox.showwarning("Предупреждение", "Нет выбранной пары для сохранения.")
+    def _on_tree_selected(self):
+        selected = self.tree_panel.get_selected_item()
+        if not selected:
             return
-
-        new_request, new_response = self.detail_panel.get_current_texts()
-        modified = False
-
-        if new_request != current_pair.request_text:
-            current_pair.request_text = new_request
-            modified = True
-        if new_response != current_pair.response_text:
-            current_pair.response_text = new_response
-            modified = True
-
-        if modified:
-            current_pair.modified = True
-            self.tree_panel.update_pair_item(current_pair)
-            messagebox.showinfo("Сохранение", "Изменения сохранены.")
-            self.controller.save_session()
-        else:
-            messagebox.showinfo("Сохранение", "Нет изменений для сохранения.")
-
-    def prev_pair(self):
-        pair = self.controller.prev_pair()
+        chat, pair, field, start, end = selected
+        pair = self.controller.select_pair(chat, pair)
         if pair:
             self.detail_panel.display_pair(pair)
-            self._update_position_label()
-            self._update_nav_buttons()
+            self.navigation.update_position_label()
+            self.navigation.update_buttons()
 
-    def next_pair(self):
-        pair = self.controller.next_pair()
-        if pair:
-            self.detail_panel.display_pair(pair)
-            self._update_position_label()
-            self._update_nav_buttons()
-
-    def update_nav_buttons(self):
-        self._update_nav_buttons()
+            if field is not None and self.search_ctrl.results:
+                for idx, (s_chat, s_pair, s_field, s_start, s_end) in enumerate(self.search_ctrl.results):
+                    if (s_chat is chat and s_pair is pair and 
+                        s_field == field and s_start == start and s_end == end):
+                        self.search_ctrl.current_index = idx
+                        self.search_counter.config(text=f"{idx + 1} / {len(self.search_ctrl.results)}")
+                        self.detail_panel.highlight_search_match(field, start, end, move_focus=False)
+                        break
+                else:
+                    self.detail_panel.highlight_search_match(field, start, end, move_focus=False)
+            else:
+                self.detail_panel.clear_highlight()
+                if hasattr(self.search_ctrl, 'results') and self.search_ctrl.results:
+                    self.search_counter.config(text="0 / 0")
 
     # ---------- Группировка ----------
     def _change_grouping_mode(self):
@@ -324,27 +260,31 @@ class Application(tk.Tk):
         self.state_manager.save()
         self._update_chat_list()
 
-    # ---------- Внутренние вспомогательные методы ----------
-    def _update_nav_buttons(self):
-        can_prev, can_next = self.controller.get_nav_state()
-        self.prev_button.config(state=tk.NORMAL if can_prev else tk.DISABLED)
-        self.next_button.config(state=tk.NORMAL if can_next else tk.DISABLED)
+    # ---------- Вспомогательные методы ----------
+    def _update_chat_list(self):
+        filtered = self.controller.get_filtered_chats()
+        items = []
+        for chat in filtered:
+            source_name, source_time = self.controller.get_source_info(chat)
+            items.append((chat, source_name, source_time))
+        self.chat_panel.update_list(items)
 
-    def _update_position_label(self):
-        title, index, total = self.controller.get_position_info()
-        if title is None:
-            self.detail_panel.set_position_label("")
-        else:
-            self.detail_panel.set_position_label(f"Чат: {title} | Сообщение {index} из {total}")
+    def _clear_interface(self):
+        self.tree_panel.clear()
+        self.detail_panel.clear()
+        self.search_ctrl.clear()
+        self.search_counter.config(text="0 / 0")
+        self.navigation.update_buttons()
+        self.navigation.update_position_label()
 
-    def _on_closing(self):
-        self.controller.save_session()
-        self.state_manager.save()
-        self.destroy()
-        
     def _open_code_structure(self):
         pair = self.controller.get_current_pair()
         if pair is None:
             messagebox.showwarning("Структура кода", "Сначала выберите сообщение.")
             return
-        CodeStructureController(self, pair)  # передаём только pair
+        CodeStructureController(self, pair)
+
+    def _on_closing(self):
+        self.controller.save_session()
+        self.state_manager.save()
+        self.destroy()

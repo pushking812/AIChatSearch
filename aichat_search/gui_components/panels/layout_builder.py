@@ -1,3 +1,5 @@
+# aichat_search/gui_components/panels/layout_builder.py
+
 import tkinter as tk
 from .chat_tree_panel import ChatListPanel
 from .message_tree_panel import MessageTreePanel
@@ -47,26 +49,23 @@ class LayoutBuilder:
         app.detail_panel = MessageDetailPanel(app.bottom_frame)
         app.text_paned = app.detail_panel.text_paned
 
-        # Навигационные кнопки (внизу)
+        # Навигационные кнопки (внизу) - команды не задаются, будут назначены позже
         nav_frame = tk.Frame(app.bottom_frame)
         nav_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
         app.prev_button = tk.Button(
             nav_frame,
             text="← Предыдущая",
-            command=app.prev_pair,
             state=tk.DISABLED
         )
         app.prev_button.pack(side=tk.LEFT, padx=5)
         app.next_button = tk.Button(
             nav_frame,
             text="Следующая →",
-            command=app.next_pair,
             state=tk.DISABLED
         )
         app.next_button.pack(side=tk.LEFT, padx=5)
         app.save_button = tk.Button(
             nav_frame,
-            text="Сохранить изменения",
-            command=app.save_current_pair
+            text="Сохранить изменения"
         )
         app.save_button.pack(side=tk.LEFT, padx=5)
