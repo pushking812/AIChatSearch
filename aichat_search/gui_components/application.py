@@ -12,6 +12,7 @@ from .panels.message_tree_panel import MessageTreePanel
 from .managers.navigation_manager import NavigationManager
 from .managers.archive_session_manager import ArchiveSessionManager
 from .managers.search_bar_manager import SearchBarManager
+from .managers.menu_manager import MenuManager
 from .search_controller import SearchController
 from .window_state import WindowStateManager
 from .group_handler import GroupHandler
@@ -73,8 +74,18 @@ class Application(tk.Tk):
         self.export_manager = ExportManager(self.controller, self)
         self.state_manager = WindowStateManager(self)
 
-        # Меню (будет вынесено позже)
-        self._create_menu()
+        # Менеджер меню
+        self.menu_manager = MenuManager(
+            archive_manager=self.archive_manager,
+            group_handler=self.group_handler,
+            export_manager=self.export_manager,
+            grouping_var=self.grouping_var,
+            on_grouping_change=self._change_grouping_mode,
+            open_code_structure=self._open_code_structure
+        )
+        menubar = tk.Menu(self)
+        self.menu_manager.build_menu(menubar)
+        self.config(menu=menubar)
 
         # Загрузка сессии и обновление списка
         self.controller.load_session()
@@ -83,76 +94,6 @@ class Application(tk.Tk):
         self.after_idle(self.state_manager.load_and_apply)
 
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
-
-    # ---------- Меню ----------
-    def _create_menu(self):
-        menubar = tk.Menu(self)
-
-        # Меню Файл
-        file_menu = tk.Menu(menubar, tearoff=0)
-        file_menu.add_command(label="Загрузить архив...", command=self.archive_manager.add_archive)
-        file_menu.add_command(label="Новая сессия", command=self.archive_manager.new_session)
-        menubar.add_cascade(label="Файл", menu=file_menu)
-
-        # Меню Чат
-        chat_menu = tk.Menu(menubar, tearoff=0)
-        grouping_submenu = tk.Menu(chat_menu, tearoff=0)
-        grouping_submenu.add_radiobutton(
-            label="По источнику данных",
-            variable=self.grouping_var,
-            value="source",
-            command=self._change_grouping_mode
-        )
-        grouping_submenu.add_radiobutton(
-            label="По группе",
-            variable=self.grouping_var,
-            value="group",
-            command=self._change_grouping_mode
-        )
-        grouping_submenu.add_radiobutton(
-            label="По префиксу",
-            variable=self.grouping_var,
-            value="prefix",
-            command=self._change_grouping_mode
-        )
-        chat_menu.add_cascade(label="Группировать", menu=grouping_submenu)
-        chat_menu.add_separator()
-        chat_menu.add_command(
-            label="Создать/переименовать группу",
-            command=lambda: self.group_handler.open_group_dialog(self._update_chat_list)
-        )
-        chat_menu.add_command(
-            label="Добавить чат в группу",
-            command=lambda: self.group_handler.assign_group_to_selected(
-                self.chat_panel.get_selected_chats(),
-                on_update_callback=self._update_chat_list
-            )
-        )
-        menubar.add_cascade(label="Чат", menu=chat_menu)
-
-        # Меню Сообщение
-        self._create_message_menu(menubar)
-
-        # Меню Инструменты
-        tools_menu = tk.Menu(menubar, tearoff=0)
-        tools_menu.add_command(label="Структура кода", command=self._open_code_structure)
-        menubar.add_cascade(label="Инструменты", menu=tools_menu)
-
-        self.config(menu=menubar)
-
-    def _create_message_menu(self, menubar):
-        message_menu = tk.Menu(menubar, tearoff=0)
-        export_menu = tk.Menu(message_menu, tearoff=0)
-        export_menu.add_command(
-            label="В простой текст",
-            command=lambda: self.export_manager.export_messages(self.tree_panel.get_selected_pairs(), 'txt')
-        )
-        export_menu.add_command(
-            label="По блокам",
-            command=lambda: self.export_manager.export_messages(self.tree_panel.get_selected_pairs(), 'blocks')
-        )
-        message_menu.add_cascade(label="Экспорт", menu=export_menu)
-        menubar.add_cascade(label="Сообщение", menu=message_menu)
 
     # ---------- Обработчик изменения результата поиска ----------
     def _on_search_result_change(self, result, index, total, move_focus=True):

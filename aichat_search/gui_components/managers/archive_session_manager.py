@@ -37,6 +37,7 @@ class ArchiveSessionManager:
         self.controller.clear_all_sources()
         self.controller.reset_current_pair()
         self.on_clear_interface()
+        self.on_update_callback()  # Добавлено: обновляем список чатов
 
     def save_current_pair(self):
         current_pair = self.controller.get_current_pair()
