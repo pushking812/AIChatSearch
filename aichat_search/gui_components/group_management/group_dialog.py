@@ -20,7 +20,8 @@ class GroupDialog(tk.Toplevel):
         list_frame = tk.Frame(self)
         list_frame.pack(fill=tk.BOTH, expand=True, padx=5)
 
-        self.listbox = tk.Listbox(list_frame)
+        # Добавлен параметр exportselection=False для сохранения выделения при потере фокуса
+        self.listbox = tk.Listbox(list_frame, exportselection=False)
         self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar = tk.Scrollbar(list_frame, command=self.listbox.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
