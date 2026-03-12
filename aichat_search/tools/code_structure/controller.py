@@ -31,6 +31,8 @@ class CodeStructureController:
 
         # Загружаем все блоки из сообщений
         self._load_all_blocks()
+        
+        self._resolve_unknown_modules()
 
         if self.block_manager.get_languages():
             self._fill_language_combo()
@@ -45,6 +47,35 @@ class CodeStructureController:
     def _load_all_blocks(self):
         """Загружает все блоки из сообщений через BlockManager."""
         self.block_manager.load_from_messages(self.messages)
+        
+    def _resolve_unknown_modules(self):
+        """Вызывает диалог для назначения модулей блокам без подсказки."""
+        # Собираем блоки без module_hint
+        unknown = []
+        known_modules = set()
+        for block_info in self.block_manager.get_all_blocks():
+            if block_info.module_hint:
+                known_modules.add(block_info.module_hint)
+            else:
+                unknown.append((
+                    block_info.block_id,
+                    block_info.language,
+                    block_info.content
+                ))
+
+        if not unknown:
+            return
+
+        # Вызываем диалог
+        from .ui.dialogs import ModuleAssignmentDialog
+        dialog = ModuleAssignmentDialog(self.view, unknown, sorted(known_modules))
+        self.view.wait_window(dialog)  # ждём закрытия
+
+        if dialog.result:
+            # Обновляем module_hint у соответствующих блоков
+            for block_info in self.block_manager.get_all_blocks():
+                if block_info.block_id in dialog.result:
+                    block_info.module_hint = dialog.result[block_info.block_id]
 
     def _fill_language_combo(self):
         """Заполняет комбобокс языков."""
