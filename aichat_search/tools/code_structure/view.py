@@ -1,5 +1,3 @@
-# aichat_search/tools/code_structure/view.py
-
 import tkinter as tk
 from tkinter import ttk, messagebox
 from chlorophyll import CodeView
@@ -14,10 +12,7 @@ class CodeStructureWindow(tk.Toplevel):
         self.transient(parent)
         self.grab_set()
 
-        # Контроллер для обратных вызовов
         self.controller = None
-
-        # Словарь для маппинга элементов дерева в узлы
         self._item_to_node = {}
 
         # Настраиваем сетку: 4 строки
@@ -59,7 +54,7 @@ class CodeStructureWindow(tk.Toplevel):
         self.paned = tk.PanedWindow(self, orient=tk.HORIZONTAL, sashrelief=tk.RAISED, sashwidth=6)
         self.paned.grid(row=3, column=0, columnspan=4, padx=5, pady=5, sticky="nsew")
 
-        # Левая панель (дерево)
+        # Левая панель (дерево) – остаётся как есть
         left_frame = ttk.Frame(self.paned)
         self.paned.add(left_frame, width=500, minsize=300)
 
@@ -84,11 +79,10 @@ class CodeStructureWindow(tk.Toplevel):
         right_frame.grid_rowconfigure(0, weight=1)
         right_frame.grid_columnconfigure(0, weight=1)
 
-        # Исправлено: убираем color_scheme или передаём None, чтобы использовать схему по умолчанию
         self.code_text = CodeView(
             right_frame,
             lexer=pygments.lexers.PythonLexer,
-            color_scheme=None,   # или просто опустить этот параметр
+            color_scheme=None,
             font=("Courier New", 10),
             wrap=tk.NONE,
             autohide_scrollbar=False,
@@ -179,14 +173,13 @@ class CodeStructureWindow(tk.Toplevel):
         if not code.strip():
             return
 
-        # Устанавливаем лексер в зависимости от языка
         if language.lower() == "python":
             self.code_text.lexer = pygments.lexers.PythonLexer
         else:
             try:
                 self.code_text.lexer = pygments.lexers.get_lexer_by_name(language.lower())
             except:
-                pass  # оставляем текущий лексер
+                pass
 
         self.code_text.insert(1.0, code)
 

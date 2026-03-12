@@ -198,7 +198,7 @@ class Application(tk.Tk):
         if pair is None:
             messagebox.showwarning("Структура кода", "Сначала выберите сообщение.")
             return
-        CodeStructureController(self, pair)
+        CodeStructureController(self, [pair.request_text, pair.response_text])
 
     def _on_closing(self):
         self.controller.save_session()
