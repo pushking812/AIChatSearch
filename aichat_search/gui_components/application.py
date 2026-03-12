@@ -194,11 +194,31 @@ class Application(tk.Tk):
         self.navigation.update_position_label()
 
     def _open_code_structure(self):
-        pair = self.controller.get_current_pair()
-        if pair is None:
-            messagebox.showwarning("Структура кода", "Сначала выберите сообщение.")
+        """Открывает окно структуры кода для выделенных пар сообщений."""
+        selected_pairs = self.tree_panel.get_selected_pairs()
+        if not selected_pairs:
+            messagebox.showwarning(
+                "Структура кода",
+                "Сначала выберите одно или несколько сообщений в правой панели."
+            )
             return
-        CodeStructureController(self, [pair.request_text, pair.response_text])
+
+        items = []
+        for item in selected_pairs:
+            # item = (chat, pair, field, start, end) — как возвращает get_selected_pairs
+            if isinstance(item, (tuple, list)) and len(item) >= 2:
+                chat, pair = item[0], item[1]
+                if hasattr(pair, 'response_text'):
+                    items.append((chat, pair))
+
+        if items:
+            from ..tools.code_structure.controller import CodeStructureController
+            CodeStructureController(self, items)
+        else:
+            messagebox.showwarning(
+                "Структура кода",
+                "Не удалось извлечь данные из выбранных элементов."
+            )
 
     def _on_closing(self):
         self.controller.save_session()

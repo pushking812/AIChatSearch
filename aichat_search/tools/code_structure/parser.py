@@ -2,7 +2,7 @@
 
 import ast
 from abc import ABC, abstractmethod
-from .model import ModuleNode, ClassNode, FunctionNode, MethodNode, CodeBlockNode
+from .models.node import ModuleNode, ClassNode, FunctionNode, MethodNode, CodeBlockNode
 
 
 class CodeParser(ABC):
@@ -18,10 +18,8 @@ class PythonParser(CodeParser):
     """Парсер для Python с использованием ast."""
 
     def parse(self, code: str) -> ModuleNode:
-        try:
-            tree = ast.parse(code)
-        except SyntaxError as e:
-            raise ValueError(f"Синтаксическая ошибка: {e}")
+        # Позволяем SyntaxError проброситься напрямую
+        tree = ast.parse(code)
 
         # Определяем последнюю строку для модуля
         last_line = code.count('\n') + 1
@@ -63,7 +61,6 @@ class PythonParser(CodeParser):
                 if i > start:
                     first_node = body[start]
                     last_node = body[i-1]
-                    # Используем end_lineno последнего узла для корректного диапазона
                     end_line = last_node.end_lineno if hasattr(last_node, 'end_lineno') else last_node.lineno
                     line_range = f"строки {first_node.lineno}-{end_line}"
                     block_node = CodeBlockNode("Блок кода", line_range, first_node.lineno, end_line)
@@ -72,7 +69,6 @@ class PythonParser(CodeParser):
         return
 
     def _format_base(self, base_node):
-        """Форматирует базовый класс в строку с учётом возможных атрибутов (module.Class)."""
         if isinstance(base_node, ast.Name):
             return base_node.id
         elif isinstance(base_node, ast.Attribute):
@@ -81,7 +77,6 @@ class PythonParser(CodeParser):
             return "?"
 
     def _get_attr_name(self, attr_node):
-        """Рекурсивно собирает имя атрибута (например, module.Class)."""
         if isinstance(attr_node, ast.Name):
             return attr_node.id
         elif isinstance(attr_node, ast.Attribute):
@@ -90,22 +85,15 @@ class PythonParser(CodeParser):
             return "?"
 
     def _format_args(self, args_node, returns_node=None):
-        """Форматирует аргументы функции в строку, включая аннотации и значения по умолчанию.
-        Также добавляет аннотацию возвращаемого значения, если есть.
-        """
         args = []
-
-        # Позиционные аргументы
         defaults = args_node.defaults
         n_pos_args = len(args_node.args)
         n_defaults = len(defaults)
 
         for i, arg in enumerate(args_node.args):
             arg_str = arg.arg
-            # Аннотация
             if arg.annotation:
                 arg_str += f": {self._format_annotation(arg.annotation)}"
-            # Значение по умолчанию (если есть)
             default_offset = n_pos_args - n_defaults
             if i >= default_offset:
                 default_index = i - default_offset
@@ -115,14 +103,12 @@ class PythonParser(CodeParser):
                         arg_str += f" = {default_value}"
             args.append(arg_str)
 
-        # *args
         if args_node.vararg:
             vararg_str = f"*{args_node.vararg.arg}"
             if args_node.vararg.annotation:
                 vararg_str += f": {self._format_annotation(args_node.vararg.annotation)}"
             args.append(vararg_str)
 
-        # keyword-only arguments
         kw_defaults = args_node.kw_defaults or []
         for i, arg in enumerate(args_node.kwonlyargs):
             arg_str = arg.arg
@@ -134,7 +120,6 @@ class PythonParser(CodeParser):
                     arg_str += f" = {default_value}"
             args.append(arg_str)
 
-        # **kwargs
         if args_node.kwarg:
             kwarg_str = f"**{args_node.kwarg.arg}"
             if args_node.kwarg.annotation:
@@ -142,50 +127,40 @@ class PythonParser(CodeParser):
             args.append(kwarg_str)
 
         result = ", ".join(args)
-        # Добавляем аннотацию возврата
         if returns_node:
             result += f" -> {self._format_annotation(returns_node)}"
         return result
 
     def _format_annotation(self, node):
-        """Преобразует узел аннотации в строку (например, 'int', 'list[str]')."""
         if isinstance(node, ast.Name):
             return node.id
         elif isinstance(node, ast.Attribute):
             return self._get_attr_name(node)
         elif isinstance(node, ast.Subscript):
-            # Для типов вроде list[int]
             value = self._format_annotation(node.value)
             slice_ = self._format_slice(node.slice)
             return f"{value}[{slice_}]"
         elif isinstance(node, ast.Constant):
-            # Для Literal или других констант (редко)
             return repr(node.value)
         else:
             return "?"
 
     def _format_slice(self, node):
-        """Форматирует срез для аннотаций (например, 'int' в list[int])."""
         if isinstance(node, ast.Index):
-            # Для Python < 3.9
             return self._format_annotation(node.value)
         elif isinstance(node, ast.Tuple):
             return ", ".join(self._format_annotation(elt) for elt in node.elts)
         else:
-            # В Python 3.9+ slice может быть просто узлом
             return self._format_annotation(node)
 
     def _format_constant(self, node):
-        """Преобразует константу (число, строку и т.д.) в строковое представление."""
         if isinstance(node, ast.Constant):
             return repr(node.value)
         elif isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
-            # Обработка отрицательных чисел
             sign = '-' if isinstance(node.op, ast.USub) else '+'
             operand = self._format_constant(node.operand)
             return sign + operand
         elif isinstance(node, ast.List):
-            # Для списков (редко, но бывает)
             return "[" + ", ".join(self._format_constant(elt) for elt in node.elts) + "]"
         elif isinstance(node, ast.Tuple):
             return "(" + ", ".join(self._format_constant(elt) for elt in node.elts) + ")"
@@ -198,11 +173,11 @@ class PythonParser(CodeParser):
                     items.append(f"**{self._format_constant(v)}")
             return "{" + ", ".join(items) + "}"
         elif isinstance(node, ast.Name):
-            # Например, имя переменной (редко)
             return node.id
         else:
             return "?"
-            
+
+
 # Реестр доступных парсеров: ключ - строка языка (нижний регистр), значение - класс парсера
 PARSERS = {
     "python": PythonParser,

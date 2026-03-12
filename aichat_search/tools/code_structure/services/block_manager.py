@@ -1,8 +1,10 @@
 # aichat_search/tools/code_structure/services/block_manager.py
 
 import logging
-from typing import List, Dict, Optional
+import re
+from typing import List, Dict, Optional, Tuple
 from aichat_search.services.block_parser import BlockParser, MessageBlock
+from aichat_search.model import Chat, MessagePair
 from ..parser import PARSERS
 from ..models.node import Node
 from ..models.block_info import MessageBlockInfo
@@ -18,25 +20,43 @@ class BlockManager:
         self.blocks_info: List[MessageBlockInfo] = []
         self.blocks_by_lang: Dict[str, List[MessageBlockInfo]] = {}
 
-    def load_from_messages(self, messages: List[str]) -> None:
-        """Загружает все блоки из списка сообщений."""
+    def load_from_items(self, items: List[Tuple[Chat, MessagePair]]) -> None:
+        """
+        Загружает все блоки из списка пар, сортируя их по времени чата и индексу пары.
+        Каждая пара обрабатывается как отдельное сообщение (response_text).
+        """
+        # Сортируем по времени обновления чата и индексу пары
+        # Если updated_at отсутствует, используем пустую строку для сортировки
+        sorted_items = sorted(
+            items,
+            key=lambda x: (x[0].updated_at or "", x[1].index)
+        )
+
         parser = BlockParser()
-        global_index = 0
         self.blocks_info.clear()
         self.blocks_by_lang.clear()
 
-        for msg_idx, msg_text in enumerate(messages):
-            # Получаем блоки из сообщения
-            blocks = parser.parse(msg_text)  # возвращает список MessageBlock
+        for global_index, (chat, pair) in enumerate(sorted_items):
+            text = pair.response_text
+            blocks = parser.parse(text)
             for block_idx, block in enumerate(blocks):
                 lang = block.language.lower() if block.language else ""
                 if lang not in PARSERS:
                     continue  # пропускаем неподдерживаемые языки
 
-                # Создаём информацию о блоке
-                block_id = f"msg{msg_idx}_block{block_idx}"
+                # Генерируем читаемое имя чата для block_id
+                chat_name = re.sub(r'\W+', '_', chat.title) if chat.title else "unknown"
+                block_id = f"chat_{chat_name}_msg_{pair.index}_block{block_idx}"
                 content = block.content
                 module_hint = extract_module_hint(block)
+
+                # Метаданные о происхождении
+                metadata = {
+                    'chat_id': chat.id,
+                    'chat_title': chat.title,
+                    'chat_updated': chat.updated_at,
+                    'pair_index': pair.index,
+                }
 
                 block_info = MessageBlockInfo(
                     block=block,
@@ -44,9 +64,9 @@ class BlockManager:
                     content=content,
                     block_id=block_id,
                     global_index=global_index,
-                    module_hint=module_hint
+                    module_hint=module_hint,
+                    metadata=metadata
                 )
-                global_index += 1
 
                 # Парсим блок
                 self._parse_block(block_info)
@@ -68,7 +88,8 @@ class BlockManager:
             tree = parser.parse(block_info.content)
             block_info.set_tree(tree)
         except Exception as e:
-            logger.exception(f"Ошибка парсинга блока {block_info.block_id}")
+            # Логируем только сообщение об ошибке, без traceback
+            logger.error(f"Ошибка парсинга блока {block_info.block_id}: {e}")
             block_info.set_error(e)
 
     def get_blocks_by_lang(self, lang: str) -> List[MessageBlockInfo]:

@@ -21,10 +21,13 @@ def extract_module_hint(block: MessageBlock) -> Optional[str]:
         if non_empty_count > 10:
             break
 
-        # Ищем комментарий, содержащий путь
+        # Ищем комментарий, содержащий путь с разделителями или точками
         match = re.search(r'#\s*([\w/\\]+(?:\.\w+)?)', stripped)
         if match:
             path = match.group(1)
+            # Проверяем, что извлечённая строка содержит разделитель (/, \) или точку
+            if '/' not in path and '\\' not in path and '.' not in path:
+                continue  # не похоже на путь к модулю
             # Убираем возможное расширение .py
             if path.endswith('.py'):
                 path = path[:-3]
@@ -35,6 +38,7 @@ def extract_module_hint(block: MessageBlock) -> Optional[str]:
             if module_name:
                 return module_name
     return None
+
 
 def clean_code(code: str) -> str:
     """
@@ -56,31 +60,30 @@ def clean_code(code: str) -> str:
         if not in_docstring:
             # Начало docstring (тройные кавычки)
             if stripped.startswith('"""') or stripped.startswith("'''"):
-                if stripped.count('"""') == 1 and stripped.endswith('"""'):
+                # Проверяем, не закрывается ли он на той же строке
+                if stripped.count('"""') == 1 and stripped.endswith('"""') or \
+                   stripped.count("'''") == 1 and stripped.endswith("'''"):
                     # Однострочный docstring
                     continue
                 else:
                     in_docstring = True
                     docstring_char = '"""' if stripped.startswith('"""') else "'''"
-                    # Если после открывающих есть ещё текст (например, """text"""), нужно проверить закрытие
+                    # Если после открывающих сразу есть закрывающие (например, """text""")
                     if stripped.count(docstring_char) == 2:
-                        # docstring закрыт на этой же строке
                         in_docstring = False
                     continue
         else:
             # Ищем закрывающие тройные кавычки
             if docstring_char in stripped:
                 in_docstring = False
-                # Если после закрывающих есть код, надо его обработать, но по упрощению пропускаем строку
+                # Если после закрывающих есть код, он будет обработан в следующих итерациях,
+                # но по упрощению пропускаем всю строку
                 continue
             else:
                 continue
 
-        # Удаляем комментарии (все, что после #, не внутри строк)
-        # Простой вариант: убираем всё после #, но нужно учитывать # внутри строк.
-        # Для простоты пока так, позже можно улучшить.
+        # Удаляем комментарии (всё после #, не внутри строк – упрощённо)
         if '#' in line:
-            # Находим позицию # не внутри строки (очень упрощённо)
             line = line.split('#', 1)[0]
 
         # Убираем пустые строки

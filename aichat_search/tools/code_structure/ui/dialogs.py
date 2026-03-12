@@ -1,20 +1,20 @@
-# ui/dialogs.py
+# aichat_search/tools/code_structure/ui/dialogs.py
+
 import re
 import tkinter as tk
 from tkinter import ttk, messagebox
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Any
 
 
 class ModuleAssignmentDialog(tk.Toplevel):
     """
     Диалог для ручного назначения модулей блокам без автоматической подсказки.
-    Позволяет просматривать код блоков и назначать их существующим или новым модулям.
     """
 
     def __init__(
         self,
         parent,
-        unknown_blocks: List[Tuple[str, str, str]],  # (block_id, language, content)
+        unknown_blocks: List[Dict[str, Any]],  # каждый элемент: {'id': str, 'display_name': str, 'content': str}
         known_modules: List[str]
     ):
         super().__init__(parent)
@@ -31,9 +31,9 @@ class ModuleAssignmentDialog(tk.Toplevel):
         self.result = None
 
         self.current_block_index = 0
-        self.current_block_id = unknown_blocks[0][0] if unknown_blocks else None
-        self.current_applied = ""  # уже применённое значение для текущего блока
-        self.current_assign_state = ""  # текущее выбранное значение (до применения)
+        self.current_block_id = unknown_blocks[0]['id'] if unknown_blocks else None
+        self.current_applied = ""
+        self.current_assign_state = ""
 
         self._create_scrollable_area()
         self._create_widgets()
@@ -42,7 +42,6 @@ class ModuleAssignmentDialog(tk.Toplevel):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _create_scrollable_area(self):
-        """Создаёт Canvas с вертикальной прокруткой для всего содержимого."""
         self.canvas = tk.Canvas(self, borderwidth=0, highlightthickness=0)
         self.scrollbar = ttk.Scrollbar(self, orient=tk.VERTICAL, command=self.canvas.yview)
         self.scrollable_frame = ttk.Frame(self.canvas)
@@ -58,16 +57,15 @@ class ModuleAssignmentDialog(tk.Toplevel):
         self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
     def _create_widgets(self):
-        # Верхняя панель: выбор блока и модуля
         top_frame = ttk.Frame(self.scrollable_frame)
         top_frame.pack(fill=tk.X, pady=5, padx=10)
 
         ttk.Label(top_frame, text="Неопределённый блок:").grid(row=0, column=0, sticky=tk.W, padx=5)
         self.block_combo = ttk.Combobox(
             top_frame,
-            values=[f"{bid} ({lang})" for bid, lang, _ in self.unknown_blocks],
+            values=[block['display_name'] for block in self.unknown_blocks],
             state="readonly",
-            width=40
+            width=60  # увеличено для длинных имён
         )
         self.block_combo.grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
         self.block_combo.bind("<<ComboboxSelected>>", self._on_block_selected)
@@ -80,17 +78,13 @@ class ModuleAssignmentDialog(tk.Toplevel):
             width=40
         )
         self.module_combo.grid(row=1, column=1, padx=5, pady=5, sticky=tk.W)
-        self.module_combo.bind("<<ComboboxSelected>>", self._on_module_changed)
 
-        # Метка с уже назначенным модулем
         self.assigned_label = ttk.Label(top_frame, text="", foreground="blue")
         self.assigned_label.grid(row=1, column=2, padx=10, sticky=tk.W)
 
-        # Панель с двумя текстовыми полями
         text_frame = ttk.Frame(self.scrollable_frame)
         text_frame.pack(fill=tk.BOTH, expand=True, pady=10, padx=10)
 
-        # Левое поле (код выбранного блока)
         left_frame = ttk.LabelFrame(text_frame, text="Код выбранного блока")
         left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5)
 
@@ -105,7 +99,6 @@ class ModuleAssignmentDialog(tk.Toplevel):
         left_frame.grid_rowconfigure(0, weight=1)
         left_frame.grid_columnconfigure(0, weight=1)
 
-        # Правое поле (код выбранного модуля) – пока заглушка
         right_frame = ttk.LabelFrame(text_frame, text="Код выбранного модуля (пример)")
         right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5)
 
@@ -120,7 +113,6 @@ class ModuleAssignmentDialog(tk.Toplevel):
         right_frame.grid_rowconfigure(0, weight=1)
         right_frame.grid_columnconfigure(0, weight=1)
 
-        # Панель для ввода нового имени модуля
         new_module_frame = ttk.Frame(self.scrollable_frame)
         new_module_frame.pack(fill=tk.X, pady=5, padx=10)
 
@@ -130,7 +122,6 @@ class ModuleAssignmentDialog(tk.Toplevel):
         self.new_module_entry.config(state="disabled")
         self.new_module_entry.bind("<KeyRelease>", self._on_new_module_changed)
 
-        # Панель с радиокнопками выбора действия
         action_frame = ttk.LabelFrame(self.scrollable_frame, text="Действие")
         action_frame.pack(fill=tk.X, pady=10, padx=10)
 
@@ -150,7 +141,6 @@ class ModuleAssignmentDialog(tk.Toplevel):
             command=self._on_action_change
         ).pack(anchor=tk.W, padx=20, pady=2)
 
-        # Кнопки
         button_frame = ttk.Frame(self.scrollable_frame)
         button_frame.pack(fill=tk.X, pady=10, padx=10)
 
@@ -163,7 +153,6 @@ class ModuleAssignmentDialog(tk.Toplevel):
         ttk.Button(button_frame, text="Отмена", command=self._cancel).pack(side=tk.LEFT, padx=5)
 
     def _on_action_change(self):
-        """Обработчик смены радиокнопки."""
         if self.action_var.get() == "create_new":
             self.module_combo.config(state="disabled")
             self.new_module_entry.config(state="normal")
@@ -175,6 +164,13 @@ class ModuleAssignmentDialog(tk.Toplevel):
             self.new_module_entry.config(state="disabled")
         self._check_changes()
 
+    def _on_block_selected(self, event=None):
+        index = self.block_combo.current()
+        if 0 <= index < len(self.unknown_blocks):
+            self.current_block_index = index
+            self.current_block_id = self.unknown_blocks[index]['id']
+            self._update_display()
+
     def _on_module_changed(self, event=None):
         self._check_changes()
 
@@ -182,7 +178,6 @@ class ModuleAssignmentDialog(tk.Toplevel):
         self._check_changes()
 
     def _check_changes(self):
-        """Проверяет, изменилось ли текущее значение относительно применённого."""
         current_val = self._get_current_value()
         if current_val != self.current_applied:
             self.apply_button.config(state="normal")
@@ -190,46 +185,34 @@ class ModuleAssignmentDialog(tk.Toplevel):
             self.apply_button.config(state="disabled")
 
     def _get_current_value(self):
-        """Возвращает текущее выбранное значение (модуль) для текущего блока."""
         if self.action_var.get() == "create_new":
             return self.new_module_entry.get().strip()
         else:
             return self.module_combo.get()
 
-    def _on_block_selected(self, event=None):
-        index = self.block_combo.current()
-        if 0 <= index < len(self.unknown_blocks):
-            self.current_block_index = index
-            self.current_block_id = self.unknown_blocks[index][0]
-            self._update_display()
-
     def _update_display(self):
-        """Обновляет текстовые поля и элементы управления при выборе блока."""
         if not self.unknown_blocks:
             return
-        bid, lang, content = self.unknown_blocks[self.current_block_index]
+        block = self.unknown_blocks[self.current_block_index]
         self.block_text.delete(1.0, tk.END)
-        self.block_text.insert(1.0, content)
+        self.block_text.insert(1.0, block['content'])
 
         self.module_text.delete(1.0, tk.END)
 
-        # Восстанавливаем ранее назначенный модуль, если есть
-        if bid in self.assignments:
-            mod = self.assignments[bid]
+        if self.current_block_id in self.assignments:
+            mod = self.assignments[self.current_block_id]
             if mod in self.known_modules:
                 self.module_combo.set(mod)
                 self.action_var.set("assign_existing")
                 self._on_action_change()
                 self.new_module_entry.delete(0, tk.END)
             else:
-                # Модуль был создан, но отсутствует в known (не должно быть)
                 self.module_combo.set("")
                 self.new_module_entry.delete(0, tk.END)
                 self.new_module_entry.insert(0, mod)
                 self.action_var.set("create_new")
                 self._on_action_change()
         else:
-            # Нет назначения: выбираем первый модуль по умолчанию, если есть
             if self.has_modules:
                 self.module_combo.current(0)
             else:
@@ -238,14 +221,12 @@ class ModuleAssignmentDialog(tk.Toplevel):
             self.action_var.set("assign_existing")
             self._on_action_change()
 
-        # Сохраняем применённое значение для этого блока
         self.current_applied = self.assignments.get(self.current_block_id, "")
         self.current_assign_state = self.current_applied
         self._check_changes()
         self._update_assigned_label()
 
     def _update_assigned_label(self):
-        """Обновляет текст метки с уже назначенным модулем."""
         assigned = self.assignments.get(self.current_block_id, "")
         if assigned:
             self.assigned_label.config(text=f"Назначен модуль: {assigned}")
@@ -253,7 +234,6 @@ class ModuleAssignmentDialog(tk.Toplevel):
             self.assigned_label.config(text="")
 
     def _apply(self):
-        """Применяет текущее назначение к выбранному блоку."""
         if not self.current_block_id:
             return
 
@@ -275,7 +255,6 @@ class ModuleAssignmentDialog(tk.Toplevel):
                     f"Модуль '{new_name}' уже существует. Используйте действие 'Добавить в модуль'."
                 )
                 return
-            # Добавляем новый модуль
             self.known_modules.append(new_name)
             self.known_modules.sort()
             self.has_modules = True
@@ -283,7 +262,7 @@ class ModuleAssignmentDialog(tk.Toplevel):
             self.assignments[self.current_block_id] = new_name
             self.changed = True
 
-        else:  # assign_existing
+        else:
             selected_module = self.module_combo.get()
             if not selected_module:
                 messagebox.showerror("Ошибка", "Выберите существующий модуль из списка")
@@ -291,27 +270,22 @@ class ModuleAssignmentDialog(tk.Toplevel):
             self.assignments[self.current_block_id] = selected_module
             self.changed = True
 
-        # Обновляем состояние после применения
         self.current_applied = self.assignments[self.current_block_id]
-        self.current_assign_state = self.current_applied
         self.apply_button.config(state="disabled")
         self.ok_button.config(state="normal")
         self._update_assigned_label()
 
-        # Переход к следующему блоку
         if self.current_block_index + 1 < len(self.unknown_blocks):
             self.current_block_index += 1
-            self.current_block_id = self.unknown_blocks[self.current_block_index][0]
+            self.current_block_id = self.unknown_blocks[self.current_block_index]['id']
             self.block_combo.current(self.current_block_index)
             self._update_display()
 
     def _ok(self):
-        """Обработчик кнопки ОК."""
         self.result = self.assignments
         self.destroy()
 
     def _cancel(self):
-        """Обработчик кнопки Отмена."""
         if self.changed:
             response = messagebox.askyesno(
                 "Подтверждение",
@@ -324,7 +298,6 @@ class ModuleAssignmentDialog(tk.Toplevel):
         self.destroy()
 
     def _on_close(self):
-        """Обработчик закрытия окна через крестик."""
         if self.changed:
             response = messagebox.askyesno(
                 "Подтверждение",

@@ -11,8 +11,8 @@ class Node:
         self.children = []
         self.lineno_start = lineno_start   # номер первой строки (в коде блока)
         self.lineno_end = lineno_end       # номер последней строки
-        # Новое поле для хранения информации об источнике (будет использоваться позже)
-        self.source_info = None
+        
+        self.source_info = None # поле для хранения информации об источнике
 
     def add_child(self, child: 'Node'):
         self.children.append(child)
@@ -21,6 +21,13 @@ class Node:
     def get_cleaned_content(self) -> str:
         """Возвращает очищенное содержимое узла (для функций/методов/блоков)."""
         return ""
+        
+    def count_nodes(self) -> int:
+        """Возвращает общее количество узлов в поддереве, включая текущий."""
+        total = 1  # считаем себя
+        for child in self.children:
+            total += child.count_nodes()
+        return total
         
 class ModuleNode(Node):
     def __init__(self, name: str = "Модуль", lineno_start=None, lineno_end=None):
@@ -41,10 +48,6 @@ class FunctionNode(Node):
     def get_cleaned_content(self) -> str:
         if hasattr(self, '_cached_cleaned'):
             return self._cached_cleaned
-        # Получить тело функции: строки между self.lineno_start и self.lineno_end
-        # Но у нас нет доступа к исходному коду здесь. Поэтому будем передавать код блока позже.
-        # Пока вернём пустую строку, а позже при создании Version будем вычислять очищенное содержимое,
-        # имея доступ к полному коду блока.
         return ""
 
 class MethodNode(Node):

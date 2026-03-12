@@ -1,7 +1,11 @@
-import logging
-from typing import List, Optional
+# aichat_search/tools/code_structure/controller.py
 
-from ...services.block_parser import BlockParser
+import logging
+from typing import List, Dict, Optional, Tuple
+from collections import defaultdict
+
+from aichat_search.model import Chat, MessagePair
+from aichat_search.services.block_parser import BlockParser
 from .view import CodeStructureWindow
 from .parser import PARSERS
 from .services.block_manager import BlockManager
@@ -11,13 +15,13 @@ logger = logging.getLogger(__name__)
 
 
 class CodeStructureController:
-    def __init__(self, parent, messages: List[str]):
+    def __init__(self, parent, items: List[Tuple[Chat, MessagePair]]):
         """
         :param parent: родительское окно
-        :param messages: список текстов сообщений (может быть один)
+        :param items: список кортежей (Chat, MessagePair) для анализа
         """
         self.parent = parent
-        self.messages = messages
+        self.items = items
 
         self.view = CodeStructureWindow(parent)
         self.view.set_controller(self)
@@ -29,10 +33,18 @@ class CodeStructureController:
         self.current_lang: Optional[str] = None
         self.current_block_index: int = -1
 
+        # Данные для слияния по модулям
+        self.module_groups: Dict[str, List[MessageBlockInfo]] = {}
+        self.module_base_blocks: Dict[str, MessageBlockInfo] = {}
+
         # Загружаем все блоки из сообщений
         self._load_all_blocks()
-        
+
+        # Если есть неизвестные модули, вызываем диалог
         self._resolve_unknown_modules()
+
+        # Выбираем базовые блоки для каждого модуля
+        self._select_base_blocks()
 
         if self.block_manager.get_languages():
             self._fill_language_combo()
@@ -45,37 +57,8 @@ class CodeStructureController:
             self.view.destroy()
 
     def _load_all_blocks(self):
-        """Загружает все блоки из сообщений через BlockManager."""
-        self.block_manager.load_from_messages(self.messages)
-        
-    def _resolve_unknown_modules(self):
-        """Вызывает диалог для назначения модулей блокам без подсказки."""
-        # Собираем блоки без module_hint
-        unknown = []
-        known_modules = set()
-        for block_info in self.block_manager.get_all_blocks():
-            if block_info.module_hint:
-                known_modules.add(block_info.module_hint)
-            else:
-                unknown.append((
-                    block_info.block_id,
-                    block_info.language,
-                    block_info.content
-                ))
-
-        if not unknown:
-            return
-
-        # Вызываем диалог
-        from .ui.dialogs import ModuleAssignmentDialog
-        dialog = ModuleAssignmentDialog(self.view, unknown, sorted(known_modules))
-        self.view.wait_window(dialog)  # ждём закрытия
-
-        if dialog.result:
-            # Обновляем module_hint у соответствующих блоков
-            for block_info in self.block_manager.get_all_blocks():
-                if block_info.block_id in dialog.result:
-                    block_info.module_hint = dialog.result[block_info.block_id]
+        """Загружает все блоки из списка элементов через BlockManager."""
+        self.block_manager.load_from_items(self.items)
 
     def _fill_language_combo(self):
         """Заполняет комбобокс языков."""
@@ -89,23 +72,53 @@ class CodeStructureController:
         block_names = self._generate_block_names(blocks)
         self.view.set_block_combo_values(block_names)
         if block_names:
-            self.view.set_current_block_index(len(block_names) - 1)
+            self.view.set_current_block_index(0)  # выбираем первый по алфавиту
         # Очищаем дерево и текстовое поле
         self.view.clear_tree()
         self.view.display_code("")
 
     def _generate_block_names(self, blocks: List[MessageBlockInfo]) -> List[str]:
-        """Генерирует список имён для отображения во втором комбобоксе."""
+        """Генерирует список имён для отображения во втором комбобоксе (отсортирован по алфавиту)."""
         names = []
-        for i, block_info in enumerate(blocks):
-            name = self._extract_block_name(block_info)
-            if block_info.syntax_error:
-                name += " (синтаксическая ошибка)"
-            names.append(f"{i+1:03d}: {name}")
+        for block_info in blocks:
+            desc = self._get_block_description(block_info)
+            full_name = f"{block_info.block_id} – {desc}"
+            names.append(full_name)
+        names.sort()
         return names
 
+    def _get_block_description(self, block_info: MessageBlockInfo) -> str:
+        """Возвращает описание блока на основе его содержимого."""
+        if block_info.module_hint:
+            return block_info.module_hint
+
+        if block_info.tree is None or block_info.syntax_error:
+            return "блок_кода (ошибка)" if block_info.syntax_error else "блок_кода"
+
+        # Рекурсивный поиск первого определения
+        def find_first_definition(node):
+            for child in node.children:
+                if child.node_type == "class":
+                    # Ищем первый метод внутри класса
+                    for method in child.children:
+                        if method.node_type == "method":
+                            return f"class_{child.name}_def_{method.name}"
+                    return f"class_{child.name}"
+                elif child.node_type == "function":
+                    return f"def_{child.name}"
+                else:
+                    res = find_first_definition(child)
+                    if res:
+                        return res
+            return None
+
+        desc = find_first_definition(block_info.tree)
+        if desc:
+            return desc
+        return "блок_кода"
+
     def _extract_block_name(self, block_info: MessageBlockInfo) -> str:
-        """Извлекает имя блока (без изменений, как было)."""
+        """Извлекает имя блока для отображения в комбобоксе (используется только для совместимости)."""
         if block_info.syntax_error:
             return "блок_кода (ошибка)"
 
@@ -172,7 +185,16 @@ class CodeStructureController:
         if index >= len(blocks):
             return
 
-        block_info = blocks[index]
+        # Индекс в отсортированном списке соответствует блоку в blocks
+        # Найдём соответствующий block_info по имени
+        selected_name = self.view.block_combo.get()
+        block_info = None
+        for b in blocks:
+            if f"{b.block_id} – {self._get_block_description(b)}" == selected_name:
+                block_info = b
+                break
+        if not block_info:
+            return
 
         if block_info.syntax_error:
             self.view.show_error(f"Выбранный блок содержит ошибку парсинга: {block_info.syntax_error}")
@@ -200,7 +222,15 @@ class CodeStructureController:
             blocks = self.block_manager.get_blocks_by_lang(self.current_lang)
             if index >= len(blocks):
                 return
-            block_info = blocks[index]
+            # Получаем block_info по индексу
+            selected_name = self.view.block_combo.get()
+            block_info = None
+            for b in blocks:
+                if f"{b.block_id} – {self._get_block_description(b)}" == selected_name:
+                    block_info = b
+                    break
+            if not block_info:
+                return
             code_lines = block_info.content.splitlines()
             start = node.lineno_start - 1
             end = node.lineno_end
@@ -213,3 +243,78 @@ class CodeStructureController:
                 self.view.display_code(selected_code)
             else:
                 self.view.display_code("")
+
+    # ---------- Методы для работы с модулями и слиянием ----------
+
+    def _resolve_unknown_modules(self):
+        """Вызывает диалог для назначения модулей блокам без подсказки."""
+        # Собираем блоки без module_hint
+        unknown_blocks = []  # список MessageBlockInfo
+        known_modules = set()
+        for block_info in self.block_manager.get_all_blocks():
+            if block_info.module_hint:
+                known_modules.add(block_info.module_hint)
+            else:
+                unknown_blocks.append(block_info)
+
+        if not unknown_blocks:
+            return
+
+        # Подготавливаем данные для диалога: список словарей с id, display_name, content
+        dialog_data = []
+        for block_info in unknown_blocks:
+            display_name = self._get_block_description(block_info)
+            dialog_data.append({
+                'id': block_info.block_id,
+                'display_name': f"{block_info.block_id} – {display_name}",
+                'content': block_info.content
+            })
+
+        # Вызываем диалог
+        from .ui.dialogs import ModuleAssignmentDialog
+        dialog = ModuleAssignmentDialog(self.view, dialog_data, sorted(known_modules))
+        self.view.wait_window(dialog)
+
+        if dialog.result:
+            # Обновляем module_hint у соответствующих блоков
+            for block_info in self.block_manager.get_all_blocks():
+                if block_info.block_id in dialog.result:
+                    block_info.module_hint = dialog.result[block_info.block_id]
+
+    def _group_blocks_by_module(self) -> Dict[str, List[MessageBlockInfo]]:
+        """Группирует блоки по module_hint (только для блоков с назначенным модулем)."""
+        groups = defaultdict(list)
+        for block_info in self.block_manager.get_all_blocks():
+            if block_info.module_hint:
+                groups[block_info.module_hint].append(block_info)
+        return dict(groups)
+
+    def _select_most_complete_block(self, blocks: List[MessageBlockInfo]) -> Optional[MessageBlockInfo]:
+        """Выбирает блок с максимальным числом узлов. При равенстве — с минимальным global_index."""
+        if not blocks:
+            return None
+        best = None
+        best_count = -1
+        best_index = float('inf')
+        for block in blocks:
+            if block.tree is None or block.syntax_error:
+                continue
+            if not hasattr(block.tree, 'count_nodes'):
+                print(f"ВНИМАНИЕ: У узла {type(block.tree)} нет метода count_nodes!")
+                continue
+            count = block.tree.count_nodes()
+            if count > best_count or (count == best_count and block.global_index < best_index):
+                best_count = count
+                best_index = block.global_index
+                best = block
+        return best
+
+    def _select_base_blocks(self):
+        """После назначения модулей для каждой группы выбирает самый полный блок."""
+        self.module_groups = self._group_blocks_by_module()
+        self.module_base_blocks = {}
+        for module, blocks in self.module_groups.items():
+            base = self._select_most_complete_block(blocks)
+            if base:
+                self.module_base_blocks[module] = base
+                logger.debug(f"Модуль {module}: базовый блок {base.block_id} (индекс {base.global_index}) с {base.tree.count_nodes()} узлами")

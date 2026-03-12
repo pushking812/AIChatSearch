@@ -1,12 +1,14 @@
 # aichat_search/tools/code_structure/models/block_info.py
 
-from typing import Optional, List, Tuple, Any
-from aichat_search.services.block_parser import MessageBlock  # предполагается, что MessageBlock определён там
+from typing import Optional, List, Tuple, Any, Dict
+from aichat_search.services.block_parser import MessageBlock
 from .node import Node
 
-
 class MessageBlockInfo:
-    """Хранит всю информацию о блоке кода из сообщения."""
+    """
+    Хранит всю информацию о блоке кода из сообщения.
+    Добавлено поле metadata для хранения информации о чате и паре.
+    """
 
     def __init__(
         self,
@@ -15,7 +17,8 @@ class MessageBlockInfo:
         content: str,
         block_id: str = "",
         global_index: int = -1,
-        module_hint: Optional[str] = None
+        module_hint: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
     ):
         self.block = block
         self.language = language
@@ -23,6 +26,7 @@ class MessageBlockInfo:
         self.block_id = block_id
         self.global_index = global_index
         self.module_hint = module_hint
+        self.metadata = metadata or {}  # словарь для хранения информации о чате, времени и т.д.
 
         # Результат парсинга
         self.tree: Optional[Node] = None          # корневой узел (ModuleNode)
