@@ -1,5 +1,7 @@
 # aichat_search/tools/code_structure/models/node.py
 
+from ..utils.helpers import clean_code
+
 class Node:
     """Базовый узел дерева структуры кода."""
     def __init__(self, name: str, node_type: str, signature: str = "", lineno_start=None, lineno_end=None):
@@ -19,8 +21,7 @@ class Node:
     def get_cleaned_content(self) -> str:
         """Возвращает очищенное содержимое узла (для функций/методов/блоков)."""
         return ""
-
-
+        
 class ModuleNode(Node):
     def __init__(self, name: str = "Модуль", lineno_start=None, lineno_end=None):
         super().__init__(name, "module", "", lineno_start, lineno_end)
@@ -36,7 +37,15 @@ class FunctionNode(Node):
     def __init__(self, name: str, args: str = "", lineno_start=None, lineno_end=None):
         signature = f"({args})"
         super().__init__(name, "function", signature, lineno_start, lineno_end)
-
+    
+    def get_cleaned_content(self) -> str:
+        if hasattr(self, '_cached_cleaned'):
+            return self._cached_cleaned
+        # Получить тело функции: строки между self.lineno_start и self.lineno_end
+        # Но у нас нет доступа к исходному коду здесь. Поэтому будем передавать код блока позже.
+        # Пока вернём пустую строку, а позже при создании Version будем вычислять очищенное содержимое,
+        # имея доступ к полному коду блока.
+        return ""
 
 class MethodNode(Node):
     def __init__(self, name: str, args: str = "", lineno_start=None, lineno_end=None):

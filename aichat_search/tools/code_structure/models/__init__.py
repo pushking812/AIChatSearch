@@ -2,8 +2,11 @@
 
 from .node import Node, ModuleNode, ClassNode, FunctionNode, MethodNode, CodeBlockNode
 from .block_info import MessageBlockInfo
+from .containers import Container, ModuleContainer, ClassContainer, FunctionContainer, MethodContainer, CodeBlockContainer, Version
 
 __all__ = [
     'Node', 'ModuleNode', 'ClassNode', 'FunctionNode', 'MethodNode', 'CodeBlockNode',
-    'MessageBlockInfo'
+    'MessageBlockInfo',
+    'Container', 'ModuleContainer', 'ClassContainer', 'FunctionContainer', 'MethodContainer',
+    'CodeBlockContainer', 'Version'
 ]
