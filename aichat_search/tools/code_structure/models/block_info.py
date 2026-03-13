@@ -4,6 +4,7 @@ from typing import Optional, List, Tuple, Any, Dict
 from aichat_search.services.block_parser import MessageBlock
 from .node import Node
 
+
 class MessageBlockInfo:
     """
     Хранит всю информацию о блоке кода из сообщения.

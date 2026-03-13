@@ -10,6 +10,11 @@ from .view import CodeStructureWindow
 from .parser import PARSERS
 from .services.block_manager import BlockManager
 from .models.block_info import MessageBlockInfo
+from .models.containers import (
+    Container, ModuleContainer, ClassContainer, FunctionContainer,
+    MethodContainer, CodeBlockContainer, Version
+)
+from .models.node import Node, ClassNode, FunctionNode, MethodNode, CodeBlockNode
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +41,7 @@ class CodeStructureController:
         # Данные для слияния по модулям
         self.module_groups: Dict[str, List[MessageBlockInfo]] = {}
         self.module_base_blocks: Dict[str, MessageBlockInfo] = {}
+        self.module_containers: Dict[str, Container] = {}
 
         # Загружаем все блоки из сообщений
         self._load_all_blocks()
@@ -45,6 +51,9 @@ class CodeStructureController:
 
         # Выбираем базовые блоки для каждого модуля
         self._select_base_blocks()
+
+        # Строим начальные структуры из базовых блоков
+        self._build_initial_structures()
 
         if self.block_manager.get_languages():
             self._fill_language_combo()
@@ -318,3 +327,61 @@ class CodeStructureController:
             if base:
                 self.module_base_blocks[module] = base
                 logger.debug(f"Модуль {module}: базовый блок {base.block_id} (индекс {base.global_index}) с {base.tree.count_nodes()} узлами")
+
+    def _build_initial_structures(self):
+        """Для каждого модуля строит начальную структуру из базового блока."""
+        for module_name, base_block in self.module_base_blocks.items():
+            container = self._build_initial_structure(module_name, base_block)
+            self.module_containers[module_name] = container
+            logger.debug(f"Построена начальная структура для модуля {module_name}")
+
+    def _build_initial_structure(self, module_name: str, base_block: MessageBlockInfo) -> ModuleContainer:
+        """
+        Строит начальную структуру модуля на основе дерева базового блока.
+        """
+        module_container = ModuleContainer(module_name)
+        if base_block.tree is None:
+            return module_container
+
+        # Рекурсивно обходим дерево узлов
+        self._build_container_from_node(base_block.tree, module_container, base_block)
+        return module_container
+
+    def _build_container_from_node(self, node: Node, parent_container: Container, block_info: MessageBlockInfo):
+        """
+        Рекурсивно строит контейнеры и версии из узла AST и добавляет их в parent_container.
+        """
+        if isinstance(node, ClassNode):
+            # Создаём контейнер класса
+            class_container = ClassContainer(node.name)
+            parent_container.add_child(class_container)
+            # Рекурсивно обрабатываем детей (методы, внутренние классы, блоки кода)
+            for child in node.children:
+                self._build_container_from_node(child, class_container, block_info)
+
+        elif isinstance(node, FunctionNode):
+            # Создаём контейнер функции и версию
+            func_container = FunctionContainer(node.name)
+            version = Version(node, block_info.block_id, block_info.global_index, block_info.content)
+            func_container.add_version(version)
+            parent_container.add_child(func_container)
+            # У функции нет детей, которые нужно обрабатывать (тело не сохраняем)
+
+        elif isinstance(node, MethodNode):
+            # Создаём контейнер метода и версию
+            method_container = MethodContainer(node.name)
+            version = Version(node, block_info.block_id, block_info.global_index, block_info.content)
+            method_container.add_version(version)
+            parent_container.add_child(method_container)
+
+        elif isinstance(node, CodeBlockNode):
+            # Создаём контейнер блока кода и версию
+            block_container = CodeBlockContainer(f"CodeBlock_{len(parent_container.children)}")
+            version = Version(node, block_info.block_id, block_info.global_index, block_info.content)
+            block_container.add_version(version)
+            parent_container.add_child(block_container)
+
+        else:
+            # Неизвестный тип узла (например, ModuleNode) – игнорируем, он уже представлен корнем
+            for child in node.children:
+                self._build_container_from_node(child, parent_container, block_info)

@@ -65,7 +65,7 @@ class ModuleAssignmentDialog(tk.Toplevel):
             top_frame,
             values=[block['display_name'] for block in self.unknown_blocks],
             state="readonly",
-            width=60  # увеличено для длинных имён
+            width=60
         )
         self.block_combo.grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
         self.block_combo.bind("<<ComboboxSelected>>", self._on_block_selected)
@@ -78,6 +78,7 @@ class ModuleAssignmentDialog(tk.Toplevel):
             width=40
         )
         self.module_combo.grid(row=1, column=1, padx=5, pady=5, sticky=tk.W)
+        self.module_combo.bind("<<ComboboxSelected>>", self._on_module_changed)
 
         self.assigned_label = ttk.Label(top_frame, text="", foreground="blue")
         self.assigned_label.grid(row=1, column=2, padx=10, sticky=tk.W)

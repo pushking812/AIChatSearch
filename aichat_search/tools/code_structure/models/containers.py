@@ -1,8 +1,9 @@
 # aichat_search/tools/code_structure/models/containers.py
 
-from typing import List, Optional, Tuple, Any
+from typing import List, Optional, Tuple
 from .node import Node
 from ..utils.helpers import clean_code
+
 
 class Version:
     """
@@ -20,13 +21,16 @@ class Version:
             self.cleaned_content = clean_code(code_fragment)
         else:
             self.cleaned_content = ""
-        self.sources = [(block_id, node.lineno_start, node.lineno_end, global_index)]
+        self.sources: List[Tuple[str, int, int, int]] = [(block_id, node.lineno_start, node.lineno_end, global_index)]
         self.max_global_index = global_index
 
     def add_source(self, block_id: str, start: int, end: int, global_index: int):
         self.sources.append((block_id, start, end, global_index))
         if global_index > self.max_global_index:
             self.max_global_index = global_index
+
+    def __repr__(self):
+        return f"Version(sources={len(self.sources)}, max_idx={self.max_global_index})"
 
 
 class Container:
@@ -58,7 +62,6 @@ class Container:
         return f"Container(name={self.name}, type={self.node_type}, children={len(self.children)}, versions={len(self.versions)})"
 
 
-# Специализированные классы (опционально, можно использовать общий Container с проверкой типа)
 class ModuleContainer(Container):
     def __init__(self, name: str):
         super().__init__(name, "module")

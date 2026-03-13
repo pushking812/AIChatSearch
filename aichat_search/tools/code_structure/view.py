@@ -29,11 +29,11 @@ class CodeStructureWindow(tk.Toplevel):
         ttk.Label(self, text="Блок:").grid(row=0, column=1, padx=5, pady=(10,0), sticky="w")
 
         # ---- Строка 1: комбобоксы и кнопка ----
-        self.type_combo = ttk.Combobox(self, state="readonly", width=23) 
+        self.type_combo = ttk.Combobox(self, state="readonly", width=35)
         self.type_combo.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
         self.type_combo.bind("<<ComboboxSelected>>", self._on_type_selected)
 
-        self.block_combo = ttk.Combobox(self, state="readonly", width=75)
+        self.block_combo = ttk.Combobox(self, state="readonly", width=113)
         self.block_combo.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
 
         self.show_button = ttk.Button(self, text="Показать структуру")
