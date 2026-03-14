@@ -73,7 +73,6 @@ class CodeStructureController:
             # Выбираем первый язык и загружаем его блоки
             self.current_lang = self.block_manager.get_languages()[0]
             self._switch_language(self.current_lang)
-            self.view.show_button.config(command=self.on_show_structure)
         else:
             self.view.show_error("В сообщениях нет блоков с поддерживаемыми языками.")
             self.view.destroy()
@@ -139,55 +138,6 @@ class CodeStructureController:
             return desc
         return "блок_кода"
 
-    def _extract_block_name(self, block_info: MessageBlockInfo) -> str:
-        """Извлекает имя блока для отображения в комбобоксе (используется только для совместимости)."""
-        if block_info.syntax_error:
-            return "блок_кода (ошибка)"
-
-        lines = block_info.content.splitlines()
-        if not lines:
-            return "блок_кода"
-
-        start_idx = 0
-        while start_idx < len(lines) and not lines[start_idx].strip():
-            start_idx += 1
-        if start_idx >= len(lines):
-            return "блок_кода"
-
-        # Поиск комментариев
-        comment_lines = []
-        i = start_idx
-        while i < len(lines) and i - start_idx < 10:
-            stripped = lines[i].strip()
-            if stripped.startswith('#'):
-                comment_lines.append(stripped[1:].strip())
-                i += 1
-            else:
-                break
-        if comment_lines:
-            return " ".join(comment_lines)
-
-        # Поиск class или def
-        i = start_idx
-        while i < len(lines):
-            stripped = lines[i].strip()
-            if stripped.startswith('class '):
-                parts = stripped[6:].split()
-                if parts:
-                    return parts[0].split('(')[0]
-            elif stripped.startswith('def '):
-                parts = stripped[4:].split()
-                if parts:
-                    return parts[0].split('(')[0]
-            elif stripped.startswith('@'):
-                i += 1
-                continue
-            elif stripped:
-                break
-            i += 1
-
-        return "блок_кода"
-
     def on_type_selected(self, event):
         """Обработчик выбора языка в первом комбобоксе."""
         selected_index = self.view.type_combo.current()
@@ -196,6 +146,10 @@ class CodeStructureController:
             lang = languages[selected_index]
             if lang != self.current_lang:
                 self._switch_language(lang)
+
+    def on_block_selected(self, event=None):
+        """Автоматически показывает структуру при выборе блока в комбобоксе."""
+        self.on_show_structure()
 
     def on_show_structure(self):
         """Показывает структуру выбранного блока."""
@@ -207,8 +161,7 @@ class CodeStructureController:
         if index >= len(blocks):
             return
 
-        # Индекс в отсортированном списке соответствует блоку в blocks
-        # Найдём соответствующий block_info по имени
+        # Найдём соответствующий block_info по имени в комбобоксе
         selected_name = self.view.block_combo.get()
         block_info = None
         for b in blocks:
@@ -230,7 +183,7 @@ class CodeStructureController:
         self.view.display_structure(block_info.tree)
 
     def on_node_selected(self):
-        """Обработчик выбора узла в дереве (без изменений)."""
+        """Обработчик выбора узла в левом дереве."""
         selected = self.view.tree.selection()
         if not selected:
             return
@@ -244,7 +197,7 @@ class CodeStructureController:
             blocks = self.block_manager.get_blocks_by_lang(self.current_lang)
             if index >= len(blocks):
                 return
-            # Получаем block_info по индексу
+            # Получаем block_info по имени в комбобоксе
             selected_name = self.view.block_combo.get()
             block_info = None
             for b in blocks:
@@ -521,6 +474,7 @@ class CodeStructureController:
             'text': 'Все модули',
             'type': 'root',
             'signature': '',
+            'version': '',
             'sources': '',
             'children': []
         }
@@ -536,12 +490,13 @@ class CodeStructureController:
     def _container_to_display_node(self, container: Container) -> Dict[str, Any]:
         """
         Преобразует контейнер в узел для отображения.
-        Возвращает словарь с полями: text, type, signature, sources, children.
+        Возвращает словарь с полями: text, type, signature, version, sources, children.
         """
         node = {
             'text': container.name,
             'type': container.node_type,
             'signature': '',
+            'version': '',
             'sources': '',
             'children': []
         }
@@ -556,12 +511,13 @@ class CodeStructureController:
             for i, version in enumerate(container.versions):
                 sources_str = ', '.join(src[0] for src in version.sources)
                 version_node = {
-                    'text': f"Версия {i+1} ({sources_str})",
+                    'text': version.node.name,  # только имя, без источников
                     'type': 'version',
                     'signature': version.node.signature,
+                    'version': f"v{i+1}",
                     'sources': sources_str,
                     'children': [],
-                    '_version_data': version  # сохраняем ссылку на объект Version
+                    '_version_data': version
                 }
                 node['children'].append(version_node)
         else:

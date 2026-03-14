@@ -11,7 +11,7 @@ class CodeStructureWindow(tk.Toplevel):
     def __init__(self, parent):
         super().__init__(parent)
         self.title("Структура кода")
-        self.geometry("1400x700")
+        self.geometry("1400x750")
         self.transient(parent)
         self.grab_set()
 
@@ -19,7 +19,7 @@ class CodeStructureWindow(tk.Toplevel):
         self._left_item_to_node = {}
         self._right_item_to_data = {}
 
-        # ---- Верхняя панель с элементами управления (должна быть наверху) ----
+        # Верхняя панель с элементами управления
         top_frame = ttk.Frame(self)
         top_frame.pack(fill=tk.X, padx=5, pady=5)
 
@@ -31,34 +31,38 @@ class CodeStructureWindow(tk.Toplevel):
         ttk.Label(top_frame, text="Блок:").grid(row=0, column=2, padx=5, sticky="w")
         self.block_combo = ttk.Combobox(top_frame, state="readonly", width=113)
         self.block_combo.grid(row=0, column=3, padx=5, sticky="w")
-
-        self.show_button = ttk.Button(top_frame, text="Показать структуру")
-        self.show_button.grid(row=0, column=4, padx=5)
+        self.block_combo.bind("<<ComboboxSelected>>", self._on_block_selected)
 
         self.module_button = ttk.Button(top_frame, text="Назначить модули", command=self._on_module_button)
-        self.module_button.grid(row=0, column=5, padx=5)
+        self.module_button.grid(row=0, column=4, padx=5)
 
-        # Панель управления раскрытием дерева
-        level_frame = ttk.Frame(self)
-        level_frame.pack(fill=tk.X, padx=5, pady=5)
+        # Панели управления раскрытием деревьев
+        control_frame = ttk.Frame(self)
+        control_frame.pack(fill=tk.X, padx=5, pady=2)
 
-        ttk.Label(level_frame, text="Уровень раскрытия:").pack(side=tk.LEFT, padx=5)
-        self.level_combo = ttk.Combobox(level_frame, values=[1,2,3,4,5], state="readonly", width=5)
-        self.level_combo.pack(side=tk.LEFT, padx=5)
-        self.level_combo.current(4)
+        # Левое дерево
+        ttk.Label(control_frame, text="Левое дерево, уровень:").pack(side=tk.LEFT, padx=5)
+        self.left_level_combo = ttk.Combobox(control_frame, values=[1,2,3,4,5], state="readonly", width=5)
+        self.left_level_combo.pack(side=tk.LEFT, padx=5)
+        self.left_level_combo.current(4)
+        self.left_expand_button = ttk.Button(control_frame, text="+ / -", command=self._on_left_expand_level)
+        self.left_expand_button.pack(side=tk.LEFT, padx=5)
 
-        self.expand_button = ttk.Button(level_frame, text="+ / -", command=self._on_expand_level)
-        self.expand_button.pack(side=tk.LEFT, padx=5)
+        ttk.Label(control_frame, text="    Правое дерево, уровень:").pack(side=tk.LEFT, padx=5)
+        self.right_level_combo = ttk.Combobox(control_frame, values=[1,2,3,4,5], state="readonly", width=5)
+        self.right_level_combo.pack(side=tk.LEFT, padx=5)
+        self.right_level_combo.current(4)
+        self.right_expand_button = ttk.Button(control_frame, text="+ / -", command=self._on_right_expand_level)
+        self.right_expand_button.pack(side=tk.LEFT, padx=5)
 
-        # ---- Главный горизонтальный PanedWindow (левая и правая половины) ----
+        # Главный горизонтальный PanedWindow
         self.main_paned = tk.PanedWindow(self, orient=tk.HORIZONTAL, sashrelief=tk.RAISED, sashwidth=6)
         self.main_paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # Левая вертикальная панель (дерево + код исходного блока)
+        # Левая вертикальная панель
         left_vertical = tk.PanedWindow(self.main_paned, orient=tk.VERTICAL, sashrelief=tk.RAISED, sashwidth=6)
         self.main_paned.add(left_vertical, width=600, minsize=400)
 
-        # Верх левой панели: дерево исходного блока
         left_tree_frame = ttk.Frame(left_vertical)
         left_vertical.add(left_tree_frame, height=350, minsize=200)
 
@@ -77,7 +81,6 @@ class CodeStructureWindow(tk.Toplevel):
         self.tree.configure(yscrollcommand=tree_scroll.set)
         self.tree.bind("<<TreeviewSelect>>", self._on_left_tree_select)
 
-        # Низ левой панели: код исходного блока
         left_code_frame = ttk.Frame(left_vertical)
         left_vertical.add(left_code_frame, height=300, minsize=150)
         left_code_frame.grid_rowconfigure(0, weight=1)
@@ -96,32 +99,37 @@ class CodeStructureWindow(tk.Toplevel):
         )
         self.code_text.grid(row=0, column=0, sticky="nsew")
 
-        # Правая вертикальная панель (сводное дерево + код версии)
+        # Правая вертикальная панель
         right_vertical = tk.PanedWindow(self.main_paned, orient=tk.VERTICAL, sashrelief=tk.RAISED, sashwidth=6)
         self.main_paned.add(right_vertical, width=700, minsize=400)
 
-        # Верх правой панели: сводное дерево
         right_tree_frame = ttk.Frame(right_vertical)
         right_vertical.add(right_tree_frame, height=350, minsize=200)
 
-        self.merged_tree = ttk.Treeview(right_tree_frame, columns=("type", "signature", "sources"), show="tree headings")
+        self.merged_tree = ttk.Treeview(
+            right_tree_frame,
+            columns=("type", "signature", "version", "sources"),
+            show="tree headings"
+        )
         self.merged_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         self.merged_tree.heading("#0", text="Имя")
         self.merged_tree.heading("type", text="Тип")
         self.merged_tree.heading("signature", text="Сигнатура")
+        self.merged_tree.heading("version", text="Версия")
         self.merged_tree.heading("sources", text="Источники")
+
         self.merged_tree.column("#0", width=250, minwidth=150, stretch=True)
         self.merged_tree.column("type", width=80, minwidth=60, stretch=False)
-        self.merged_tree.column("signature", width=250, minwidth=150, stretch=True)
-        self.merged_tree.column("sources", width=150, minwidth=100, stretch=True)
+        self.merged_tree.column("signature", width=200, minwidth=120, stretch=True)
+        self.merged_tree.column("version", width=80, minwidth=60, stretch=False)
+        self.merged_tree.column("sources", width=200, minwidth=120, stretch=True)
 
         merged_tree_scroll = ttk.Scrollbar(right_tree_frame, orient=tk.VERTICAL, command=self.merged_tree.yview)
         merged_tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         self.merged_tree.configure(yscrollcommand=merged_tree_scroll.set)
         self.merged_tree.bind("<<TreeviewSelect>>", self._on_right_tree_select)
 
-        # Низ правой панели: код выбранной версии
         right_code_frame = ttk.Frame(right_vertical)
         right_vertical.add(right_code_frame, height=300, minsize=150)
         right_code_frame.grid_rowconfigure(0, weight=1)
@@ -140,18 +148,65 @@ class CodeStructureWindow(tk.Toplevel):
         )
         self.merged_code.grid(row=0, column=0, sticky="nsew")
 
-        # Устанавливаем минимальную ширину окна на основе элементов управления
         self.update_idletasks()
         min_width = (self.type_combo.winfo_reqwidth() +
                      self.block_combo.winfo_reqwidth() +
-                     self.show_button.winfo_reqwidth() +
                      self.module_button.winfo_reqwidth() +
-                     self.level_combo.winfo_reqwidth() +
-                     self.expand_button.winfo_reqwidth() +
-                     100)  # запас на отступы
-        self.minsize(min_width, 500)
+                     self.left_level_combo.winfo_reqwidth() +
+                     self.left_expand_button.winfo_reqwidth() +
+                     self.right_level_combo.winfo_reqwidth() +
+                     self.right_expand_button.winfo_reqwidth() +
+                     150)
+        self.minsize(min_width, 550)
 
-    # ---- Методы для работы с комбобоксами (без изменений) ----
+    # ---- Обработчики для автоматического показа структуры ----
+    def _on_block_selected(self, event):
+        if self.controller:
+            self.controller.on_block_selected(event)
+
+    # ---- Методы для управления левым деревом ----
+    def _on_left_expand_level(self):
+        try:
+            level = int(self.left_level_combo.get())
+        except (ValueError, TypeError):
+            level = 5
+        self._collapse_all_left('')
+        self._expand_to_level_left('', 1, level)
+
+    def _collapse_all_left(self, parent):
+        for child in self.tree.get_children(parent):
+            self.tree.item(child, open=False)
+            self._collapse_all_left(child)
+
+    def _expand_to_level_left(self, parent, current_level, target_level):
+        if current_level >= target_level:
+            return
+        for child in self.tree.get_children(parent):
+            self.tree.item(child, open=True)
+            self._expand_to_level_left(child, current_level + 1, target_level)
+
+    # ---- Методы для управления правым деревом ----
+    def _on_right_expand_level(self):
+        try:
+            level = int(self.right_level_combo.get())
+        except (ValueError, TypeError):
+            level = 5
+        self._collapse_all_right('')
+        self._expand_to_level_right('', 1, level)
+
+    def _collapse_all_right(self, parent):
+        for child in self.merged_tree.get_children(parent):
+            self.merged_tree.item(child, open=False)
+            self._collapse_all_right(child)
+
+    def _expand_to_level_right(self, parent, current_level, target_level):
+        if current_level >= target_level:
+            return
+        for child in self.merged_tree.get_children(parent):
+            self.merged_tree.item(child, open=True)
+            self._expand_to_level_right(child, current_level + 1, target_level)
+
+    # ---- Методы для работы с комбобоксами ----
     def set_type_combo_values(self, values):
         self.type_combo['values'] = values
         if values:
@@ -178,7 +233,7 @@ class CodeStructureWindow(tk.Toplevel):
         if self.controller:
             self.controller._reset_module_assignments()
 
-    # ---- Методы для левого дерева (без изменений) ----
+    # ---- Методы для левого дерева ----
     def clear_tree(self):
         for item in self.tree.get_children():
             self.tree.delete(item)
@@ -187,6 +242,11 @@ class CodeStructureWindow(tk.Toplevel):
     def display_structure(self, root_node):
         self.clear_tree()
         self._add_left_node("", root_node)
+        # Выделяем корневой узел
+        if self.tree.get_children():
+            first_item = self.tree.get_children()[0]
+            self.tree.selection_set(first_item)
+            self.tree.focus(first_item)
         self._expand_all_left("")
 
     def _add_left_node(self, parent, node):
@@ -203,31 +263,11 @@ class CodeStructureWindow(tk.Toplevel):
             self.tree.item(child, open=True)
             self._expand_all_left(child)
 
-    def _collapse_all_left(self, parent):
-        for child in self.tree.get_children(parent):
-            self.tree.item(child, open=False)
-            self._collapse_all_left(child)
-
-    def _expand_to_level_left(self, parent, current_level, target_level):
-        if current_level >= target_level:
-            return
-        for child in self.tree.get_children(parent):
-            self.tree.item(child, open=True)
-            self._expand_to_level_left(child, current_level + 1, target_level)
-
-    def _on_expand_level(self):
-        try:
-            level = int(self.level_combo.get())
-        except (ValueError, TypeError):
-            level = 5
-        self._collapse_all_left('')
-        self._expand_to_level_left('', 1, level)
-
     def _on_left_tree_select(self, event):
         if self.controller:
             self.controller.on_node_selected()
 
-    # ---- Методы для правого дерева (без изменений) ----
+    # ---- Методы для правого дерева ----
     def clear_merged_tree(self):
         for item in self.merged_tree.get_children():
             self.merged_tree.delete(item)
@@ -236,12 +276,22 @@ class CodeStructureWindow(tk.Toplevel):
     def display_merged_tree(self, root_node: Dict[str, Any]):
         self.clear_merged_tree()
         self._add_merged_node("", root_node)
+        # Выделяем корневой узел
+        if self.merged_tree.get_children():
+            first_item = self.merged_tree.get_children()[0]
+            self.merged_tree.selection_set(first_item)
+            self.merged_tree.focus(first_item)
 
     def _add_merged_node(self, parent: str, node_data: Dict[str, Any]):
         item = self.merged_tree.insert(
             parent, tk.END,
             text=node_data['text'],
-            values=(node_data['type'], node_data['signature'], node_data['sources'])
+            values=(
+                node_data.get('type', ''),
+                node_data.get('signature', ''),
+                node_data.get('version', ''),
+                node_data.get('sources', '')
+            )
         )
         self._right_item_to_data[item] = node_data
         for child in node_data.get('children', []):

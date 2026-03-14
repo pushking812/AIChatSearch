@@ -26,7 +26,7 @@ class ModuleAssignmentDialog(tk.Toplevel):
         self.grab_set()
 
         self.unknown_blocks = unknown_blocks
-        self.known_modules = sorted(known_modules)
+        self.known_modules = sorted(known_modules) if known_modules else []
         self.has_modules = bool(self.known_modules)
         self.module_code_map = module_code_map or {}
         self.assignments: Dict[str, str] = {}
@@ -315,6 +315,8 @@ class ModuleAssignmentDialog(tk.Toplevel):
             self.known_modules.sort()
             self.has_modules = True
             self.module_combo['values'] = self.known_modules
+            # Добавляем код текущего блока как пример для нового модуля
+            self.module_code_map[new_name] = self.unknown_blocks[self.current_block_index]['content']
             self.assignments[self.current_block_id] = new_name
             self.changed = True
 
