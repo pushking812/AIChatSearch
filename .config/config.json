@@ -18,11 +18,11 @@
     "updated": 119
   },
   "tree_column_widths": {
-    "global_idx": 107,
+    "global_idx": 123,
     "source": 93,
     "chat_idx": 120,
     "request": 251,
-    "response": 155,
+    "response": 139,
     "date": 93
   }
 }
