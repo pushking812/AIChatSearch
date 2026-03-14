@@ -59,7 +59,6 @@ class StructureBuilder:
             logger.info(f"    [BUILD] ФУНКЦИЯ: {node_name}, has_self={has_self}, params={params}")
             logger.debug(f"      parent_container_type={parent_container.node_type}")
 
-            # Если функция с self и мы в классе - это метод
             if has_self and parent_container.node_type == "class":
                 logger.info(f"      Функция {node_name} с self -> метод в классе {parent_container.name}")
                 method_container = MethodContainer(node.name)
@@ -77,7 +76,7 @@ class StructureBuilder:
             logger.info(f"    [BUILD] МЕТОД: {node_name}")
             logger.debug(f"      parent_container_type={parent_container.node_type}")
 
-            # Метод всегда должен быть в классе
+            # Если метод уже внутри класса – добавляем как MethodContainer
             if parent_container.node_type == "class":
                 logger.info(f"      Метод {node_name} добавлен в класс {parent_container.name}")
                 method_container = MethodContainer(node.name)
@@ -85,7 +84,7 @@ class StructureBuilder:
                 version = Version(node, block_info.block_id, block_info.global_index, block_info.content)
                 method_container.add_version(version)
             else:
-                # Если метод не в классе, ищем подходящий класс
+                # Если метод вне класса, ищем подходящий класс среди детей
                 logger.warning(f"      Метод {node_name} вне класса, ищем подходящий класс")
                 found = False
                 for child in parent_container.children:
@@ -97,7 +96,6 @@ class StructureBuilder:
                         method_container.add_version(version)
                         found = True
                         break
-
                 if not found:
                     logger.warning(f"      Класс не найден, метод {node_name} добавлен как функция")
                     func_container = FunctionContainer(node.name)
@@ -131,21 +129,16 @@ class StructureBuilder:
 
         if isinstance(node, ClassNode):
             logger.info(f"  Обработка КЛАССА {node_name}")
-
-            # Ищем существующий класс
             class_container = None
             for child in container.children:
                 if child.node_type == "class" and child.name == node_name:
                     class_container = child
                     logger.info(f"    Найден существующий класс {node_name}")
                     break
-
             if class_container is None:
                 class_container = ClassContainer(node.name)
                 container.add_child(class_container)
                 logger.info(f"    Создан новый класс {node_name}")
-
-            # Обрабатываем детей класса
             for child in node.children:
                 self.merge_node_into_container(child, class_container, block_info, f"{current_path}/child")
 
@@ -154,23 +147,19 @@ class StructureBuilder:
             has_self, params = extract_function_signature(node)
             logger.info(f"    has_self={has_self}, params={params}")
 
-            # Проверяем, есть ли подходящий класс для метода
+            # Пытаемся найти подходящий класс, если функция с self
             found_in_class = False
             if has_self:
                 for child in container.children:
                     if child.node_type == "class":
                         logger.info(f"    Проверяем класс {child.name} на наличие метода {node_name}")
-
-                        # Ищем метод в классе
                         method_container = None
                         for method_child in child.children:
                             if method_child.node_type == "method" and method_child.name == node_name:
                                 method_container = method_child
                                 logger.info(f"      Найден существующий метод {node_name} в классе {child.name}")
                                 break
-
                         if method_container:
-                            # Добавляем версию к существующему методу
                             version = Version(node, block_info.block_id, block_info.global_index, block_info.content)
                             existing = self._find_version_by_content(method_container.versions, version.cleaned_content)
                             if existing:
@@ -182,7 +171,6 @@ class StructureBuilder:
                             found_in_class = True
                             break
                         else:
-                            # Создаём новый метод в этом классе
                             logger.info(f"      Создаём новый метод {node_name} в классе {child.name}")
                             method_container = MethodContainer(node.name)
                             child.add_child(method_container)
@@ -194,19 +182,16 @@ class StructureBuilder:
 
             if not found_in_class:
                 logger.info(f"    Подходящий класс не найден, создаём как функцию")
-                # Ищем существующую функцию
                 func_container = None
                 for child in container.children:
                     if child.node_type == "function" and child.name == node_name:
                         func_container = child
                         logger.info(f"    Найдена существующая функция {node_name}")
                         break
-
                 if func_container is None:
                     func_container = FunctionContainer(node.name)
                     container.add_child(func_container)
                     logger.info(f"    Создана новая функция {node_name}")
-
                 version = Version(node, block_info.block_id, block_info.global_index, block_info.content)
                 existing = self._find_version_by_content(func_container.versions, version.cleaned_content)
                 if existing:
@@ -219,66 +204,82 @@ class StructureBuilder:
         elif isinstance(node, MethodNode):
             logger.info(f"  Обработка МЕТОДА {node_name}")
 
-            # Ищем подходящий класс
-            found = False
-            for child in container.children:
-                if child.node_type == "class":
-                    logger.info(f"    Проверяем класс {child.name}")
-
-                    # Ищем метод в классе
-                    method_container = None
-                    for method_child in child.children:
-                        if method_child.node_type == "method" and method_child.name == node_name:
-                            method_container = method_child
-                            logger.info(f"      Найден существующий метод {node_name} в классе {child.name}")
-                            break
-
-                    if method_container:
-                        version = Version(node, block_info.block_id, block_info.global_index, block_info.content)
-                        existing = self._find_version_by_content(method_container.versions, version.cleaned_content)
-                        if existing:
-                            existing.add_source(block_info.block_id, node.lineno_start, node.lineno_end, block_info.global_index)
-                            logger.info(f"      Добавлен источник к версии метода {node_name}")
-                        else:
-                            method_container.add_version(version)
-                            logger.info(f"      Создана новая версия метода {node_name} v{len(method_container.versions)}")
-                        found = True
-                        break
-                    else:
-                        logger.info(f"      Создаём новый метод {node_name} в классе {child.name}")
-                        method_container = MethodContainer(node.name)
-                        child.add_child(method_container)
-                        version = Version(node, block_info.block_id, block_info.global_index, block_info.content)
-                        method_container.add_version(version)
-                        logger.info(f"      Метод {node_name} создан в классе {child.name}")
-                        found = True
-                        break
-
-            if not found:
-                logger.warning(f"    Класс не найден, создаём метод {node_name} как функцию")
-                # Создаём как функцию
-                func_container = None
+            # Если контейнер – класс, ищем метод среди его детей
+            if container_type == "class":
+                method_container = None
                 for child in container.children:
-                    if child.node_type == "function" and child.name == node_name:
-                        func_container = child
+                    if child.node_type == "method" and child.name == node_name:
+                        method_container = child
+                        logger.info(f"      Найден существующий метод {node_name} в классе {container_name}")
                         break
-
-                if func_container is None:
-                    func_container = FunctionContainer(node.name)
-                    container.add_child(func_container)
-
-                version = Version(node, block_info.block_id, block_info.global_index, block_info.content)
-                existing = self._find_version_by_content(func_container.versions, version.cleaned_content)
-                if existing:
-                    existing.add_source(block_info.block_id, node.lineno_start, node.lineno_end, block_info.global_index)
+                if method_container:
+                    version = Version(node, block_info.block_id, block_info.global_index, block_info.content)
+                    existing = self._find_version_by_content(method_container.versions, version.cleaned_content)
+                    if existing:
+                        existing.add_source(block_info.block_id, node.lineno_start, node.lineno_end, block_info.global_index)
+                        logger.info(f"      Добавлен источник к версии метода {node_name}")
+                    else:
+                        method_container.add_version(version)
+                        logger.info(f"      Создана новая версия метода {node_name} v{len(method_container.versions)}")
                 else:
-                    func_container.add_version(version)
+                    logger.info(f"      Создаём новый метод {node_name} в классе {container_name}")
+                    method_container = MethodContainer(node.name)
+                    container.add_child(method_container)
+                    version = Version(node, block_info.block_id, block_info.global_index, block_info.content)
+                    method_container.add_version(version)
+                    logger.info(f"      Метод {node_name} создан в классе {container_name}")
+            else:
+                # Контейнер не класс – ищем подходящий класс среди детей
+                found = False
+                for child in container.children:
+                    if child.node_type == "class":
+                        logger.info(f"    Проверяем класс {child.name}")
+                        method_container = None
+                        for method_child in child.children:
+                            if method_child.node_type == "method" and method_child.name == node_name:
+                                method_container = method_child
+                                logger.info(f"      Найден существующий метод {node_name} в классе {child.name}")
+                                break
+                        if method_container:
+                            version = Version(node, block_info.block_id, block_info.global_index, block_info.content)
+                            existing = self._find_version_by_content(method_container.versions, version.cleaned_content)
+                            if existing:
+                                existing.add_source(block_info.block_id, node.lineno_start, node.lineno_end, block_info.global_index)
+                                logger.info(f"      Добавлен источник к версии метода {node_name}")
+                            else:
+                                method_container.add_version(version)
+                                logger.info(f"      Создана новая версия метода {node_name} v{len(method_container.versions)}")
+                            found = True
+                            break
+                        else:
+                            logger.info(f"      Создаём новый метод {node_name} в классе {child.name}")
+                            method_container = MethodContainer(node.name)
+                            child.add_child(method_container)
+                            version = Version(node, block_info.block_id, block_info.global_index, block_info.content)
+                            method_container.add_version(version)
+                            logger.info(f"      Метод {node_name} создан в классе {child.name}")
+                            found = True
+                            break
+                if not found:
+                    logger.warning(f"    Класс не найден, создаём метод {node_name} как функцию")
+                    func_container = None
+                    for child in container.children:
+                        if child.node_type == "function" and child.name == node_name:
+                            func_container = child
+                            break
+                    if func_container is None:
+                        func_container = FunctionContainer(node.name)
+                        container.add_child(func_container)
+                    version = Version(node, block_info.block_id, block_info.global_index, block_info.content)
+                    existing = self._find_version_by_content(func_container.versions, version.cleaned_content)
+                    if existing:
+                        existing.add_source(block_info.block_id, node.lineno_start, node.lineno_end, block_info.global_index)
+                    else:
+                        func_container.add_version(version)
 
         elif isinstance(node, CodeBlockNode):
             logger.info(f"  Обработка БЛОКА КОДА")
             version = Version(node, block_info.block_id, block_info.global_index, block_info.content)
-
-            # Ищем существующий блок с таким же содержимым
             found = False
             for child in container.children:
                 if child.node_type == "code_block":
@@ -290,7 +291,6 @@ class StructureBuilder:
                             break
                     if found:
                         break
-
             if not found:
                 block_container = CodeBlockContainer(f"CodeBlock_{len(container.children)}")
                 block_container.add_version(version)

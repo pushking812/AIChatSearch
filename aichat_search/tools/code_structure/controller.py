@@ -191,6 +191,9 @@ class CodeStructureController:
         """Перестраивает структуры после диалога."""
         logger.info("=== Перестроение после диалога ===")
 
+        # Удаляем временные модули, чтобы они не мешали
+        self.orchestrator.module_identifier.remove_temp_modules()
+
         # Получаем все блоки
         all_blocks = self.block_manager.get_all_blocks()
 
@@ -199,17 +202,13 @@ class CodeStructureController:
 
         # Перевыбираем базовые блоки
         self.orchestrator._select_base_blocks()
-        logger.info(">>> Перед вызовом _merge_temp_modules: _rebuild_after_dialog 1")
+
         # Перестраиваем начальные структуры (очищаем старые)
         self.orchestrator.module_containers = {}
         self.orchestrator._build_initial_structures()
 
         # Пересливаем остальные блоки
         self.orchestrator._merge_remaining_blocks()
-
-        # Объединяем temp-модули
-        print(">>> Перед вызовом _merge_temp_modules: _rebuild_after_dialog 2")
-        self.orchestrator._merge_temp_modules()
 
         # Перестраиваем и отображаем дерево
         self._build_and_display_tree()

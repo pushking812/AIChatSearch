@@ -131,3 +131,11 @@ class ModuleIdentifier:
 
     def get_known_modules(self) -> Set[str]:
         return set(self.module_ids.keys())
+        
+    def remove_temp_modules(self):
+        """Удаляет все временные модули (с префиксом temp_)."""
+        to_remove = [m for m in self.module_ids.keys() if m.startswith('temp_')]
+        for m in to_remove:
+            del self.module_ids[m]
+        if to_remove:
+            logger.info(f"Удалены временные модули: {to_remove}")
