@@ -15,8 +15,8 @@ class ModuleAssignmentDialog(tk.Toplevel):
         self,
         parent,
         unknown_blocks: List[Dict[str, Any]],  # каждый элемент: {'id': str, 'display_name': str, 'content': str}
-        known_modules: List[str],
-        module_code_map: Optional[Dict[str, str]] = None  # имя модуля -> пример кода для отображения
+        module_info: List[Dict[str, Any]],     # каждый элемент: {'name': str, 'source': Optional[str]}
+        module_code_map: Optional[Dict[str, str]] = None
     ):
         super().__init__(parent)
         self.title("Назначение модулей")
@@ -26,12 +26,14 @@ class ModuleAssignmentDialog(tk.Toplevel):
         self.grab_set()
 
         self.unknown_blocks = unknown_blocks
-        self.known_modules = sorted(known_modules) if known_modules else []
+        self.module_info = module_info
+        self.known_modules = [info['name'] for info in module_info]
         self.has_modules = bool(self.known_modules)
         self.module_code_map = module_code_map or {}
         self.assignments: Dict[str, str] = {}
         self.changed = False
         self.result = None
+        self.controller = None
 
         self.current_block_index = 0
         self.current_block_id = unknown_blocks[0]['id'] if unknown_blocks else None
@@ -92,11 +94,20 @@ class ModuleAssignmentDialog(tk.Toplevel):
         self.block_combo.bind("<<ComboboxSelected>>", self._on_block_selected)
 
         ttk.Label(top_frame, text="Назначить модулю:").grid(row=1, column=0, sticky=tk.W, padx=5)
+        
+        # Создаём список модулей с указанием источника
+        module_display_names = []
+        for info in self.module_info:
+            if info['source']:
+                module_display_names.append(f"{info['name']} (из {info['source']})")
+            else:
+                module_display_names.append(info['name'])
+        
         self.module_combo = ttk.Combobox(
             top_frame,
-            values=self.known_modules,
+            values=module_display_names,
             state="readonly" if self.has_modules else "disabled",
-            width=40
+            width=60
         )
         self.module_combo.grid(row=1, column=1, padx=5, pady=5, sticky=tk.W)
         self.module_combo.bind("<<ComboboxSelected>>", self._on_module_selected)
@@ -184,6 +195,12 @@ class ModuleAssignmentDialog(tk.Toplevel):
 
         ttk.Button(button_frame, text="Отмена", command=self._cancel).pack(side=tk.LEFT, padx=5)
 
+    def _get_clean_module_name(self, display_name: str) -> str:
+        """Извлекает чистое имя модуля из отображаемого имени."""
+        if ' (из ' in display_name:
+            return display_name.split(' (из ')[0]
+        return display_name
+
     def _on_action_change(self):
         if self.action_var.get() == "create_new":
             self.module_combo.config(state="disabled")
@@ -204,7 +221,8 @@ class ModuleAssignmentDialog(tk.Toplevel):
             self._update_display()
 
     def _on_module_selected(self, event=None):
-        selected = self.module_combo.get()
+        selected_display = self.module_combo.get()
+        selected = self._get_clean_module_name(selected_display)
         if selected in self.module_code_map:
             self.module_text.delete(1.0, tk.END)
             self.module_text.insert(1.0, self.module_code_map[selected])
@@ -226,7 +244,8 @@ class ModuleAssignmentDialog(tk.Toplevel):
         if self.action_var.get() == "create_new":
             return self.new_module_entry.get().strip()
         else:
-            return self.module_combo.get()
+            selected_display = self.module_combo.get()
+            return self._get_clean_module_name(selected_display)
 
     def _update_display(self):
         if not self.unknown_blocks:
@@ -243,34 +262,35 @@ class ModuleAssignmentDialog(tk.Toplevel):
                 self.module_text.insert(1.0, self.module_code_map[mod])
         else:
             # Если модуль не назначен, пытаемся показать код выбранного в комбобоксе
-            selected_mod = self.module_combo.get()
-            if selected_mod and selected_mod in self.module_code_map:
+            selected_display = self.module_combo.get()
+            selected = self._get_clean_module_name(selected_display) if selected_display else ""
+            if selected and selected in self.module_code_map:
                 self.module_text.delete(1.0, tk.END)
-                self.module_text.insert(1.0, self.module_code_map[selected_mod])
+                self.module_text.insert(1.0, self.module_code_map[selected])
             else:
                 self.module_text.delete(1.0, tk.END)
 
         # Восстанавливаем ранее назначенный модуль, если есть
         if self.current_block_id in self.assignments:
             mod = self.assignments[self.current_block_id]
-            if mod in self.known_modules:
-                self.module_combo.set(mod)
-                self.action_var.set("assign_existing")
-                self._on_action_change()
-                self.new_module_entry.delete(0, tk.END)
-            else:
-                self.module_combo.set("")
-                self.new_module_entry.delete(0, tk.END)
-                self.new_module_entry.insert(0, mod)
-                self.action_var.set("create_new")
-                self._on_action_change()
+            # Ищем отображаемое имя для этого модуля
+            display_mod = mod
+            for item in self.module_combo['values']:
+                if item.startswith(mod + ' (из ') or item == mod:
+                    display_mod = item
+                    break
+            self.module_combo.set(display_mod)
+            self.action_var.set("assign_existing")
+            self._on_action_change()
+            self.new_module_entry.delete(0, tk.END)
         else:
-            if self.has_modules:
+            if self.has_modules and self.module_combo['values']:
                 self.module_combo.current(0)
-                selected_mod = self.module_combo.get()
-                if selected_mod in self.module_code_map:
+                selected_display = self.module_combo.get()
+                selected = self._get_clean_module_name(selected_display)
+                if selected in self.module_code_map:
                     self.module_text.delete(1.0, tk.END)
-                    self.module_text.insert(1.0, self.module_code_map[selected_mod])
+                    self.module_text.insert(1.0, self.module_code_map[selected])
             else:
                 self.module_combo.set("")
             self.new_module_entry.delete(0, tk.END)
@@ -314,14 +334,25 @@ class ModuleAssignmentDialog(tk.Toplevel):
             self.known_modules.append(new_name)
             self.known_modules.sort()
             self.has_modules = True
-            self.module_combo['values'] = self.known_modules
+            # Обновляем module_info и список отображаемых имён
+            current_block = self.unknown_blocks[self.current_block_index]
+            source_text = f"{current_block['id']} – {current_block['display_name'].split(' – ')[-1] if ' – ' in current_block['display_name'] else current_block['display_name']}"
+            self.module_info.append({'name': new_name, 'source': source_text})
+            module_display_names = []
+            for info in self.module_info:
+                if info['source']:
+                    module_display_names.append(f"{info['name']} (из {info['source']})")
+                else:
+                    module_display_names.append(info['name'])
+            self.module_combo['values'] = module_display_names
             # Добавляем код текущего блока как пример для нового модуля
             self.module_code_map[new_name] = self.unknown_blocks[self.current_block_index]['content']
             self.assignments[self.current_block_id] = new_name
             self.changed = True
 
         else:
-            selected_module = self.module_combo.get()
+            selected_display = self.module_combo.get()
+            selected_module = self._get_clean_module_name(selected_display)
             if not selected_module:
                 messagebox.showerror("Ошибка", "Выберите существующий модуль из списка")
                 return
