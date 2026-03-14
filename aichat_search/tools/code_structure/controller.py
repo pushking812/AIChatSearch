@@ -1,7 +1,7 @@
 # aichat_search/tools/code_structure/controller.py
 
 import logging
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 from collections import defaultdict
 
 from aichat_search.model import Chat, MessagePair
@@ -43,6 +43,9 @@ class CodeStructureController:
         self.module_base_blocks: Dict[str, MessageBlockInfo] = {}
         self.module_containers: Dict[str, Container] = {}
 
+        # Корень отображаемого дерева
+        self.display_root: Optional[Dict[str, Any]] = None
+
         # Загружаем все блоки из сообщений
         self._load_all_blocks()
 
@@ -57,6 +60,9 @@ class CodeStructureController:
 
         # Сливаем остальные блоки в структуры
         self._merge_remaining_blocks()
+
+        # Строим дерево для отображения
+        self._build_display_tree()
 
         if self.block_manager.get_languages():
             self._fill_language_combo()
@@ -382,8 +388,6 @@ class CodeStructureController:
             for child in node.children:
                 self._build_container_from_node(child, parent_container, block_info)
 
-    # ---------- Новые методы для слияния (итерация 8) ----------
-
     def _merge_remaining_blocks(self):
         """Для каждого модуля сливает все остальные блоки в существующую структуру."""
         for module_name, container in self.module_containers.items():
@@ -471,3 +475,68 @@ class CodeStructureController:
             if v.cleaned_content == cleaned_content:
                 return v
         return None
+
+    # ---------- Построение отображаемого дерева (итерация 9) ----------
+
+    def _build_display_tree(self):
+        """
+        Строит древовидную структуру для отображения в правой панели.
+        Результат сохраняется в self.display_root в формате, пригодном для заполнения Treeview.
+        """
+        # Корневой узел "Все модули"
+        root = {
+            'text': 'Все модули',
+            'type': 'root',
+            'signature': '',
+            'sources': '',
+            'children': []
+        }
+
+        # Для каждого модуля создаём узел
+        for module_name, container in self.module_containers.items():
+            module_node = self._container_to_display_node(container)
+            root['children'].append(module_node)
+
+        self.display_root = root
+        logger.debug("Построено дерево для отображения")
+
+    def _container_to_display_node(self, container: Container) -> Dict[str, Any]:
+        """
+        Преобразует контейнер в узел для отображения.
+        Возвращает словарь с полями: text, type, signature, sources, children.
+        """
+        node = {
+            'text': container.name,
+            'type': container.node_type,
+            'signature': '',
+            'sources': '',
+            'children': []
+        }
+
+        if container.node_type == 'module':
+            # У модуля нет сигнатуры и источников, просто добавляем детей
+            for child in container.children:
+                node['children'].append(self._container_to_display_node(child))
+        elif container.node_type == 'class':
+            # У класса может быть сигнатура (базовые классы), но в контейнере её нет,
+            # можно взять из первой версии? Класс не хранит сигнатуру, оставим пустым.
+            for child in container.children:
+                node['children'].append(self._container_to_display_node(child))
+        elif container.node_type in ('function', 'method', 'code_block'):
+            # Для этих типов показываем версии как дочерние узлы
+            for i, version in enumerate(container.versions):
+                # Формируем имя версии: "Версия {i+1} (источники)"
+                sources_str = ', '.join(src[0] for src in version.sources)  # block_id
+                version_node = {
+                    'text': f"Версия {i+1} ({sources_str})",
+                    'type': 'version',
+                    'signature': version.node.signature,
+                    'sources': sources_str,
+                    'children': []  # у версии нет детей
+                }
+                node['children'].append(version_node)
+        else:
+            # На всякий случай, игнорируем
+            pass
+
+        return node
