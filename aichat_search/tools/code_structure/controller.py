@@ -64,6 +64,10 @@ class CodeStructureController:
         # Строим дерево для отображения
         self._build_display_tree()
 
+        # Отображаем сводное дерево в правой панели
+        if self.display_root:
+            self.view.display_merged_tree(self.display_root)
+
         if self.block_manager.get_languages():
             self._fill_language_combo()
             # Выбираем первый язык и загружаем его блоки
@@ -264,6 +268,23 @@ class CodeStructureController:
 
     # ---------- Методы для работы с модулями и слиянием ----------
 
+    def _reset_module_assignments(self):
+        """Сбрасывает все назначения модулей и перезапускает процесс слияния."""
+        # Очищаем module_hint у всех блоков
+        for block_info in self.block_manager.get_all_blocks():
+            block_info.module_hint = None
+
+        # Заново запускаем весь конвейер
+        self._resolve_unknown_modules()
+        self._select_base_blocks()
+        self._build_initial_structures()
+        self._merge_remaining_blocks()
+        self._build_display_tree()
+
+        # Обновляем отображение правого дерева
+        if self.display_root:
+            self.view.display_merged_tree(self.display_root)
+
     def _resolve_unknown_modules(self):
         """Вызывает диалог для назначения модулей блокам без подсказки."""
         # Собираем блоки без module_hint
@@ -288,13 +309,25 @@ class CodeStructureController:
                 'content': block_info.content
             })
 
-        # Вызываем диалог
+        # Передаём также карту кодов для известных модулей (для отображения в правом поле)
+        module_code_map = {}
+        for module in known_modules:
+            # Берём первый попавшийся блок этого модуля (например, базовый)
+            base = self.module_base_blocks.get(module)
+            if base:
+                module_code_map[module] = base.content
+            else:
+                # Если нет базового, ищем любой блок
+                for bi in self.block_manager.get_all_blocks():
+                    if bi.module_hint == module and bi.content:
+                        module_code_map[module] = bi.content
+                        break
+
         from .ui.dialogs import ModuleAssignmentDialog
-        dialog = ModuleAssignmentDialog(self.view, dialog_data, sorted(known_modules))
+        dialog = ModuleAssignmentDialog(self.view, dialog_data, sorted(known_modules), module_code_map)
         self.view.wait_window(dialog)
 
         if dialog.result:
-            # Обновляем module_hint у соответствующих блоков
             for block_info in self.block_manager.get_all_blocks():
                 if block_info.block_id in dialog.result:
                     block_info.module_hint = dialog.result[block_info.block_id]
@@ -476,7 +509,7 @@ class CodeStructureController:
                 return v
         return None
 
-    # ---------- Построение отображаемого дерева (итерация 9) ----------
+    # ---------- Построение отображаемого дерева ----------
 
     def _build_display_tree(self):
         """
@@ -514,29 +547,46 @@ class CodeStructureController:
         }
 
         if container.node_type == 'module':
-            # У модуля нет сигнатуры и источников, просто добавляем детей
             for child in container.children:
                 node['children'].append(self._container_to_display_node(child))
         elif container.node_type == 'class':
-            # У класса может быть сигнатура (базовые классы), но в контейнере её нет,
-            # можно взять из первой версии? Класс не хранит сигнатуру, оставим пустым.
             for child in container.children:
                 node['children'].append(self._container_to_display_node(child))
         elif container.node_type in ('function', 'method', 'code_block'):
-            # Для этих типов показываем версии как дочерние узлы
             for i, version in enumerate(container.versions):
-                # Формируем имя версии: "Версия {i+1} (источники)"
-                sources_str = ', '.join(src[0] for src in version.sources)  # block_id
+                sources_str = ', '.join(src[0] for src in version.sources)
                 version_node = {
                     'text': f"Версия {i+1} ({sources_str})",
                     'type': 'version',
                     'signature': version.node.signature,
                     'sources': sources_str,
-                    'children': []  # у версии нет детей
+                    'children': [],
+                    '_version_data': version  # сохраняем ссылку на объект Version
                 }
                 node['children'].append(version_node)
         else:
-            # На всякий случай, игнорируем
             pass
 
         return node
+
+    def on_merged_node_selected(self, node_data: Dict[str, Any]):
+        """Обработчик выбора узла в сводном дереве."""
+        if node_data['type'] == 'version':
+            # Для версии показываем код из первого источника
+            version_data = node_data.get('_version_data')
+            if version_data and version_data.sources:
+                # Получаем первый источник
+                block_id, start, end, _ = version_data.sources[0]
+                # Находим блок по block_id
+                for block_info in self.block_manager.get_all_blocks():
+                    if block_info.block_id == block_id:
+                        lines = block_info.content.splitlines()
+                        if start and end:
+                            code = '\n'.join(lines[start-1:end])
+                        else:
+                            code = block_info.content
+                        self.view.display_merged_code(code, block_info.language)
+                        return
+        elif node_data['type'] in ('class', 'module', 'root'):
+            # Для контейнеров без версии ничего не показываем
+            self.view.display_merged_code("")

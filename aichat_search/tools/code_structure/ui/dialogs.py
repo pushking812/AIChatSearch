@@ -15,17 +15,20 @@ class ModuleAssignmentDialog(tk.Toplevel):
         self,
         parent,
         unknown_blocks: List[Dict[str, Any]],  # каждый элемент: {'id': str, 'display_name': str, 'content': str}
-        known_modules: List[str]
+        known_modules: List[str],
+        module_code_map: Optional[Dict[str, str]] = None  # имя модуля -> пример кода для отображения
     ):
         super().__init__(parent)
         self.title("Назначение модулей")
-        self.geometry("1000x700")
+        self.geometry("1100x750")
+        self.minsize(1100, 750)
         self.transient(parent)
         self.grab_set()
 
         self.unknown_blocks = unknown_blocks
         self.known_modules = sorted(known_modules)
         self.has_modules = bool(self.known_modules)
+        self.module_code_map = module_code_map or {}
         self.assignments: Dict[str, str] = {}
         self.changed = False
         self.result = None
@@ -46,19 +49,37 @@ class ModuleAssignmentDialog(tk.Toplevel):
         self.scrollbar = ttk.Scrollbar(self, orient=tk.VERTICAL, command=self.canvas.yview)
         self.scrollable_frame = ttk.Frame(self.canvas)
 
+        self.scrollable_frame.columnconfigure(0, weight=1)
+
         self.scrollable_frame.bind(
             "<Configure>",
             lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
         )
-        self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+
+        # Привязываем внутренний фрейм к canvas и задаём тег
+        self.canvas.create_window(
+            (0, 0),
+            window=self.scrollable_frame,
+            anchor="nw",
+            tags=("inner_frame",)
+        )
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
+
+        # При изменении размера canvas обновляем ширину внутреннего фрейма
+        self.canvas.bind("<Configure>", self._on_canvas_configure)
 
         self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
+    def _on_canvas_configure(self, event):
+        """Обновляет ширину внутреннего фрейма при изменении размера canvas."""
+        self.canvas.itemconfig("inner_frame", width=event.width)
+
     def _create_widgets(self):
+        # Верхняя панель: выбор блока и модуля
         top_frame = ttk.Frame(self.scrollable_frame)
-        top_frame.pack(fill=tk.X, pady=5, padx=10)
+        top_frame.grid(row=0, column=0, sticky="ew", pady=5, padx=10)
+        top_frame.columnconfigure(1, weight=1)
 
         ttk.Label(top_frame, text="Неопределённый блок:").grid(row=0, column=0, sticky=tk.W, padx=5)
         self.block_combo = ttk.Combobox(
@@ -78,16 +99,23 @@ class ModuleAssignmentDialog(tk.Toplevel):
             width=40
         )
         self.module_combo.grid(row=1, column=1, padx=5, pady=5, sticky=tk.W)
-        self.module_combo.bind("<<ComboboxSelected>>", self._on_module_changed)
+        self.module_combo.bind("<<ComboboxSelected>>", self._on_module_selected)
 
         self.assigned_label = ttk.Label(top_frame, text="", foreground="blue")
         self.assigned_label.grid(row=1, column=2, padx=10, sticky=tk.W)
 
+        # Панель с двумя текстовыми полями
         text_frame = ttk.Frame(self.scrollable_frame)
-        text_frame.pack(fill=tk.BOTH, expand=True, pady=10, padx=10)
+        text_frame.grid(row=2, column=0, sticky="nsew", pady=10, padx=10)
+        text_frame.columnconfigure(0, weight=1)
+        text_frame.columnconfigure(1, weight=1)
+        text_frame.rowconfigure(0, weight=1)
 
+        # Левое поле (код выбранного блока)
         left_frame = ttk.LabelFrame(text_frame, text="Код выбранного блока")
-        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5)
+        left_frame.grid(row=0, column=0, sticky="nsew", padx=5)
+        left_frame.rowconfigure(0, weight=1)
+        left_frame.columnconfigure(0, weight=1)
 
         self.block_text = tk.Text(left_frame, wrap=tk.NONE, font=("Courier New", 10))
         block_scroll_y = ttk.Scrollbar(left_frame, orient=tk.VERTICAL, command=self.block_text.yview)
@@ -97,11 +125,12 @@ class ModuleAssignmentDialog(tk.Toplevel):
         self.block_text.grid(row=0, column=0, sticky="nsew")
         block_scroll_y.grid(row=0, column=1, sticky="ns")
         block_scroll_x.grid(row=1, column=0, sticky="ew")
-        left_frame.grid_rowconfigure(0, weight=1)
-        left_frame.grid_columnconfigure(0, weight=1)
 
+        # Правое поле (код выбранного модуля)
         right_frame = ttk.LabelFrame(text_frame, text="Код выбранного модуля (пример)")
-        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5)
+        right_frame.grid(row=0, column=1, sticky="nsew", padx=5)
+        right_frame.rowconfigure(0, weight=1)
+        right_frame.columnconfigure(0, weight=1)
 
         self.module_text = tk.Text(right_frame, wrap=tk.NONE, font=("Courier New", 10))
         module_scroll_y = ttk.Scrollbar(right_frame, orient=tk.VERTICAL, command=self.module_text.yview)
@@ -111,20 +140,21 @@ class ModuleAssignmentDialog(tk.Toplevel):
         self.module_text.grid(row=0, column=0, sticky="nsew")
         module_scroll_y.grid(row=0, column=1, sticky="ns")
         module_scroll_x.grid(row=1, column=0, sticky="ew")
-        right_frame.grid_rowconfigure(0, weight=1)
-        right_frame.grid_columnconfigure(0, weight=1)
 
+        # Панель для ввода нового имени модуля
         new_module_frame = ttk.Frame(self.scrollable_frame)
-        new_module_frame.pack(fill=tk.X, pady=5, padx=10)
+        new_module_frame.grid(row=3, column=0, sticky="ew", pady=5, padx=10)
+        new_module_frame.columnconfigure(1, weight=1)
 
-        ttk.Label(new_module_frame, text="Имя нового модуля (с точками):").pack(side=tk.LEFT, padx=5)
-        self.new_module_entry = ttk.Entry(new_module_frame, width=50)
-        self.new_module_entry.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+        ttk.Label(new_module_frame, text="Имя нового модуля (с точками):").grid(row=0, column=0, padx=5, sticky=tk.W)
+        self.new_module_entry = ttk.Entry(new_module_frame)
+        self.new_module_entry.grid(row=0, column=1, padx=5, sticky="ew")
         self.new_module_entry.config(state="disabled")
         self.new_module_entry.bind("<KeyRelease>", self._on_new_module_changed)
 
+        # Панель с радиокнопками выбора действия
         action_frame = ttk.LabelFrame(self.scrollable_frame, text="Действие")
-        action_frame.pack(fill=tk.X, pady=10, padx=10)
+        action_frame.grid(row=4, column=0, sticky="ew", pady=10, padx=10)
 
         self.action_var = tk.StringVar(value="assign_existing")
         ttk.Radiobutton(
@@ -142,8 +172,9 @@ class ModuleAssignmentDialog(tk.Toplevel):
             command=self._on_action_change
         ).pack(anchor=tk.W, padx=20, pady=2)
 
+        # Кнопки
         button_frame = ttk.Frame(self.scrollable_frame)
-        button_frame.pack(fill=tk.X, pady=10, padx=10)
+        button_frame.grid(row=5, column=0, sticky="ew", pady=10, padx=10)
 
         self.apply_button = ttk.Button(button_frame, text="Применить", command=self._apply, state="disabled")
         self.apply_button.pack(side=tk.LEFT, padx=5)
@@ -172,7 +203,13 @@ class ModuleAssignmentDialog(tk.Toplevel):
             self.current_block_id = self.unknown_blocks[index]['id']
             self._update_display()
 
-    def _on_module_changed(self, event=None):
+    def _on_module_selected(self, event=None):
+        selected = self.module_combo.get()
+        if selected in self.module_code_map:
+            self.module_text.delete(1.0, tk.END)
+            self.module_text.insert(1.0, self.module_code_map[selected])
+        else:
+            self.module_text.delete(1.0, tk.END)
         self._check_changes()
 
     def _on_new_module_changed(self, event=None):
@@ -198,8 +235,22 @@ class ModuleAssignmentDialog(tk.Toplevel):
         self.block_text.delete(1.0, tk.END)
         self.block_text.insert(1.0, block['content'])
 
-        self.module_text.delete(1.0, tk.END)
+        # Если есть ранее назначенный модуль, показываем его код
+        if self.current_block_id in self.assignments:
+            mod = self.assignments[self.current_block_id]
+            if mod in self.module_code_map:
+                self.module_text.delete(1.0, tk.END)
+                self.module_text.insert(1.0, self.module_code_map[mod])
+        else:
+            # Если модуль не назначен, пытаемся показать код выбранного в комбобоксе
+            selected_mod = self.module_combo.get()
+            if selected_mod and selected_mod in self.module_code_map:
+                self.module_text.delete(1.0, tk.END)
+                self.module_text.insert(1.0, self.module_code_map[selected_mod])
+            else:
+                self.module_text.delete(1.0, tk.END)
 
+        # Восстанавливаем ранее назначенный модуль, если есть
         if self.current_block_id in self.assignments:
             mod = self.assignments[self.current_block_id]
             if mod in self.known_modules:
@@ -216,6 +267,10 @@ class ModuleAssignmentDialog(tk.Toplevel):
         else:
             if self.has_modules:
                 self.module_combo.current(0)
+                selected_mod = self.module_combo.get()
+                if selected_mod in self.module_code_map:
+                    self.module_text.delete(1.0, tk.END)
+                    self.module_text.insert(1.0, self.module_code_map[selected_mod])
             else:
                 self.module_combo.set("")
             self.new_module_entry.delete(0, tk.END)
@@ -280,6 +335,8 @@ class ModuleAssignmentDialog(tk.Toplevel):
             self.current_block_index += 1
             self.current_block_id = self.unknown_blocks[self.current_block_index]['id']
             self.block_combo.current(self.current_block_index)
+            self._update_display()
+        else:
             self._update_display()
 
     def _ok(self):
