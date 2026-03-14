@@ -11,7 +11,7 @@ from aichat_search.tools.code_structure.core.module_orchestrator import ModuleOr
 from aichat_search.tools.code_structure.core.tree_builder import TreeBuilder
 
 logger = logging.getLogger(__name__)
-
+logger.setLevel(logging.INFO)
 
 class CodeStructureController:
     """Координатор работы окна структуры кода."""
@@ -199,7 +199,7 @@ class CodeStructureController:
 
         # Перевыбираем базовые блоки
         self.orchestrator._select_base_blocks()
-
+        logger.info(">>> Перед вызовом _merge_temp_modules: _rebuild_after_dialog 1")
         # Перестраиваем начальные структуры (очищаем старые)
         self.orchestrator.module_containers = {}
         self.orchestrator._build_initial_structures()
@@ -208,6 +208,7 @@ class CodeStructureController:
         self.orchestrator._merge_remaining_blocks()
 
         # Объединяем temp-модули
+        print(">>> Перед вызовом _merge_temp_modules: _rebuild_after_dialog 2")
         self.orchestrator._merge_temp_modules()
 
         # Перестраиваем и отображаем дерево

@@ -13,7 +13,7 @@ from aichat_search.tools.code_structure.core.module_resolver import ModuleResolv
 from aichat_search.tools.code_structure.core.structure_builder import StructureBuilder
 
 logger = logging.getLogger(__name__)
-
+logger.setLevel(logging.INFO)
 
 class ModuleOrchestrator:
     """
@@ -53,6 +53,7 @@ class ModuleOrchestrator:
             logger.info(f"    Функции: {list(ids.get('functions', {}).keys())}")
 
         # Шаг 2: Многопроходное определение модулей
+        logger.info(">>> Перед вызовом _merge_temp_modules: Шаг 2")
         unknown_blocks = self._resolve_modules_iteratively(blocks)
 
         # Шаг 3: Группировка по модулям
@@ -68,6 +69,7 @@ class ModuleOrchestrator:
         self._merge_remaining_blocks()
 
         # Шаг 7: Объединение temp-модулей
+        print(">>> Перед вызовом _merge_temp_modules: process_blocks")
         self._merge_temp_modules()
 
         return self.module_containers, unknown_blocks
@@ -204,45 +206,59 @@ class ModuleOrchestrator:
         logger.info("=== Объединение temp-модулей ===")
 
         module_ids = self.module_identifier.get_module_ids()
+        logger.info(f"Все модули перед объединением: {list(module_ids.keys())}")
+
         temp_modules = [m for m in module_ids.keys() if m.startswith('temp_')]
+        logger.info(f"Найдено temp-модулей: {temp_modules}")
 
         if not temp_modules:
             logger.info("Нет temp-модулей для объединения")
             return
 
+        # Выводим все реальные модули и их классы для отладки
+        real_modules = [m for m in module_ids.keys() if not m.startswith('temp_')]
+        logger.info(f"Реальные модули: {real_modules}")
+        for rm in real_modules:
+            classes = list(module_ids[rm].get('classes', {}).keys())
+            logger.info(f"  {rm}: классы {classes}")
+
         # Для каждого temp-модуля ищем соответствующий реальный модуль
         for temp_module in temp_modules:
-            # Получаем идентификаторы из temp-модуля
+            logger.info(f"Обработка temp-модуля: {temp_module}")
             temp_data = module_ids[temp_module]
 
-            # Ищем реальный модуль с таким же классом
+            # Получаем классы из temp-модуля
+            temp_classes = list(temp_data.get('classes', {}).keys())
+            logger.info(f"  Классы в temp-модуле: {temp_classes}")
+
+            # Ищем реальный модуль с такими же классами
             target_module = None
-            for class_name in temp_data.get('classes', {}).keys():
-                for real_module, real_data in module_ids.items():
-                    if real_module.startswith('temp_'):
-                        continue
-                    if class_name in real_data.get('classes', {}):
-                        target_module = real_module
-                        logger.info(f"Класс {class_name} из {temp_module} найден в {target_module}")
-                        break
-                if target_module:
+            for real_module, real_data in module_ids.items():
+                if real_module.startswith('temp_'):
+                    continue
+                real_classes = list(real_data.get('classes', {}).keys())
+                common = set(temp_classes) & set(real_classes)
+                if common:
+                    target_module = real_module
+                    logger.info(f"  Найден реальный модуль {target_module} с общими классами {common}")
                     break
 
             if not target_module:
-                logger.warning(f"Не найден реальный модуль для {temp_module}, пропускаем")
+                logger.warning(f"  Не найден реальный модуль для {temp_module}, пропускаем")
                 continue
 
             # Переносим методы из temp-модуля в реальный
             for method_key, method_list in temp_data.get('methods', {}).items():
                 for method_info in method_list:
-                    # Добавляем метод в реальный модуль
+                    # Добавляем метод в общий список методов реального модуля
                     if method_info['name'] not in self.module_identifier.module_ids[target_module]['methods']:
                         self.module_identifier.module_ids[target_module]['methods'][method_info['name']] = []
                     self.module_identifier.module_ids[target_module]['methods'][method_info['name']].append(method_info)
 
-                    # Также добавляем метод в класс
-                    if method_info['class'] in self.module_identifier.module_ids[target_module]['classes']:
-                        class_info = self.module_identifier.module_ids[target_module]['classes'][method_info['class']]
+                    # Также добавляем метод в соответствующий класс
+                    class_name = method_info['class']
+                    if class_name in self.module_identifier.module_ids[target_module]['classes']:
+                        class_info = self.module_identifier.module_ids[target_module]['classes'][class_name]
                         if 'methods' not in class_info:
                             class_info['methods'] = []
                         # Проверяем, нет ли уже такого метода
@@ -257,10 +273,10 @@ class ModuleOrchestrator:
                                 'signature': method_info['signature']
                             })
 
-            logger.info(f"Перенесены методы из {temp_module} в {target_module}")
+            logger.info(f"  Перенесены методы из {temp_module} в {target_module}")
 
         # Удаляем temp-модули
         for temp_module in temp_modules:
             if temp_module in self.module_identifier.module_ids:
                 del self.module_identifier.module_ids[temp_module]
-                logger.info(f"Удалён temp-модуль {temp_module}")
+                logger.info(f"  Удалён temp-модуль {temp_module}")
