@@ -4,6 +4,10 @@ from typing import Dict, Any, Set, Tuple, Optional, List
 from collections import defaultdict
 from aichat_search.tools.code_structure.models.node import Node
 from aichat_search.tools.code_structure.core.signature_utils import extract_function_signature
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class ModuleIdentifier:
     """Собирает и хранит идентификаторы модулей с сигнатурами."""
@@ -19,7 +23,7 @@ class ModuleIdentifier:
         """Рекурсивно собирает все идентификаторы из дерева узлов."""
         for child in node.children:
             if child.node_type == "class":
-                print(f"Добавляем класс {child.name} в модуль {module_name}")
+                logger.debug(f"Добавляем класс {child.name} в модуль {module_name}")
                 self._add_class(child, module_name)
                 # Собираем методы внутри класса
                 for method in child.children:
@@ -54,7 +58,7 @@ class ModuleIdentifier:
         self.module_ids[module_name]['classes'][class_node.name] = class_info
 
     def _add_method(self, method_node: Node, module_name: str, class_name: str):
-        """Добавляет метод в общий список методов."""
+        """Добавляет метод в общий список методов с проверкой дубликатов."""
         if 'methods' not in self.module_ids[module_name]:
             self.module_ids[module_name]['methods'] = {}
 
@@ -64,6 +68,12 @@ class ModuleIdentifier:
         if method_key not in self.module_ids[module_name]['methods']:
             self.module_ids[module_name]['methods'][method_key] = []
 
+        # Проверяем дубликаты по сигнатуре
+        for existing in self.module_ids[module_name]['methods'][method_key]:
+            if existing['signature'][0] == sig[0] and existing['signature'][1] == sig[1]:
+                logger.debug(f"Метод {method_key} с такой сигнатурой уже существует, пропускаем")
+                return
+
         self.module_ids[module_name]['methods'][method_key].append({
             'class': class_name,
             'name': method_node.name,
@@ -71,13 +81,19 @@ class ModuleIdentifier:
         })
 
     def _add_function(self, func_node: Node, module_name: str):
-        """Добавляет функцию верхнего уровня."""
+        """Добавляет функцию верхнего уровня с проверкой дубликатов."""
         if 'functions' not in self.module_ids[module_name]:
             self.module_ids[module_name]['functions'] = {}
 
         sig = extract_function_signature(func_node)
         if func_node.name not in self.module_ids[module_name]['functions']:
             self.module_ids[module_name]['functions'][func_node.name] = []
+
+        # Проверяем дубликаты по сигнатуре
+        for existing in self.module_ids[module_name]['functions'][func_node.name]:
+            if existing['signature'][0] == sig[0] and existing['signature'][1] == sig[1]:
+                logger.debug(f"Функция {func_node.name} с такой сигнатурой уже существует, пропускаем")
+                return
 
         self.module_ids[module_name]['functions'][func_node.name].append({
             'signature': sig
@@ -127,6 +143,19 @@ class ModuleIdentifier:
                 return module
         return None
 
+    def find_modules_by_method_name(self, method_name: str) -> List[Tuple[str, str]]:
+        """
+        Ищет все модули и классы, содержащие метод с указанным именем.
+        Возвращает список (модуль, класс)
+        """
+        results = []
+        for module, ids in self.module_ids.items():
+            for method_key, methods in ids.get('methods', {}).items():
+                for method_info in methods:
+                    if method_info['name'] == method_name:
+                        results.append((module, method_info['class']))
+        return results
+
     def get_module_ids(self) -> Dict[str, Dict[str, Any]]:
         return dict(self.module_ids)
 
@@ -136,8 +165,6 @@ class ModuleIdentifier:
     def remove_temp_modules(self):
         """Удаляет все временные модули (с префиксом temp_)."""
         to_remove = [m for m in self.module_ids.keys() if m.startswith('temp_')]
-        print(f"Удаление временных модулей: {to_remove}")  # или logger.info
+        logger.info(f"Удаление временных модулей: {to_remove}")
         for m in to_remove:
             del self.module_ids[m]
-        if to_remove:
-            logger.info(f"Удалены временные модули: {to_remove}")
