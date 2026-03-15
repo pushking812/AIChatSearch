@@ -9,9 +9,10 @@ from aichat_search.tools.code_structure.services.block_manager import BlockManag
 from aichat_search.tools.code_structure.models.block_info import MessageBlockInfo
 from aichat_search.tools.code_structure.core.module_orchestrator import ModuleOrchestrator
 from aichat_search.tools.code_structure.core.tree_builder import TreeBuilder
+from aichat_search.tools.code_structure.core.module_resolver import ModuleResolver
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+
 
 class CodeStructureController:
     """Координатор работы окна структуры кода."""
@@ -171,28 +172,57 @@ class CodeStructureController:
         self.view.wait_window(dialog)
 
         if dialog.result:
-            # Применяем назначения из диалога
+            # Сохраняем идентификаторы блоков, назначенных в диалоге
+            assigned_ids = set(dialog.result.keys())
+            
+            # Применяем назначения из диалога и сбрасываем остальные
             for block_info in self.block_manager.get_all_blocks():
-                if block_info.block_id in dialog.result:
+                if block_info.block_id in assigned_ids:
                     old_hint = block_info.module_hint
                     block_info.module_hint = dialog.result[block_info.block_id]
                     logger.info(f"Диалог: {block_info.block_id}: {old_hint} -> {block_info.module_hint}")
-
-                    # ВАЖНО: добавляем идентификаторы из этого блока в module_identifier
                     if block_info.tree and not block_info.syntax_error:
                         self.orchestrator.module_identifier.collect_from_tree(
                             block_info.tree, block_info.module_hint
                         )
+                else:
+                    # Сбрасываем все остальные назначения
+                    block_info.module_hint = None
 
-            # Перестраиваем всё с новыми назначениями
+            # Удаляем все временные модули из идентификатора
+            self.orchestrator.module_identifier.remove_temp_modules()
+
+            # Заново запускаем автоматическое разрешение для всех блоков
+            # (уже с новыми идентификаторами)
+            remaining = self._resolve_remaining_after_dialog()
+            if remaining:
+                # Если остались неопределённые, показываем диалог снова
+                self._show_module_dialog(remaining)
+            else:
+                # Все определились – перестраиваем структуры
+                self._rebuild_after_dialog()
+        else:
+            # Диалог отменён – просто перестраиваем (возможно, ничего не изменилось)
             self._rebuild_after_dialog()
+
+    def _resolve_remaining_after_dialog(self) -> List[MessageBlockInfo]:
+        """Пытается автоматически определить блоки, оставшиеся после ручного назначения."""
+        logger.info("=== Повторное автоматическое определение после диалога ===")
+        all_blocks = self.block_manager.get_all_blocks()
+        unknown = [b for b in all_blocks if not b.module_hint and b.tree and not b.syntax_error]
+        if not unknown:
+            return []
+
+        # Используем оркестратор для многопроходного разрешения
+        return self.orchestrator.resolve_blocks(unknown)
 
     def _rebuild_after_dialog(self):
         """Перестраивает структуры после диалога."""
         logger.info("=== Перестроение после диалога ===")
 
-        # Удаляем временные модули, чтобы они не мешали
+        # Удаляем временные модули
         self.orchestrator.module_identifier.remove_temp_modules()
+        print(f"Модули после удаления temp: {list(self.orchestrator.module_identifier.get_module_ids().keys())}")
 
         # Получаем все блоки
         all_blocks = self.block_manager.get_all_blocks()
@@ -209,6 +239,9 @@ class CodeStructureController:
 
         # Пересливаем остальные блоки
         self.orchestrator._merge_remaining_blocks()
+
+        # Дополнительно: объединяем возможные оставшиеся temp-модули (на всякий случай)
+        self.orchestrator._merge_temp_modules()
 
         # Перестраиваем и отображаем дерево
         self._build_and_display_tree()

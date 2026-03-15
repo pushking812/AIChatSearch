@@ -19,6 +19,7 @@ class ModuleIdentifier:
         """Рекурсивно собирает все идентификаторы из дерева узлов."""
         for child in node.children:
             if child.node_type == "class":
+                print(f"Добавляем класс {child.name} в модуль {module_name}")
                 self._add_class(child, module_name)
                 # Собираем методы внутри класса
                 for method in child.children:
@@ -135,6 +136,7 @@ class ModuleIdentifier:
     def remove_temp_modules(self):
         """Удаляет все временные модули (с префиксом temp_)."""
         to_remove = [m for m in self.module_ids.keys() if m.startswith('temp_')]
+        print(f"Удаление временных модулей: {to_remove}")  # или logger.info
         for m in to_remove:
             del self.module_ids[m]
         if to_remove:

@@ -65,6 +65,35 @@ class ModuleOrchestrator:
             logger.exception(f"КРИТИЧЕСКАЯ ОШИБКА в process_blocks: {e}")
             raise
 
+    def resolve_blocks(self, blocks: List[MessageBlockInfo]) -> List[MessageBlockInfo]:
+        """
+        Пытается определить модули для заданного списка блоков.
+        Возвращает неопределённые блоки.
+        """
+        if not blocks:
+            return []
+
+        self.module_resolver = ModuleResolver(self.module_identifier)
+        unknown = blocks.copy()
+        iteration = 1
+        while unknown:
+            logger.info(f"resolve_blocks проход #{iteration}, осталось: {len(unknown)}")
+            newly = []
+            still = []
+            for block in unknown:
+                resolved, name = self.module_resolver.resolve_block(block)
+                if resolved:
+                    block.module_hint = name
+                    self.module_identifier.collect_from_tree(block.tree, name)
+                    newly.append(block)
+                else:
+                    still.append(block)
+            if not newly:
+                break
+            unknown = still
+            iteration += 1
+        return unknown
+
     def _collect_initial_identifiers(self, blocks: List[MessageBlockInfo]):
         """Собирает идентификаторы из уже определённых модулей."""
         for block in blocks:
