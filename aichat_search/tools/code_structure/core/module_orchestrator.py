@@ -111,73 +111,68 @@ class ModuleOrchestrator:
                 self.module_identifier.collect_from_tree(block.tree, block.module_hint)
         logger.debug(f"Начальные модули: {list(self.module_identifier.get_known_modules())}")
 
-    def _resolve_modules_iteratively(self, blocks: List[MessageBlockInfo]) -> List[MessageBlockInfo]:
-        """
-        Многопроходное определение модулей с использованием улучшенного резолвера.
-        Возвращает неопределённые блоки.
-        """
-        # Собираем идентификаторы из уже определённых модулей
+    def _resolve_modules_iteratively(self, blocks):
         for block in blocks:
             if block.module_hint and block.tree and not block.syntax_error:
                 self.module_identifier.collect_from_tree(block.tree, block.module_hint)
-                logger.info(f"Собран идентификатор из блока {block.block_id} с модулем {block.module_hint}")
 
-        # Создаем резолвер
         self.module_resolver = ModuleResolver(self.module_identifier)
-
         unknown = [b for b in blocks if not b.module_hint and b.tree and not b.syntax_error]
         iteration = 1
         self.assignment_stats.clear()
         self.temp_modules.clear()
 
         while unknown:
-            logger.info(f"Проход определения модулей #{iteration}, осталось: {len(unknown)}")
-            newly_assigned = []
-            still_unknown = []
-
+            newly = []
+            still = []
             for block in unknown:
-                resolved, module_name, score = self.module_resolver.resolve_block(block)
-
+                resolved, module, score = self.module_resolver.resolve_block(block)
                 if resolved:
-                    block.module_hint = module_name
-                    self.module_identifier.collect_from_tree(block.tree, module_name)
-                    newly_assigned.append(block)
-                    self.assignment_stats[block.block_id] = (module_name, score)
-                    
-                    if score:
-                        logger.info(f"  {block.block_id} -> {module_name} (уверенность: {score.total()})")
-                    else:
-                        logger.info(f"  {block.block_id} -> {module_name}")
+                    block.module_hint = module
+                    self.module_identifier.collect_from_tree(block.tree, module)
+                    newly.append(block)
+                    self.assignment_stats[block.block_id] = (module, score)
                 else:
-                    still_unknown.append(block)
-                    if score:
-                        logger.debug(f"  {block.block_id} не определен, лучший кандидат: {score} (уверенность: {score.total()})")
-
-            if not newly_assigned:
-                logger.info("Новых назначений нет, завершаем")
+                    still.append(block)
+            if not newly:
                 break
-
-            unknown = still_unknown
+            unknown = still
             iteration += 1
 
-        # Создаем временные модули для оставшихся блоков с классами
-        still_unknown = []
         for block in unknown:
             if self._block_has_classes(block):
-                temp_module = f"temp_{block.block_id}"
-                block.module_hint = temp_module
-                self.module_identifier.collect_from_tree(block.tree, temp_module)
-                self.temp_modules.append(temp_module)
-                logger.info(f"  Создан временный модуль {temp_module} для блока {block.block_id}")
-            else:
-                still_unknown.append(block)
+                temp = f"temp_{block.block_id}"
+                block.module_hint = temp
+                self.module_identifier.collect_from_tree(block.tree, temp)
+                self.temp_modules.append(temp)
+
+        if self.temp_modules:
+            unknown = [b for b in unknown if not b.module_hint]
+            iteration2 = 1
+            while unknown:
+                newly = []
+                still = []
+                for block in unknown:
+                    resolved, module, score = self.module_resolver.resolve_block(block)
+                    if resolved:
+                        block.module_hint = module
+                        self.module_identifier.collect_from_tree(block.tree, module)
+                        newly.append(block)
+                        self.assignment_stats[block.block_id] = (module, score)
+                    else:
+                        still.append(block)
+                if not newly:
+                    break
+                unknown = still
+                iteration2 += 1
+        else:
+            unknown = [b for b in unknown if not b.module_hint]
 
         logger.info(f"Определено модулей: {len(self.assignment_stats)}")
-        logger.info(f"Создано временных модулей: {len(self.temp_modules)}")
-        logger.info(f"Неопределено: {len(still_unknown)}")
+        logger.info(f"Временных модулей: {len(self.temp_modules)}")
+        logger.info(f"Неопределено: {len(unknown)}")
+        return unknown
         
-        return still_unknown
-
     def _block_has_classes(self, block: MessageBlockInfo) -> bool:
         """Проверяет, есть ли в блоке классы."""
         if not block.tree:

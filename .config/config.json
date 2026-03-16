@@ -1,15 +1,15 @@
 {
   "window_size": {
-    "width": 1415,
-    "height": 980
+    "width": 1920,
+    "height": 989
   },
   "window_position": {
-    "x": 496,
-    "y": 0
+    "x": -8,
+    "y": -8
   },
   "proportions": {
-    "main_horizontal": 0.3811213626685593,
-    "right_vertical": 0.31893004115226337
+    "main_horizontal": 0.28056426332288403,
+    "right_vertical": 0.3160040774719674
   },
   "column_widths": {
     "name": 258,
@@ -18,11 +18,11 @@
     "updated": 119
   },
   "tree_column_widths": {
-    "global_idx": 127,
-    "source": 93,
-    "chat_idx": 120,
-    "request": 251,
-    "response": 135,
-    "date": 93
+    "global_idx": 214,
+    "source": 177,
+    "chat_idx": 204,
+    "request": 334,
+    "response": 217,
+    "date": 178
   }
 }
