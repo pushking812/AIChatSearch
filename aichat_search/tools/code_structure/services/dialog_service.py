@@ -1,6 +1,6 @@
 # aichat_search/tools/code_structure/services/dialog_service.py
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Optional
 import logging
 
 from aichat_search.tools.code_structure.ui import ErrorBlockDialog, ModuleAssignmentDialog

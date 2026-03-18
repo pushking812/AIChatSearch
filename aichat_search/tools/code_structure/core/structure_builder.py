@@ -1,7 +1,7 @@
 # aichat_search/tools/code_structure/core/structure_builder.py
 
 import logging
-from typing import List, Optional
+from typing import List
 
 from aichat_search.tools.code_structure.models.node import Node
 from aichat_search.tools.code_structure.models.block_info import MessageBlockInfo
@@ -117,6 +117,6 @@ class StructureBuilder:
         self._operation_logger.log_decision(
             "get_block_order",
             {'block': block.block_id, 'order': order},
-            f"Получен порядковый номер блока"
+            "Получен порядковый номер блока"
         )
         return order

@@ -1,6 +1,6 @@
 # aichat_search/tools/code_structure/services/block_service.py
 
-from typing import List, Dict, Optional, Tuple
+from typing import List, Optional, Tuple
 import logging
 
 from aichat_search.model import Chat, MessagePair

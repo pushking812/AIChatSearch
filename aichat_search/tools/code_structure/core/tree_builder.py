@@ -3,7 +3,7 @@
 """Построение деревьев отображения из контейнеров."""
 
 import logging
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 from aichat_search.tools.code_structure.models.containers import Container, Version
 
 logger = logging.getLogger(__name__)

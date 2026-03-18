@@ -2,7 +2,7 @@
 
 import re
 import logging
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any, Optional
 
 from aichat_search.tools.code_structure.ui.dialog_interfaces import ModuleAssignmentView
 from aichat_search.tools.code_structure.core.tree_builder import TreeBuilder

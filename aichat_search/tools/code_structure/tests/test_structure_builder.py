@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 
 from aichat_search.tools.code_structure.core.structure_builder import StructureBuilder
 from aichat_search.tools.code_structure.models.node import (
-    Node, ClassNode, FunctionNode, MethodNode, CodeBlockNode
+    ClassNode, FunctionNode, MethodNode, CodeBlockNode
 )
 from aichat_search.tools.code_structure.models.block_info import MessageBlockInfo
 from aichat_search.tools.code_structure.models.containers import (
@@ -168,7 +168,7 @@ class TestStructureBuilder(unittest.TestCase):
         self.assertEqual(len(method_container.versions), 1)
         
         # Логируем результат
-        logger.info(f"✓ Создан модуль с классом Test и методом method1")
+        logger.info("✓ Создан модуль с классом Test и методом method1")
         logger.info(f"  - Container types: {[type(c).__name__ for c in module_container.children]}")
         
         # Сохраняем для отчета
@@ -204,7 +204,7 @@ class TestStructureBuilder(unittest.TestCase):
         self.assertEqual(func_container.name, "func1")
         self.assertEqual(len(func_container.versions), 1)
         
-        logger.info(f"✓ Функция func1 добавлена в модуль")
+        logger.info("✓ Функция func1 добавлена в модуль")
         logger.info(f"  - Container type: {type(func_container).__name__}")
         
         self._test2_result = {
@@ -227,7 +227,7 @@ class TestStructureBuilder(unittest.TestCase):
         block1.tree = class_node1
         
         module_container = self.builder.build_initial_structure("test_module", block1)
-        logger.info(f"  Создан начальный модуль с классом Test и method1")
+        logger.info("  Создан начальный модуль с классом Test и method1")
         
         # Теперь сливаем второй блок с новым методом
         block3 = self.block3
@@ -248,7 +248,7 @@ class TestStructureBuilder(unittest.TestCase):
         self.assertIn("method1", method_names)
         self.assertIn("method2", method_names)
         
-        logger.info(f"✓ В класс Test добавлен метод method2")
+        logger.info("✓ В класс Test добавлен метод method2")
         logger.info(f"  - Все методы: {method_names}")
         logger.info(f"  - Количество методов: {len(class_container.children)}")
         
@@ -267,7 +267,7 @@ class TestStructureBuilder(unittest.TestCase):
         # Настройка мока: для method1 возвращаем has_self=True
         def extract_side_effect(node):
             if hasattr(node, 'name') and node.name == "method1":
-                logger.info(f"  ✓ extract_function_signature для method1 возвращает has_self=True")
+                logger.info("  ✓ extract_function_signature для method1 возвращает has_self=True")
                 return (True, "def method1(self, x)")
             return (False, "")
         
@@ -281,7 +281,7 @@ class TestStructureBuilder(unittest.TestCase):
         block1 = self.block1
         block1.tree = class_node
         self.builder.merge_node_into_container(class_node, module_container, block1)
-        logger.info(f"  Создан класс Test без методов")
+        logger.info("  Создан класс Test без методов")
         
         # Добавляем функцию с self
         func_node = self._create_function_node("method1", has_self=True)
@@ -311,7 +311,7 @@ class TestStructureBuilder(unittest.TestCase):
         self.assertEqual(func_container.name, "method1")
         self.assertEqual(len(func_container.versions), 1, "У функции должна быть одна версия")
         
-        logger.info(f"✓ Функция с self осталась отдельной функцией (как и задумано)")
+        logger.info("✓ Функция с self осталась отдельной функцией (как и задумано)")
         
         self._test4_result = {
             'class_name': class_container.name,
@@ -328,7 +328,7 @@ class TestStructureBuilder(unittest.TestCase):
         # Настройка мока - для функции method1 возвращаем has_self=True
         def extract_side_effect(node):
             if hasattr(node, 'name') and node.name == "method1":
-                logger.info(f"  ✓ extract_function_signature для method1 возвращает has_self=True")
+                logger.info("  ✓ extract_function_signature для method1 возвращает has_self=True")
                 return (True, "def method1(self, x)")
             return (False, "")
         
@@ -355,7 +355,7 @@ class TestStructureBuilder(unittest.TestCase):
         self.assertIsInstance(func_container, FunctionContainer)  # Должна быть функция, а не метод
         self.assertEqual(func_container.name, "method1")
         
-        logger.info(f"✓ Функция с self без класса создана как функция")
+        logger.info("✓ Функция с self без класса создана как функция")
         logger.info(f"  - Container type: {type(func_container).__name__}")
         logger.info(f"  - Function name: {func_container.name}")
         
@@ -384,7 +384,7 @@ class TestStructureBuilder(unittest.TestCase):
         self.assertIsInstance(code_container, CodeBlockContainer)
         self.assertEqual(len(code_container.versions), 1)
         
-        logger.info(f"✓ Блок кода добавлен в модуль")
+        logger.info("✓ Блок кода добавлен в модуль")
         logger.info(f"  - Container type: {type(code_container).__name__}")
         logger.info(f"  - Versions count: {len(code_container.versions)}")
         

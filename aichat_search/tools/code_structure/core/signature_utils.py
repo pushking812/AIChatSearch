@@ -1,6 +1,6 @@
 # aichat_search/tools/code_structure/core/signature_utils.py
 
-from typing import Tuple, List, Optional, Dict
+from typing import Tuple, List, Dict
 import re
 
 

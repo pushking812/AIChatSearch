@@ -3,14 +3,12 @@
 import unittest
 import os
 import sys
-from typing import Dict, List
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../..'))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from aichat_search.services.block_parser import MessageBlock
-from aichat_search.tools.code_structure.services.block_manager import BlockManager
 from aichat_search.tools.code_structure.core.module_orchestrator import ModuleOrchestrator
 from aichat_search.tools.code_structure.models.block_info import MessageBlockInfo
 from aichat_search.tools.code_structure.parser import PythonParser

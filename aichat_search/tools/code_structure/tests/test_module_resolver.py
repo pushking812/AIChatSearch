@@ -127,7 +127,7 @@ def calculate(self, x, y):
         result = self.resolver.resolve_block(block_info)
         
         self.assertResolved(result, "calculator")
-        print(f"\n✅ Тест 1 (точное совпадение метода) пройден")
+        print("\n✅ Тест 1 (точное совпадение метода) пройден")
     
     # Тест 2: Метод с cls
     def test_2_method_with_cls(self):
@@ -143,7 +143,7 @@ def calculate(cls, x, y):
         result = self.resolver.resolve_block(block_info)
         
         self.assertResolved(result, "calculator")
-        print(f"\n✅ Тест 2 (метод с cls) пройден")
+        print("\n✅ Тест 2 (метод с cls) пройден")
     
     # Тест 3: Функция с self в теле
     def test_3_method_as_function(self):
@@ -161,7 +161,7 @@ def calculate(x, y):
         
         # Должен определить как метод из-за self в теле
         self.assertResolved(result, "calculator")
-        print(f"\n✅ Тест 3 (функция с self) пройден")
+        print("\n✅ Тест 3 (функция с self) пройден")
     
     # Тест 4: Обычная функция
     def test_4_function_match(self):
@@ -177,7 +177,7 @@ def validate(value):
         result = self.resolver.resolve_block(block_info)
         
         self.assertResolved(result, "utils")
-        print(f"\n✅ Тест 4 (обычная функция) пройден")
+        print("\n✅ Тест 4 (обычная функция) пройден")
     
     # Тест 5: Статический метод
     def test_5_static_method(self):
@@ -194,7 +194,7 @@ def validate(input_data):
         result = self.resolver.resolve_block(block_info)
         
         self.assertResolved(result, "data_processor")
-        print(f"\n✅ Тест 5 (статический метод) пройден")
+        print("\n✅ Тест 5 (статический метод) пройден")
     
     # Тест 6: Фрагмент класса
     def test_6_class_fragment(self):
@@ -213,7 +213,7 @@ class MathCalc:
         result = self.resolver.resolve_block(block_info)
         
         self.assertResolved(result, "calculator")
-        print(f"\n✅ Тест 6 (фрагмент класса) пройден")
+        print("\n✅ Тест 6 (фрагмент класса) пройден")
     
     # Тест 7: Неоднозначный случай
     def test_7_ambiguous_case(self):
@@ -229,7 +229,7 @@ def process(data):
         result = self.resolver.resolve_block(block_info)
         
         self.assertNotResolved(result)
-        print(f"\n✅ Тест 7 (неоднозначный случай) пройден")
+        print("\n✅ Тест 7 (неоднозначный случай) пройден")
     
     # Тест 8: С подсказкой через импорт
     def test_8_with_import_hint(self):
@@ -248,7 +248,7 @@ def calculate(x, y):
         
         # Должен найти utils по импорту
         self.assertResolved(result, "utils")
-        print(f"\n✅ Тест 8 (с импортом) пройден")
+        print("\n✅ Тест 8 (с импортом) пройден")
     
     # Тест 9: Частичное совпадение класса
     def test_9_partial_class_match(self):
@@ -268,7 +268,7 @@ class AdvancedMathCalc:
         
         # Должен найти calculator по частичному совпадению класса
         self.assertResolved(result, "calculator")
-        print(f"\n✅ Тест 9 (частичное совпадение класса) пройден")
+        print("\n✅ Тест 9 (частичное совпадение класса) пройден")
     
     # Тест 10: Метод с контекстом (неоднозначный)
     def test_10_method_with_context(self):
@@ -292,7 +292,7 @@ class AdvancedMathCalc:
         
         # Ситуация неоднозначная, ожидаем False
         self.assertNotResolved(result)
-        print(f"\n✅ Тест 10 (метод с контекстом) пройден (неоднозначность)")
+        print("\n✅ Тест 10 (метод с контекстом) пройден (неоднозначность)")
 
 
 class TestModuleResolverEdgeCases(unittest.TestCase):
@@ -330,7 +330,7 @@ class TestModuleResolverEdgeCases(unittest.TestCase):
         
         self.assertFalse(success)
         self.assertIsNone(module)
-        print(f"\n✅ Тест пустого блока пройден")
+        print("\n✅ Тест пустого блока пройден")
     
     def test_block_with_syntax_error(self):
         """Тест: Блок с синтаксической ошибкой."""
@@ -354,7 +354,7 @@ class TestModuleResolverEdgeCases(unittest.TestCase):
         
         self.assertFalse(success)
         self.assertIsNone(module)
-        print(f"\n✅ Тест блока с ошибкой пройден")
+        print("\n✅ Тест блока с ошибкой пройден")
     
     def test_block_with_nested_functions(self):
         """Тест: Блок с вложенными функциями."""
@@ -376,7 +376,7 @@ def outer():
         # Вложенные функции не должны определяться
         self.assertFalse(success)
         self.assertIsNone(module)
-        print(f"\n✅ Тест с вложенными функциями пройден")
+        print("\n✅ Тест с вложенными функциями пройден")
 
 
 def run_tests():
@@ -408,7 +408,7 @@ def run_tests():
     result = runner.run(suite)
     
     print("\n" + "=" * 60)
-    print(f"ИТОГИ ТЕСТИРОВАНИЯ:")
+    print("ИТОГИ ТЕСТИРОВАНИЯ:")
     print(f"  Запущено: {result.testsRun}")
     print(f"  Успешно: {result.testsRun - len(result.failures) - len(result.errors)}")
     print(f"  Ошибки: {len(result.errors)}")

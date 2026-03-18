@@ -1,7 +1,6 @@
 # aichat_search/tools/code_structure/ui/error_block_dialog.py
 
 import tkinter as tk
-from tkinter import ttk
 
 from aichat_search.tools.code_structure.ui.dialog_interfaces import ErrorBlockView
 from aichat_search.tools.code_structure.ui.error_block_presenter import ErrorBlockPresenter

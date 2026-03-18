@@ -1,6 +1,5 @@
 # aichat_search/tools/code_structure/models/node.py
 
-from ..utils.helpers import clean_code
 
 
 class Node:

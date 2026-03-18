@@ -1,7 +1,7 @@
 # aichat_search/tools/code_structure/models/identifier_models.py
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple
 
 # Тип сигнатуры: (has_self: bool, params: List[str])
 Signature = Tuple[bool, List[str]]

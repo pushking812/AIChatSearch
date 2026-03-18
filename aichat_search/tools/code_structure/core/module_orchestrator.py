@@ -4,11 +4,11 @@
 
 import logging
 import re
-from typing import List, Dict, Optional, Tuple, Any
+from typing import List, Dict, Optional, Tuple
 from collections import defaultdict
 
 from aichat_search.tools.code_structure.models.block_info import MessageBlockInfo
-from aichat_search.tools.code_structure.models.containers import Container, MethodContainer
+from aichat_search.tools.code_structure.models.containers import Container
 from aichat_search.tools.code_structure.core.module_identifier import ModuleIdentifier
 from aichat_search.tools.code_structure.core.module_resolver import ModuleResolver
 from aichat_search.tools.code_structure.core.structure_builder import StructureBuilder

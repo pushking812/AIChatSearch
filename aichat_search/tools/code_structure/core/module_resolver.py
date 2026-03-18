@@ -32,7 +32,7 @@ class ModuleResolver:
         logger.info(f"=== resolve_block для {block_info.block_id} ===")
 
         if block_info.tree is None or block_info.syntax_error:
-            logger.info(f"  Блок имеет ошибку или пустое дерево")
+            logger.info("  Блок имеет ошибку или пустое дерево")
             return False, None, None
 
         for strategy in self.strategies:
@@ -50,7 +50,7 @@ class ModuleResolver:
                 self.auto_assign[block_info.block_id] = module
                 return True, module, None
 
-        logger.info(f"  -> НЕ ОПРЕДЕЛЕН")
+        logger.info("  -> НЕ ОПРЕДЕЛЕН")
         self.need_dialog.append(block_info)
         return False, None, None
 

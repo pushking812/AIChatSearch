@@ -2,8 +2,7 @@
 """Фасады для внешних зависимостей StructureBuilder"""
 
 import logging
-from typing import Tuple, Optional, Any
-from unittest.mock import Mock
+from typing import Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +77,7 @@ class SignatureUtils:
         if hasattr(node, 'node_type'):
             if node.node_type == 'method':
                 has_self = True
-                logger.debug(f"  node_type=method, forcing has_self=True")
+                logger.debug("  node_type=method, forcing has_self=True")
         
         logger.debug(f"Extracted from node: has_self={has_self}, signature={signature}")
         return (has_self, signature)
