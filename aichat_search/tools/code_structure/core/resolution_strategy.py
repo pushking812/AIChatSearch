@@ -94,12 +94,14 @@ class MethodStrategy(ResolutionStrategy):
             else:
                 target_sig = func_sigs[name]
 
+            # Должен быть self/cls
             if not (target_sig[0] and target_sig[1] and target_sig[1][0] in ('self', 'cls')):
                 continue
 
             target_params_count = len(target_sig[1]) - 1
             candidates_for_name = set()
 
+            # Ищем кандидатов для текущего имени
             for mod_name in identifier.get_all_module_names():
                 module = identifier.get_module_info(mod_name)
                 if not module:
