@@ -1,21 +1,21 @@
 {
   "window_size": {
-    "width": 1370,
-    "height": 519
+    "width": 1594,
+    "height": 503
   },
   "window_position": {
-    "x": 552,
-    "y": 419
+    "x": 328,
+    "y": 435
   },
   "proportions": {
-    "main_horizontal": 0.16642228739002932,
-    "right_vertical": 0.4383561643835616
+    "main_horizontal": 0.3318639798488665,
+    "right_vertical": 0.4202020202020202
   },
   "column_widths": {
-    "name": 258,
-    "group": 93,
-    "msg_count": 51,
-    "updated": 119
+    "name": 250,
+    "group": 87,
+    "msg_count": 42,
+    "updated": 109
   },
   "tree_column_widths": {
     "global_idx": 54,

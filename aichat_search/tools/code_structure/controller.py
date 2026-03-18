@@ -12,6 +12,8 @@ from aichat_search.tools.code_structure.core.tree_builder import TreeBuilder
 from aichat_search.tools.code_structure.core.module_resolver import ModuleResolver
 from aichat_search.tools.code_structure.parser import PythonParser
 
+from aichat_search.tools.code_structure.ui import ErrorBlockDialog, ModuleAssignmentDialog
+
 logger = logging.getLogger(__name__)
 logging.basicConfig(
     level=logging.DEBUG,
