@@ -172,7 +172,6 @@ class ModuleIdentifier:
             target_class = target.classes[class_name]
             for method_name, method_info in class_info.methods.items():
                 if method_name in target_class.methods:
-                    # Проверяем сигнатуру
                     existing = target_class.methods[method_name]
                     if existing.signature == method_info.signature:
                         logger.debug(f"Метод {class_name}.{method_name} уже существует, пропускаем")
@@ -193,33 +192,8 @@ class ModuleIdentifier:
         logger.info(f"Модуль {temp_name} успешно объединён в {target_name}")
         return True
 
-    # ---------- Методы для обратной совместимости (временно) ----------
-    # Некоторые методы из старого API могут понадобиться, пока не обновлены все потребители.
-    # Мы их реализуем через новые методы.
+    # ---------- Методы для обратной совместимости ----------
 
     def get_known_modules(self) -> Set[str]:
         """Старый метод, возвращает множество имён модулей."""
         return self.get_all_module_names()
-
-    def get_module_ids(self) -> Dict[str, Dict]:
-        """
-        Старый метод для совместимости – возвращает словарь в старом формате.
-        Используется только в module_orchestrator._merge_temp_modules.
-        Мы его реализуем, но позже удалим.
-        """
-        result = {}
-        for mod_name, mod in self._modules.items():
-            mod_dict = {
-                'classes': {},
-                'functions': {},
-                'methods': {}
-            }
-            for class_name, cls in mod.classes.items():
-                mod_dict['classes'][class_name] = {
-                    'name': class_name,
-                    'methods': [{'name': m.name, 'signature': m.signature} for m in cls.methods.values()]
-                }
-            for func_name, func in mod.functions.items():
-                mod_dict['functions'][func_name] = [{'signature': func.signature}]
-            result[mod_name] = mod_dict
-        return result
