@@ -10,9 +10,13 @@ from aichat_search.tools.code_structure.models.block_info import MessageBlockInf
 from aichat_search.tools.code_structure.core.module_orchestrator import ModuleOrchestrator
 from aichat_search.tools.code_structure.core.tree_builder import TreeBuilder
 from aichat_search.tools.code_structure.core.module_resolver import ModuleResolver
+from aichat_search.tools.code_structure.parser import PythonParser
 
 logger = logging.getLogger(__name__)
-
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 class CodeStructureController:
     """Координатор работы окна структуры кода."""
@@ -40,6 +44,11 @@ class CodeStructureController:
         # Загрузка блоков
         self.block_manager.load_from_items(self.items)
 
+        # Проверка на наличие блоков с ошибками парсинга
+        error_blocks = [b for b in self.block_manager.get_all_blocks() if b.syntax_error]
+        if error_blocks:
+            self._handle_error_blocks(error_blocks)
+
         # Определение модулей и построение структур
         unknown_blocks = self._resolve_modules()
 
@@ -52,7 +61,28 @@ class CodeStructureController:
         # Показ диалога для неопределённых блоков
         if unknown_blocks:
             self._show_module_dialog(unknown_blocks)
-            # После диалога перестраиваем дерево (уже в _show_module_dialog)
+
+    def _handle_error_blocks(self, error_blocks: List[MessageBlockInfo]):
+        """Обрабатывает блоки с синтаксическими ошибками: предлагает пользователю исправить."""
+        from aichat_search.tools.code_structure.ui.dialogs import ErrorBlockDialog
+        parser = PythonParser()
+        for block in error_blocks:
+            dialog = ErrorBlockDialog(self.view, block)
+            self.view.wait_window(dialog)
+            if dialog.result is not None:
+                # Заменяем содержимое и перепарсиваем
+                block.content = dialog.result
+                try:
+                    tree = parser.parse(block.content)
+                    block.set_tree(tree)
+                    block.syntax_error = None
+                except Exception as e:
+                    block.set_error(e)
+                    # Если снова ошибка, можно показать сообщение, но оставим как есть
+                    self.view.show_error(f"Не удалось исправить ошибку в блоке {block.block_id}: {e}")
+            else:
+                # Пользователь пропустил блок, он останется с ошибкой
+                pass
 
     def _resolve_modules(self) -> List[MessageBlockInfo]:
         """Определяет модули для блоков. Возвращает неопределённые блоки."""
@@ -85,7 +115,6 @@ class CodeStructureController:
             self.view.destroy()
             return
 
-        # Заполняем комбобоксы
         langs = [lang.capitalize() for lang in self.block_manager.get_languages()]
         self.view.set_type_combo_values(langs)
 
@@ -93,7 +122,6 @@ class CodeStructureController:
         self._switch_language(self.current_lang)
 
     def _switch_language(self, lang: str):
-        """Переключает язык в левой панели."""
         self.current_lang = lang
         blocks = self.block_manager.get_blocks_by_lang(lang)
         block_names = self._generate_block_names(blocks)
@@ -106,7 +134,6 @@ class CodeStructureController:
         self.view.display_code("")
 
     def _generate_block_names(self, blocks: List[MessageBlockInfo]) -> List[str]:
-        """Генерирует имена блоков для комбобокса."""
         names = []
         for block in blocks:
             desc = self._get_block_description(block)
@@ -114,13 +141,11 @@ class CodeStructureController:
         return sorted(names)
 
     def _get_block_description(self, block: MessageBlockInfo) -> str:
-        """Возвращает описание блока."""
         if block.module_hint:
             return block.module_hint
         if block.tree is None or block.syntax_error:
             return "ошибка" if block.syntax_error else "блок_кода"
 
-        # Поиск первого определения
         def find_first(node):
             for child in node.children:
                 if child.node_type == "class":
@@ -139,7 +164,6 @@ class CodeStructureController:
         return find_first(block.tree) or "блок_кода"
 
     def _show_module_dialog(self, unknown_blocks: List[MessageBlockInfo]):
-        """Показывает диалог для ручного назначения модулей."""
         dialog_data = []
         for block_info in unknown_blocks:
             dialog_data.append({
@@ -167,15 +191,18 @@ class CodeStructureController:
                     break
 
         from aichat_search.tools.code_structure.ui.dialogs import ModuleAssignmentDialog
-        dialog = ModuleAssignmentDialog(self.view, dialog_data, module_info, module_code_map)
+        dialog = ModuleAssignmentDialog(
+            self.view,
+            dialog_data,
+            module_info,
+            module_code_map,
+            self.orchestrator.module_containers  # передаём контейнеры для отображения в дереве
+        )
         dialog.controller = self
         self.view.wait_window(dialog)
 
         if dialog.result:
-            # Сохраняем идентификаторы блоков, назначенных в диалоге
             assigned_ids = set(dialog.result.keys())
-            
-            # Применяем назначения из диалога и сбрасываем остальные
             for block_info in self.block_manager.get_all_blocks():
                 if block_info.block_id in assigned_ids:
                     old_hint = block_info.module_hint
@@ -186,68 +213,38 @@ class CodeStructureController:
                             block_info.tree, block_info.module_hint
                         )
                 else:
-                    # Сбрасываем все остальные назначения
                     block_info.module_hint = None
 
-            # Удаляем все временные модули из идентификатора
             self.orchestrator.module_identifier.remove_temp_modules()
-
-            # Заново запускаем автоматическое разрешение для всех блоков
-            # (уже с новыми идентификаторами)
             remaining = self._resolve_remaining_after_dialog()
             if remaining:
-                # Если остались неопределённые, показываем диалог снова
                 self._show_module_dialog(remaining)
             else:
-                # Все определились – перестраиваем структуры
                 self._rebuild_after_dialog()
         else:
-            # Диалог отменён – просто перестраиваем (возможно, ничего не изменилось)
             self._rebuild_after_dialog()
-
+            
     def _resolve_remaining_after_dialog(self) -> List[MessageBlockInfo]:
-        """Пытается автоматически определить блоки, оставшиеся после ручного назначения."""
         logger.info("=== Повторное автоматическое определение после диалога ===")
         all_blocks = self.block_manager.get_all_blocks()
         unknown = [b for b in all_blocks if not b.module_hint and b.tree and not b.syntax_error]
         if not unknown:
             return []
-
-        # Используем оркестратор для многопроходного разрешения
         return self.orchestrator.resolve_blocks(unknown)
 
     def _rebuild_after_dialog(self):
-        """Перестраивает структуры после диалога."""
         logger.info("=== Перестроение после диалога ===")
-
-        # Удаляем временные модули
         self.orchestrator.module_identifier.remove_temp_modules()
-        print(f"Модули после удаления temp: {list(self.orchestrator.module_identifier.get_module_ids().keys())}")
-
-        # Получаем все блоки
         all_blocks = self.block_manager.get_all_blocks()
-
-        # Перестраиваем группы
         self.orchestrator.module_groups = self.orchestrator._group_blocks_by_module(all_blocks)
-
-        # Перевыбираем базовые блоки
         self.orchestrator._select_base_blocks()
-
-        # Перестраиваем начальные структуры (очищаем старые)
         self.orchestrator.module_containers = {}
         self.orchestrator._build_initial_structures()
-
-        # Пересливаем остальные блоки
         self.orchestrator._merge_remaining_blocks()
-
-        # Дополнительно: объединяем возможные оставшиеся temp-модули (на всякий случай)
         self.orchestrator._merge_temp_modules()
-
-        # Перестраиваем и отображаем дерево
         self._build_and_display_tree()
 
     # ---------- Обработчики событий ----------
-
     def on_type_selected(self, event):
         idx = self.view.type_combo.current()
         langs = self.block_manager.get_languages()
@@ -263,18 +260,15 @@ class CodeStructureController:
         idx = self.view.get_selected_block_index()
         if idx < 0:
             return
-
         blocks = self.block_manager.get_blocks_by_lang(self.current_lang)
         if idx >= len(blocks):
             return
-
         selected = self.view.block_combo.get()
         block = None
         for b in blocks:
             if f"{b.block_id} – {self._get_block_description(b)}" == selected:
                 block = b
                 break
-
         if block and block.tree and not block.syntax_error:
             self.view.display_structure(block.tree)
 
@@ -282,27 +276,22 @@ class CodeStructureController:
         selected = self.view.tree.selection()
         if not selected:
             return
-
         item = selected[0]
         node = self.view.get_node_by_item(item)
         if not (node and node.lineno_start and node.lineno_end):
             return
-
         idx = self.view.get_selected_block_index()
         if idx < 0:
             return
-
         blocks = self.block_manager.get_blocks_by_lang(self.current_lang)
         if idx >= len(blocks):
             return
-
         selected_name = self.view.block_combo.get()
         block = None
         for b in blocks:
             if f"{b.block_id} – {self._get_block_description(b)}" == selected_name:
                 block = b
                 break
-
         if block:
             lines = block.content.splitlines()
             start = max(0, node.lineno_start - 1)
@@ -325,13 +314,10 @@ class CodeStructureController:
             self.view.display_merged_code("")
 
     def _reset_module_assignments(self):
-        """Сбрасывает назначения и перезапускает анализ."""
         for block in self.block_manager.get_all_blocks():
             block.module_hint = None
-
         unknown = self._resolve_modules()
         self._build_and_display_tree()
-
         if unknown:
             self._show_module_dialog(unknown)
             self._build_and_display_tree()

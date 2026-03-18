@@ -1,0 +1,71 @@
+# Фрагмент 0
+```python
+def clear(self):
+    """Удаляет все элементы из дерева."""
+    for item in self.tree.get_children():
+        self.tree.delete(item)
+```
+# Фрагмент 1
+```python
+class MessageTreePanel:
+    def __init__(self, parent, controller, on_select):
+        # ... инициализация ...
+        self.tree = ttk.Treeview(parent, ...)
+        # ...
+
+    def display_chats(self, chats):
+        # ... заполнение дерева ...
+        pass
+
+    def display_search_results(self, results):
+        # ... отображение результатов поиска ...
+        pass
+
+    def clear(self):
+        """Удаляет все элементы из дерева."""
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+```
+
+# Фрагмент 2
+```python
+def clear(self):
+    self.request_text.delete(1.0, tk.END)
+    self.response_text.delete(1.0, tk.END)
+    self.set_position_label("")
+```
+# Фрагмент 3
+```python
+def clear(self):
+    """Публичный метод для очистки дерева."""
+    self._clear()
+```
+# Фрагмент 4
+```python
+def clear(self):
+    """Публичный метод для очистки дерева."""
+    self._clear()
+```
+# Фрагмент 5
+```python
+class MessageTreePanel:
+    # ... существующий код ...
+
+    def _clear(self):
+        """Очистить дерево и карту."""
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        self.tree_item_map.clear()
+
+    def clear(self):
+        """Публичный метод для очистки дерева."""
+        self._clear()
+```
+# Фрагмент 6
+```python
+def clear(self):
+    """Очищает текстовые поля и позиционную метку."""
+    self.request_text.delete(1.0, tk.END)
+    self.response_text.delete(1.0, tk.END)
+    self.set_position_label("")
+```

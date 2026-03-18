@@ -11,15 +11,17 @@ from aichat_search.tools.code_structure.core.signature_utils import (
     extract_function_signature, compare_signatures
 )
 from aichat_search.tools.code_structure.core.module_identifier import ModuleIdentifier
-from aichat_search.tools.code_structure.core.match_score import MatchScore  # добавлен импорт
 
 logger = logging.getLogger(__name__)
 
 
 class ModuleResolver:
     """
-    Определитель модулей с учётом сигнатур и контекста.
-    При неоднозначности возвращает None.
+    Определитель модулей с чёткими приоритетами:
+    1. По классам
+    2. По методам (строго: ищем класс с методом того же имени и с self, сравниваем количество параметров)
+       Если есть несколько кандидатов – неоднозначность, блок идёт в диалог.
+    3. По функциям (без self)
     """
 
     def __init__(self, module_identifier: ModuleIdentifier):
@@ -27,26 +29,29 @@ class ModuleResolver:
         self.auto_assign: Dict[str, str] = {}
         self.need_dialog: List[MessageBlockInfo] = []
 
-    def resolve_block(self, block_info: MessageBlockInfo) -> Tuple[bool, Optional[str], Optional[MatchScore]]:
-        """
-        Возвращает (определён, имя_модуля, объект оценки). 
-        Объект оценки пока всегда None для упрощения.
-        """
+    def resolve_block(self, block_info: MessageBlockInfo) -> Tuple[bool, Optional[str], None]:
         logger.info(f"=== resolve_block для {block_info.block_id} ===")
 
         if block_info.tree is None or block_info.syntax_error:
             logger.info(f"  Блок имеет ошибку или пустое дерево")
             return False, None, None
 
+        # Извлекаем идентификаторы и сигнатуры
         classes, functions, methods = self._extract_identifiers(block_info.tree)
         func_sigs = self._get_signatures(block_info.tree, functions, 'function')
         method_sigs = self._get_signatures(block_info.tree, methods, 'method')
 
-        logger.info(f"  Классы: {classes}")
-        logger.info(f"  Функции: {functions}")
-        logger.info(f"  Методы: {methods}")
+        # Отделяем функции с self (потенциальные методы)
+        func_with_self = {name for name, sig in func_sigs.items() 
+                          if sig[0] and sig[1] and sig[1][0] in ('self', 'cls')}
+        func_without_self = functions - func_with_self
 
-        # 1. Поиск по классам
+        logger.info(f"  Классы: {classes}")
+        logger.info(f"  Методы: {methods}")
+        logger.info(f"  Функции (с self): {func_with_self}")
+        logger.info(f"  Функции (без self): {func_without_self}")
+
+        # --- Приоритет 1: поиск по классам ---
         if classes:
             module = self._find_by_classes(classes)
             if module:
@@ -54,17 +59,25 @@ class ModuleResolver:
                 self.auto_assign[block_info.block_id] = module
                 return True, module, None
 
-        # 2. Поиск по методам
-        if methods:
-            module = self._find_by_methods(methods, method_sigs, block_info.content)
-            if module:
-                logger.info(f"  -> НАЙДЕН ПО МЕТОДУ: {module}")
-                self.auto_assign[block_info.block_id] = module
-                return True, module, None
+        # --- Приоритет 2: поиск по методам (включая функции с self) ---
+        method_names = methods | func_with_self
+        if method_names:
+            module, had_candidates = self._find_by_methods_strict(method_names, method_sigs, func_sigs, block_info.content)
+            if had_candidates:
+                if module:
+                    logger.info(f"  -> НАЙДЕН ПО МЕТОДУ: {module}")
+                    self.auto_assign[block_info.block_id] = module
+                    return True, module, None
+                else:
+                    # Были кандидаты, но не один – неоднозначность
+                    logger.info(f"  -> НЕОДНОЗНАЧНО ПО МЕТОДАМ, требуется диалог")
+                    self.need_dialog.append(block_info)
+                    return False, None, None
+            # Если кандидатов не было, переходим к функциям
 
-        # 3. Поиск по функциям
-        if functions:
-            module = self._find_by_functions(functions, func_sigs, block_info.content)
+        # --- Приоритет 3: поиск по функциям (без self) ---
+        if func_without_self:
+            module = self._find_by_functions(func_without_self, func_sigs)
             if module:
                 logger.info(f"  -> НАЙДЕН ПО ФУНКЦИИ: {module}")
                 self.auto_assign[block_info.block_id] = module
@@ -74,14 +87,14 @@ class ModuleResolver:
         self.need_dialog.append(block_info)
         return False, None, None
 
-    def _extract_identifiers(self, node: Node) -> Tuple[Set[str], Set[str], Set[str]]:
+    def _extract_identifiers(self, node: Node):
         classes, functions, methods = set(), set(), set()
         for child in node.children:
             if child.node_type == "class":
                 classes.add(child.name)
-                for method in child.children:
-                    if method.node_type == "method":
-                        methods.add(method.name)
+                for m in child.children:
+                    if m.node_type == "method":
+                        methods.add(m.name)
             elif child.node_type == "function":
                 functions.add(child.name)
             elif child.node_type == "method":
@@ -118,160 +131,114 @@ class ModuleResolver:
                 return module
         return None
 
-    def _extract_called_methods(self, content: str) -> Set[str]:
+    def _extract_called_methods(self, content):
         called = set()
-        matches = re.findall(r'self\.(\w+)\s*\(', content)
-        called.update(matches)
-        matches = re.findall(r'cls\.(\w+)\s*\(', content)
-        called.update(matches)
+        called.update(re.findall(r'self\.(\w+)\s*\(', content))
+        called.update(re.findall(r'cls\.(\w+)\s*\(', content))
         return called
 
-    def _find_by_methods(self, methods: Set[str], method_sigs: Dict[str, Tuple[bool, List[str]]], content: str) -> Optional[str]:
-        has_self = 'self.' in content or 'cls.' in content
-        called_methods = self._extract_called_methods(content) if has_self else set()
+    def _find_by_methods_strict(self, method_names, method_sigs, func_sigs, content):
+        """
+        Возвращает (модуль, были_ли_кандидаты)
+        Если модуль не None – единственный кандидат.
+        Если модуль None, но были_ли_кандидаты=True – несколько кандидатов (неоднозначность).
+        Если были_ли_кандидаты=False – кандидатов нет.
+        """
+        candidate_modules = set()
+        found_any = False
 
-        candidates = []  # (module_name, score)
-
-        for method_name in methods:
-            if method_name not in method_sigs:
+        for name in method_names:
+            # Определяем сигнатуру искомого метода
+            if name in method_sigs:
+                target_sig = method_sigs[name]
+            elif name in func_sigs:
+                target_sig = func_sigs[name]
+            else:
                 continue
-            target_sig = method_sigs[method_name]
+
+            # Проверяем, что это метод с self (иначе пропускаем)
+            if not (target_sig[0] and target_sig[1] and target_sig[1][0] in ('self', 'cls')):
+                continue
+
+            target_count = len(target_sig[1]) - 1  # количество параметров без self
+            logger.debug(f"Поиск метода '{name}' в модулях. Целевая сигнатура: {target_sig}, параметров без self: {target_count}")
+
+            # Перебираем все модули и их классы через новый API
+            for module_name in self.module_identifier.get_all_module_names():
+                module = self.module_identifier.get_module_info(module_name)
+                if not module:
+                    continue
+                for class_name, class_info in module.classes.items():
+                    method_info = class_info.methods.get(name)
+                    if not method_info:
+                        continue
+                    cand_sig = method_info.signature
+
+                    # Проверяем, что метод в классе тоже имеет self
+                    if not (cand_sig[0] and cand_sig[1] and cand_sig[1][0] in ('self', 'cls')):
+                        continue
+
+                    cand_count = len(cand_sig[1]) - 1
+                    if target_count != cand_count:
+                        continue
+
+                    candidate_modules.add(module_name)
+                    found_any = True
+
+        if not found_any:
+            return None, False
+        if len(candidate_modules) == 1:
+            return next(iter(candidate_modules)), True
+        logger.info(f"Неоднозначность: найдено несколько модулей-кандидатов: {candidate_modules}")
+        return None, True
+
+    def _find_by_functions(self, func_names, func_sigs):
+        # Сначала соберём все имена методов из классов (с self), чтобы исключить их из функций
+        method_names_from_classes = set()
+        for module_name in self.module_identifier.get_all_module_names():
+            module = self.module_identifier.get_module_info(module_name)
+            if not module:
+                continue
+            for class_info in module.classes.values():
+                for method_info in class_info.methods.values():
+                    if method_info.signature[0] and method_info.signature[1] and method_info.signature[1][0] in ('self', 'cls'):
+                        method_names_from_classes.add(method_info.name)
+
+        candidates = set()
+        for name in func_names:
+            # Если это имя уже есть как метод в каком-то классе – игнорируем как функцию
+            if name in method_names_from_classes:
+                logger.debug(f"Имя {name} есть как метод в классе, пропускаем при поиске функций")
+                continue
+            if name not in func_sigs:
+                continue
+            target_sig = func_sigs[name]
             target_params = target_sig[1]
             if target_sig[0] and target_params and target_params[0] in ('self', 'cls'):
                 target_params = target_params[1:]
 
-            for module, ids in self.module_identifier.get_module_ids().items():
-                # Поиск в классах
-                for class_name, class_info in ids.get('classes', {}).items():
-                    for method_info in class_info.get('methods', []):
-                        if method_info['name'] != method_name:
-                            continue
-                        cand_sig = method_info['signature']
-                        cand_params = cand_sig[1]
-                        if cand_sig[0] and cand_params and cand_params[0] in ('self', 'cls'):
-                            cand_params = cand_params[1:]
-                        # Подсчёт совпадающих параметров
-                        matches = sum(1 for a, b in zip(target_params, cand_params) if a == b)
-                        # Добавляем кандидата только если есть хоть одно совпадение или обе сигнатуры пусты
-                        if matches == 0 and not (len(target_params) == 0 and len(cand_params) == 0):
-                            continue
-                        # Учитываем бонус за вызываемые методы
-                        bonus = 0
-                        if called_methods:
-                            class_methods = {m['name'] for m in class_info.get('methods', [])}
-                            bonus = len(called_methods & class_methods) * 2
-                        total = matches + bonus
-                        candidates.append((module, total))
+            for module_name in self.module_identifier.get_all_module_names():
+                module = self.module_identifier.get_module_info(module_name)
+                if not module:
+                    continue
+                func_info = module.functions.get(name)
+                if not func_info:
+                    continue
+                cand_sig = func_info.signature
+                cand_params = cand_sig[1]
+                if cand_sig[0] and cand_params and cand_params[0] in ('self', 'cls'):
+                    cand_params = cand_params[1:]
+                if len(target_params) == len(cand_params):
+                    candidates.add(module_name)
 
-                # Поиск в общем списке methods (методы без класса)
-                for method_key, mlist in ids.get('methods', {}).items():
-                    for method_info in mlist:
-                        if method_info['name'] != method_name:
-                            continue
-                        cand_sig = method_info['signature']
-                        cand_params = cand_sig[1]
-                        if cand_sig[0] and cand_params and cand_params[0] in ('self', 'cls'):
-                            cand_params = cand_params[1:]
-                        matches = sum(1 for a, b in zip(target_params, cand_params) if a == b)
-                        if matches == 0 and not (len(target_params) == 0 and len(cand_params) == 0):
-                            continue
-                        candidates.append((module, matches))
+        if len(candidates) == 1:
+            return next(iter(candidates))
+        return None
 
-        if not candidates:
-            return None
-
-        # Группируем по модулю и суммируем баллы
-        module_scores = defaultdict(int)
-        for module, score in candidates:
-            module_scores[module] += score
-
-        max_score = max(module_scores.values())
-        best_modules = [m for m, s in module_scores.items() if s == max_score]
-
-        if len(best_modules) == 1:
-            logger.debug(f"    Лучший кандидат по методу: {best_modules[0]} (score: {max_score})")
-            return best_modules[0]
-        else:
-            logger.debug(f"    Неоднозначно: несколько модулей с одинаковым score {max_score}: {best_modules}")
-            return None
-
-    def _find_by_functions(self, functions: Set[str], func_sigs: Dict[str, Tuple[bool, List[str]]], content: str) -> Optional[str]:
-        # Определяем, есть ли в сигнатурах self (признак метода)
-        candidates = []
-
-        for func_name in functions:
-            if func_name not in func_sigs:
-                continue
-            target_sig = func_sigs[func_name]
-            target_has_self = target_sig[0] and target_sig[1] and target_sig[1][0] in ('self', 'cls')
-            target_params = target_sig[1]
-            if target_has_self:
-                target_params = target_params[1:]
-
-            # Если целевая функция имеет self, ищем как метод
-            if target_has_self:
-                for module, ids in self.module_identifier.get_module_ids().items():
-                    # Поиск в классах
-                    for class_name, class_info in ids.get('classes', {}).items():
-                        for method_info in class_info.get('methods', []):
-                            if method_info['name'] != func_name:
-                                continue
-                            cand_sig = method_info['signature']
-                            cand_params = cand_sig[1]
-                            if cand_sig[0] and cand_params and cand_params[0] in ('self', 'cls'):
-                                cand_params = cand_params[1:]
-                            matches = sum(1 for a, b in zip(target_params, cand_params) if a == b)
-                            if matches == 0 and not (len(target_params) == 0 and len(cand_params) == 0):
-                                continue
-                            candidates.append((module, matches))
-                    # Поиск в общем списке методов
-                    for method_key, mlist in ids.get('methods', {}).items():
-                        for method_info in mlist:
-                            if method_info['name'] != func_name:
-                                continue
-                            cand_sig = method_info['signature']
-                            cand_params = cand_sig[1]
-                            if cand_sig[0] and cand_params and cand_params[0] in ('self', 'cls'):
-                                cand_params = cand_params[1:]
-                            matches = sum(1 for a, b in zip(target_params, cand_params) if a == b)
-                            if matches == 0 and not (len(target_params) == 0 and len(cand_params) == 0):
-                                continue
-                            candidates.append((module, matches))
-            else:
-                # Обычная функция – ищем среди функций
-                for module, ids in self.module_identifier.get_module_ids().items():
-                    if func_name in ids.get('functions', {}):
-                        for func_info in ids['functions'][func_name]:
-                            cand_sig = func_info['signature']
-                            cand_params = cand_sig[1]
-                            if cand_sig[0] and cand_params and cand_params[0] in ('self', 'cls'):
-                                cand_params = cand_params[1:]
-                            matches = sum(1 for a, b in zip(target_params, cand_params) if a == b)
-                            if matches == 0 and not (len(target_params) == 0 and len(cand_params) == 0):
-                                continue
-                            candidates.append((module, matches))
-
-        if not candidates:
-            return None
-
-        module_scores = defaultdict(int)
-        for module, score in candidates:
-            module_scores[module] += score
-
-        max_score = max(module_scores.values())
-        best_modules = [m for m, s in module_scores.items() if s == max_score]
-
-        if len(best_modules) == 1:
-            logger.debug(f"    Лучший кандидат по функции: {best_modules[0]} (score: {max_score})")
-            return best_modules[0]
-        else:
-            logger.debug(f"    Неоднозначно: несколько модулей с одинаковым score {max_score}: {best_modules}")
-            return None
-
-    def get_auto_assignments(self) -> Dict[str, str]:
+    def get_auto_assignments(self):
         return self.auto_assign.copy()
 
-    def get_need_dialog(self) -> List[MessageBlockInfo]:
+    def get_need_dialog(self):
         return self.need_dialog.copy()
 
     def clear_temp_data(self):

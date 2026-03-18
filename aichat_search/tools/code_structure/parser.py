@@ -1,40 +1,45 @@
 # aichat_search/tools/code_structure/parser.py
 
 import ast
+import logging
 from abc import ABC, abstractmethod
 from .models.node import ModuleNode, ClassNode, FunctionNode, MethodNode, CodeBlockNode
 
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 class CodeParser(ABC):
-    """Абстрактный базовый класс для парсеров кода."""
-
     @abstractmethod
     def parse(self, code: str) -> ModuleNode:
-        """Принимает строку кода, возвращает корневой узел модуля."""
         pass
 
 
 class PythonParser(CodeParser):
-    """Парсер для Python с использованием ast."""
-
     def parse(self, code: str) -> ModuleNode:
-        # Позволяем SyntaxError проброситься напрямую
-        tree = ast.parse(code)
-
-        # Определяем последнюю строку для модуля
-        last_line = code.count('\n') + 1
-        module_node = ModuleNode(lineno_start=1, lineno_end=last_line)
-        self._process_body(tree.body, module_node, is_class_body=False)
-        return module_node
+        try:
+            tree = ast.parse(code)
+            last_line = code.count('\n') + 1
+            module_node = ModuleNode(lineno_start=1, lineno_end=last_line)
+            self._process_body(tree.body, module_node, is_class_body=False)
+            return module_node
+        except SyntaxError as e:
+            # Синтаксическая ошибка в коде блока - это ожидаемая ситуация
+            logger.debug(f"Синтаксическая ошибка в блоке: {e}")
+            raise  # Пробрасываем дальше для обработки в block_manager
+        except Exception as e:
+            # Ошибка в самой программе - логируем с traceback
+            logger.error(f"КРИТИЧЕСКАЯ ОШИБКА В ПАРСЕРЕ: {e}", exc_info=True)
+            raise
 
     def _process_body(self, body, parent_node, is_class_body=False):
-        """Обрабатывает список элементов AST и добавляет узлы к parent_node."""
         i = 0
         n = len(body)
         while i < n:
             node = body[i]
 
-            # Определения классов
             if isinstance(node, ast.ClassDef):
                 bases = ", ".join(self._format_base(b) for b in node.bases)
                 class_node = ClassNode(node.name, bases, node.lineno, node.end_lineno)
@@ -42,7 +47,6 @@ class PythonParser(CodeParser):
                 parent_node.add_child(class_node)
                 i += 1
 
-            # Определения функций/методов
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 args_str = self._format_args(node.args, node.returns)
                 if is_class_body:
@@ -54,7 +58,6 @@ class PythonParser(CodeParser):
                 i += 1
 
             else:
-                # Группируем несколько подряд идущих не-определений
                 start = i
                 while i < n and not isinstance(body[i], (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
                     i += 1
@@ -178,8 +181,8 @@ class PythonParser(CodeParser):
             return "?"
 
 
-# Реестр доступных парсеров: ключ - строка языка (нижний регистр), значение - класс парсера
+# Реестр доступных парсеров
 PARSERS = {
     "python": PythonParser,
-    "py": PythonParser,      # синоним
+    "py": PythonParser,
 }
