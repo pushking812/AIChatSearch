@@ -2,7 +2,7 @@
 
 import logging
 import textwrap
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from .node import Node
 from ..utils.helpers import clean_code
 
@@ -20,13 +20,24 @@ class Version:
                 lines = block_content.splitlines()
                 start = max(0, node.lineno_start - 1)
                 end = min(len(lines), node.lineno_end)
-                code_fragment = '\n'.join(lines[start:end])
-                
-                dedented = textwrap.dedent(code_fragment)
-                
-                self.cleaned_content = clean_code(dedented)
-                    
-                   
+                fragment_lines = lines[start:end]
+
+                # Удаляем пустые строки в начале и конце, чтобы dedent работал корректно
+                while fragment_lines and not fragment_lines[0].strip():
+                    fragment_lines.pop(0)
+                while fragment_lines and not fragment_lines[-1].strip():
+                    fragment_lines.pop()
+
+                if not fragment_lines:
+                    # Фрагмент состоит только из пустых строк – оставляем пустую строку
+                    code_fragment = ''
+                else:
+                    code_fragment = '\n'.join(fragment_lines)
+                    dedented = textwrap.dedent(code_fragment)
+                    code_fragment = dedented
+
+                self.cleaned_content = clean_code(code_fragment)
+
             except Exception as e:
                 logger.error(f"Ошибка при создании версии для узла {node.name} (блок {block_id}): {e}", exc_info=True)
         else:

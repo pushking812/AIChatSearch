@@ -1,32 +1,26 @@
 # aichat_search/tools/code_structure/core/tree_builder.py
 
-"""Построение деревьев отображения из контейнеров."""
-
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Set
+
 from aichat_search.tools.code_structure.models.containers import Container, Version
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 class TreeBuilder:
-    """Преобразует контейнеры в деревья для отображения."""
-
     def build_display_tree(self, module_containers: Dict[str, Container]) -> Dict[str, Any]:
-        """Строит корневое дерево из контейнеров модулей."""
         if not module_containers:
             return self._empty_tree()
-
         max_version = 0
         children = []
-
         for module_name, container in module_containers.items():
             module_node = self._container_to_node(container)
             if module_node:
                 children.append(module_node)
                 if 'max_version' in module_node:
                     max_version = max(max_version, module_node['max_version'])
-
         return {
             'text': 'Все модули',
             'type': 'root',
@@ -36,8 +30,121 @@ class TreeBuilder:
             'children': children
         }
 
+    def build_display_tree_with_packages(
+        self,
+        module_containers: Dict[str, Container],
+        imported_items: Dict[str, str],
+        local_only: bool = True
+    ) -> Dict[str, Any]:
+        existing_modules = set(module_containers.keys())
+        all_names = existing_modules | set(imported_items.keys())
+
+        if local_only:
+            # Фильтрация локальных имён
+            local_names = self._get_local_names(all_names, module_containers)
+            all_names = local_names
+
+        package_tree = self._build_package_hierarchy(all_names, imported_items)
+        self._insert_module_contents(package_tree, module_containers)
+
+        children = list(package_tree.values())
+        self._flatten_children(children)
+
+        return {
+            'text': 'Все модули',
+            'type': 'root',
+            'signature': '',
+            'version': '',
+            'sources': '',
+            'children': children
+        }
+
+    def _get_local_names(self, names: Set[str], module_containers: Dict[str, Container]) -> Set[str]:
+        local_names = set()
+        # 1. Все имена модулей с кодом
+        local_names.update(module_containers.keys())
+        # 2. Все префиксы этих имён
+        for module in module_containers.keys():
+            parts = module.split('.')
+            for i in range(len(parts)):
+                prefix = '.'.join(parts[:i+1])
+                local_names.add(prefix)
+        # 3. Добавляем имена из names, которые являются префиксами локальных имён
+        for name in names:
+            if self._is_local_module(name, module_containers):
+                local_names.add(name)
+                parts = name.split('.')
+                for i in range(len(parts)):
+                    prefix = '.'.join(parts[:i+1])
+                    local_names.add(prefix)
+        return local_names
+
+    def _is_local_module(self, name: str, module_containers: Dict[str, Container]) -> bool:
+        if name in module_containers:
+            return True
+        parts = name.split('.')
+        for i in range(len(parts)):
+            parent = '.'.join(parts[:i+1])
+            if parent in module_containers:
+                return True
+        for module in module_containers.keys():
+            if module.startswith(name + '.') or module == name:
+                return True
+        return False
+
+    def _build_package_hierarchy(self, names: Set[str], types: Optional[Dict[str, str]] = None) -> Dict[str, Dict[str, Any]]:
+        root = {}
+        for name in sorted(names):
+            parts = name.split('.')
+            current = root
+            for i, part in enumerate(parts):
+                is_last = (i == len(parts) - 1)
+                if is_last and types and name in types:
+                    node_type = types[name]
+                else:
+                    node_type = 'module' if is_last else 'package'
+                if part not in current:
+                    current[part] = {
+                        'text': part,
+                        'type': node_type,
+                        'signature': '',
+                        'version': '',
+                        'sources': '',
+                        'children': {},
+                        'is_module': (node_type == 'module')
+                    }
+                current = current[part]['children']
+        return root
+
+    def _insert_module_contents(self, package_tree: Dict[str, Dict[str, Any]], module_containers: Dict[str, Container]):
+        for module_name, container in module_containers.items():
+            parts = module_name.split('.')
+            current = package_tree
+            node = None
+            for i, part in enumerate(parts):
+                if part in current:
+                    node = current[part]
+                    if i == len(parts) - 1:
+                        container_node = self._container_to_node(container)
+                        if container_node:
+                            node['children'] = container_node.get('children', [])
+                            node['signature'] = container_node.get('signature', '')
+                            node['version'] = container_node.get('version', '')
+                            node['sources'] = container_node.get('sources', '')
+                    else:
+                        current = node['children']
+                else:
+                    logger.warning(f"Узел {part} для модуля {module_name} не найден в дереве")
+                    break
+
+    def _flatten_children(self, nodes: List[Dict[str, Any]]):
+        for node in nodes:
+            if 'children' in node and isinstance(node['children'], dict):
+                children_list = list(node['children'].values())
+                node['children'] = children_list
+                self._flatten_children(children_list)
+
     def _empty_tree(self) -> Dict[str, Any]:
-        """Возвращает пустое дерево."""
         return {
             'text': 'Все модули',
             'type': 'root',
@@ -48,11 +155,8 @@ class TreeBuilder:
         }
 
     def _container_to_node(self, container: Container) -> Optional[Dict[str, Any]]:
-        """Преобразует контейнер в узел дерева."""
         try:
-            # Определяем максимальную версию
             max_version = len(container.versions) if container.versions else 0
-
             node = {
                 'text': container.name,
                 'type': container.node_type,
@@ -62,8 +166,6 @@ class TreeBuilder:
                 'children': [],
                 'max_version': max_version
             }
-
-            # Обработка дочерних элементов
             if container.node_type in ('module', 'class'):
                 child_max = 0
                 for child in container.children:
@@ -72,28 +174,20 @@ class TreeBuilder:
                         node['children'].append(child_node)
                         if 'max_version' in child_node:
                             child_max = max(child_max, child_node['max_version'])
-
-                # Обновляем версию с учётом детей
                 if child_max > max_version:
                     max_version = child_max
                     node['version'] = f"v{max_version}"
                     node['max_version'] = max_version
-
-            # Добавление версий для function/method/code_block
             elif container.node_type in ('function', 'method', 'code_block'):
                 for i, version in enumerate(container.versions):
                     node['children'].append(self._version_to_node(version, i + 1))
-
             return node
-
         except Exception as e:
             logger.error(f"Ошибка преобразования контейнера {container.name}: {e}")
             return None
 
     def _version_to_node(self, version: Version, index: int) -> Dict[str, Any]:
-        """Преобразует версию в узел дерева."""
         sources = ', '.join(src[0] for src in version.sources) if version.sources else ''
-
         return {
             'text': version.node.name,
             'type': 'version',

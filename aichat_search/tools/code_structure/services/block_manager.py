@@ -2,10 +2,12 @@
 
 import logging
 import re
-from typing import List, Dict, Tuple
-from aichat_search.services.block_parser import BlockParser
+import textwrap
+from typing import List, Dict, Optional, Tuple
+from aichat_search.services.block_parser import BlockParser, MessageBlock
 from aichat_search.model import Chat, MessagePair
 from ..parser import PARSERS
+from ..models.node import Node
 from ..models.block_info import MessageBlockInfo
 from ..utils.helpers import extract_module_hint
 
@@ -73,7 +75,9 @@ class BlockManager:
 
         parser = parser_class()
         try:
-            tree = parser.parse(block_info.content)
+            # Удаляем общий отступ у содержимого блока, чтобы избежать синтаксических ошибок
+            content = textwrap.dedent(block_info.content)
+            tree = parser.parse(content)
             block_info.set_tree(tree)
         except SyntaxError as e:
             # Ошибка в коде блока - это ожидаемо

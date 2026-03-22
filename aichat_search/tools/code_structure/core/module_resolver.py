@@ -6,24 +6,21 @@ from typing import List, Optional, Tuple, Dict
 from aichat_search.tools.code_structure.models.block_info import MessageBlockInfo
 from aichat_search.tools.code_structure.core.module_identifier import ModuleIdentifier
 from aichat_search.tools.code_structure.core.resolution_strategy import (
-    ClassStrategy, MethodStrategy, FunctionStrategy
+    ClassStrategy, MethodStrategy, FunctionStrategy, ImportStrategy
 )
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 class ModuleResolver:
-    """
-    Определитель модулей с использованием стратегий.
-    Последовательно применяет стратегии: классы, методы, функции.
-    """
-
     def __init__(self, module_identifier: ModuleIdentifier):
         self.module_identifier = module_identifier
         self.strategies = [
             ClassStrategy(),
             MethodStrategy(),
-            FunctionStrategy()
+            FunctionStrategy(),
+            ImportStrategy()  # добавлена стратегия на основе импортов
         ]
         self.auto_assign: Dict[str, str] = {}
         self.need_dialog: List[MessageBlockInfo] = []
@@ -32,11 +29,10 @@ class ModuleResolver:
         logger.info(f"=== resolve_block для {block_info.block_id} ===")
 
         if block_info.tree is None or block_info.syntax_error:
-            logger.info("  Блок имеет ошибку или пустое дерево")
+            logger.info(f"  Блок имеет ошибку или пустое дерево")
             return False, None, None
 
         for strategy in self.strategies:
-            # Сбрасываем флаг неоднозначности перед использованием
             strategy.ambiguous = False
             module = strategy.resolve(block_info, self.module_identifier)
 
@@ -50,7 +46,7 @@ class ModuleResolver:
                 self.auto_assign[block_info.block_id] = module
                 return True, module, None
 
-        logger.info("  -> НЕ ОПРЕДЕЛЕН")
+        logger.info(f"  -> НЕ ОПРЕДЕЛЕН")
         self.need_dialog.append(block_info)
         return False, None, None
 

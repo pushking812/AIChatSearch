@@ -7,41 +7,34 @@ from aichat_search.tools.code_structure.core.signature_utils import extract_func
 from aichat_search.tools.code_structure.models.identifier_models import (
     ModuleInfo, ClassInfo, MethodInfo, FunctionInfo, Signature
 )
+from aichat_search.tools.code_structure.models.import_models import ImportInfo
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 class ModuleIdentifier:
-    """
-    Собирает и хранит идентификаторы модулей с сигнатурами.
-    Использует модели ModuleInfo, ClassInfo, MethodInfo, FunctionInfo.
-    """
-
     def __init__(self):
         self._modules: Dict[str, ModuleInfo] = {}
+        self._imported: Dict[str, Dict[str, ImportInfo]] = {}  # module_name -> {fullname: ImportInfo}
 
     # ---------- Сбор данных ----------
-
     def collect_from_tree(self, node: Node, module_name: str):
-        """Рекурсивно собирает все идентификаторы из дерева узлов в указанный модуль."""
         module = self._modules.setdefault(module_name, ModuleInfo(name=module_name))
         self._collect_node(node, module)
 
     def _collect_node(self, node: Node, module: ModuleInfo):
-        """Обходит узел и добавляет информацию в модуль."""
         for child in node.children:
             if child.node_type == "class":
                 self._add_class(child, module)
             elif child.node_type == "function":
                 self._add_function(child, module)
             elif child.node_type == "method":
-                # Метод вне класса – добавляем как функцию (для совместимости)
                 self._add_method_as_function(child, module)
             else:
                 self._collect_node(child, module)
 
     def _add_class(self, class_node: Node, module: ModuleInfo):
-        """Добавляет класс и все его методы в модуль."""
         class_info = ClassInfo(name=class_node.name)
         for method_node in class_node.children:
             if method_node.node_type == "method":
@@ -51,7 +44,6 @@ class ModuleIdentifier:
                     signature=sig,
                     class_name=class_node.name
                 )
-                # Проверяем дубликат в классе
                 if method.name in class_info.methods:
                     existing = class_info.methods[method.name]
                     if existing.signature == sig:
@@ -61,10 +53,8 @@ class ModuleIdentifier:
         module.classes[class_info.name] = class_info
 
     def _add_function(self, func_node: Node, module: ModuleInfo):
-        """Добавляет функцию верхнего уровня."""
         sig = extract_function_signature(func_node)
         func = FunctionInfo(name=func_node.name, signature=sig)
-        # Проверяем дубликат
         if func.name in module.functions:
             existing = module.functions[func.name]
             if existing.signature == sig:
@@ -73,7 +63,6 @@ class ModuleIdentifier:
         module.functions[func.name] = func
 
     def _add_method_as_function(self, method_node: Node, module: ModuleInfo):
-        """Добавляет метод вне класса как функцию."""
         sig = extract_function_signature(method_node)
         func = FunctionInfo(name=method_node.name, signature=sig)
         if func.name in module.functions:
@@ -83,17 +72,48 @@ class ModuleIdentifier:
                 return
         module.functions[func.name] = func
 
-    # ---------- Методы поиска ----------
+    # ---------- Импортированные объекты ----------
+    def add_imported_item(self, module_name: str, import_info: ImportInfo):
+        if module_name not in self._imported:
+            self._imported[module_name] = {}
+        self._imported[module_name][import_info.target_fullname] = import_info
 
+    def get_imported_info(self, module_name: str) -> Optional[Dict[str, ImportInfo]]:
+        return self._imported.get(module_name)
+
+    def find_imported_class(self, class_name: str) -> Optional[str]:
+        for mod_name, imports in self._imported.items():
+            for fullname, info in imports.items():
+                if info.target_type == 'class' and fullname.endswith(f".{class_name}"):
+                    return mod_name
+        return None
+
+    def find_imported_function(self, func_name: str) -> Optional[str]:
+        for mod_name, imports in self._imported.items():
+            for fullname, info in imports.items():
+                if info.target_type == 'function' and fullname.endswith(f".{func_name}"):
+                    return mod_name
+        return None
+
+    def find_module_by_imported_name(self, name: str) -> Optional[str]:
+        """
+        Ищет модуль, который содержит импортированный объект с именем name.
+        name может быть полным (myapp.models.User) или простым (User).
+        """
+        for mod_name, imports in self._imported.items():
+            for fullname, info in imports.items():
+                if fullname == name or fullname.endswith('.' + name):
+                    return mod_name
+        return None
+
+    # ---------- Методы поиска ----------
     def find_module_for_class(self, class_name: str) -> Optional[str]:
-        """Ищет модуль, содержащий класс с указанным именем."""
         for mod_name, mod in self._modules.items():
             if class_name in mod.classes:
                 return mod_name
         return None
 
     def find_module_for_method(self, method_name: str, signature: Signature) -> Optional[str]:
-        """Ищет модуль, содержащий метод с указанным именем и сигнатурой."""
         for mod_name, mod in self._modules.items():
             for cls in mod.classes.values():
                 method = cls.methods.get(method_name)
@@ -102,7 +122,6 @@ class ModuleIdentifier:
         return None
 
     def find_module_for_method_with_class(self, method_name: str, signature: Signature, class_name: Optional[str] = None) -> Optional[str]:
-        """Ищет модуль, содержащий метод, optionally в указанном классе."""
         for mod_name, mod in self._modules.items():
             for cls_name, cls in mod.classes.items():
                 if class_name and cls_name != class_name:
@@ -113,7 +132,6 @@ class ModuleIdentifier:
         return None
 
     def find_module_for_function(self, func_name: str, signature: Signature) -> Optional[str]:
-        """Ищет модуль, содержащий функцию с указанным именем и сигнатурой."""
         for mod_name, mod in self._modules.items():
             func = mod.functions.get(func_name)
             if func and func.signature == signature:
@@ -121,51 +139,36 @@ class ModuleIdentifier:
         return None
 
     def find_modules_by_method_name(self, method_name: str) -> List[Tuple[str, str]]:
-        """
-        Ищет все модули и классы, содержащие метод с указанным именем.
-        Возвращает список (модуль, класс).
-        """
         results = []
         for mod_name, mod in self._modules.items():
-            for cls_name, cls in mod.classes.items():
+            for cls_name, cls in mod.classes.values():
                 if method_name in cls.methods:
                     results.append((mod_name, cls_name))
         return results
 
     # ---------- Доступ к данным ----------
-
     def get_module_info(self, module_name: str) -> Optional[ModuleInfo]:
-        """Возвращает информацию о модуле или None."""
         return self._modules.get(module_name)
 
     def get_all_module_names(self) -> Set[str]:
-        """Возвращает множество имён всех модулей."""
         return set(self._modules.keys())
 
     def get_temp_modules(self) -> List[str]:
-        """Возвращает список временных модулей (с префиксом 'temp_')."""
         return [name for name in self._modules if name.startswith('temp_')]
 
     def remove_temp_modules(self):
-        """Удаляет все временные модули."""
         to_remove = self.get_temp_modules()
         logger.info(f"Удаление временных модулей: {to_remove}")
         for name in to_remove:
             del self._modules[name]
 
     def merge_temp_module(self, temp_name: str, target_name: str) -> bool:
-        """
-        Переносит методы из временного модуля в целевой.
-        При совпадении имени метода и сигнатуры добавляет источник (если нужно).
-        Возвращает True в случае успеха.
-        """
         if temp_name not in self._modules or target_name not in self._modules:
             logger.error(f"Не удалось найти модули: {temp_name} -> {target_name}")
             return False
         temp = self._modules[temp_name]
         target = self._modules[target_name]
 
-        # Переносим классы (с проверкой дубликатов)
         for class_name, class_info in temp.classes.items():
             if class_name not in target.classes:
                 target.classes[class_name] = ClassInfo(name=class_name)
@@ -178,7 +181,6 @@ class ModuleIdentifier:
                         continue
                 target_class.methods[method_name] = method_info
 
-        # Переносим функции (если не конфликтуют)
         for func_name, func_info in temp.functions.items():
             if func_name in target.functions:
                 existing = target.functions[func_name]
@@ -187,13 +189,10 @@ class ModuleIdentifier:
                     continue
             target.functions[func_name] = func_info
 
-        # Удаляем временный модуль
         del self._modules[temp_name]
         logger.info(f"Модуль {temp_name} успешно объединён в {target_name}")
         return True
 
-    # ---------- Методы для обратной совместимости ----------
-
+    # ---------- Обратная совместимость ----------
     def get_known_modules(self) -> Set[str]:
-        """Старый метод, возвращает множество имён модулей."""
         return self.get_all_module_names()
