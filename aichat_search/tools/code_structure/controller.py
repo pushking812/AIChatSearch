@@ -18,20 +18,31 @@ logger.setLevel(logging.DEBUG)
 
 
 class CodeStructureController:
+    """Координатор работы окна структуры кода."""
+
     def __init__(self, parent, items: List[Tuple[Chat, MessagePair]]):
         self.parent = parent
         self.items = items
+
+        # Сервисы
         self.block_service = BlockService()
         self.module_service = ModuleService()
         self.tree_service = TreeService()
         self.dialog_service = DialogService(parent)
         self.import_service = ImportService()
+
+        # View
         self.view = CodeStructureWindow(parent)
         self.view.set_controller(self)
+
+        # Состояние
         self.current_lang: Optional[str] = None
+
+        # Запуск обработки
         self._run_analysis()
 
     def _run_analysis(self):
+        """Запускает полный цикл анализа."""
         self.block_service.load_from_items(self.items)
 
         error_blocks = self.block_service.get_error_blocks()
@@ -40,7 +51,7 @@ class CodeStructureController:
 
         all_blocks = self.block_service.get_all_blocks()
 
-        # 1. Построение дерева проекта
+        # 1. Построение дерева проекта из комментариев и импортов
         project_builder = ProjectTreeBuilder()
         project_info = project_builder.process_blocks(all_blocks)
 
@@ -60,10 +71,8 @@ class CodeStructureController:
         else:
             need_dialog = need_dialog_from_project
 
-        # 5. Перестраиваем структуру с учётом всех блоков (с hint и без)
-        #    (потому что process_blocks уже построил контейнеры для блоков без hint,
-        #     но блоки с hint не были включены в группы)
-        self._rebuild_after_dialog()  # перестраиваем, используя все блоки (они уже есть в module_identifier)
+        # 5. Перестраиваем структуру с учётом всех блоков
+        self._rebuild_after_dialog()
 
         # 6. Построение дерева отображения
         imported_items = self.import_service.get_imported_items(all_blocks)
@@ -77,7 +86,9 @@ class CodeStructureController:
             self._show_module_dialog(need_dialog)
 
     def _handle_error_blocks(self, error_blocks: List[MessageBlockInfo]):
+        """Обрабатывает блоки с синтаксическими ошибками."""
         from aichat_search.tools.code_structure.ui import ErrorBlockDialog
+
         for block in error_blocks:
             dialog = ErrorBlockDialog(self.view, block)
             self.view.wait_window(dialog)
@@ -85,6 +96,7 @@ class CodeStructureController:
                 self.block_service.fix_error_block(block, dialog.result)
 
     def _build_and_display_tree(self, imported_items: Dict[str, str]):
+        """Строит и отображает дерево с иерархией пакетов."""
         display_root = self.tree_service.build_package_tree(
             self.module_service.module_containers,
             imported_items,
@@ -95,36 +107,48 @@ class CodeStructureController:
             logger.info(f"Дерево с пакетами отображено")
 
     def _setup_interface(self):
+        """Настраивает интерфейс."""
         languages = self.block_service.get_languages()
         if not languages:
             self.view.show_error("Нет блоков с поддерживаемыми языками")
             self.view.destroy()
             return
+
         self.view.set_type_combo_values([lang.capitalize() for lang in languages])
         self.current_lang = languages[0]
         self._switch_language(self.current_lang)
 
     def _switch_language(self, lang: str):
+        """Переключает отображение на указанный язык."""
         self.current_lang = lang
         blocks = self.block_service.get_blocks_by_language(lang)
+
         block_names = []
         for block in blocks:
             desc = self.block_service.get_block_description(block)
             block_names.append(f"{block.block_id} – {desc}")
+
         self.view.set_block_combo_values(sorted(block_names))
         if block_names:
             self.view.set_current_block_index(0)
+
         self.view.clear_tree()
         self.view.display_code("")
 
     def _show_module_dialog(self, unknown_blocks: List[MessageBlockInfo]):
+        """Показывает диалог назначения модулей."""
         from aichat_search.tools.code_structure.ui import ModuleAssignmentDialog
+
         all_blocks = self.block_service.get_all_blocks()
         known_modules = self.module_service.get_known_modules()
+
+        # Подготавливаем описания блоков
         block_descriptions = {
             b.block_id: self.block_service.get_block_description(b)
             for b in all_blocks
         }
+
+        # Подготавливаем источники модулей
         module_sources = {}
         module_code_map = {}
         for module in known_modules:
@@ -132,6 +156,7 @@ class CodeStructureController:
             code = self.module_service.get_module_code(module, all_blocks)
             if code:
                 module_code_map[module] = code
+
         dialog_data = []
         for block in unknown_blocks:
             display_name = f"{block.block_id} – {block_descriptions.get(block.block_id, 'блок_кода')}"
@@ -140,9 +165,11 @@ class CodeStructureController:
                 'display_name': display_name,
                 'content': block.content
             })
+
         module_info = []
         for module in sorted(known_modules):
             module_info.append({'name': module, 'source': module_sources.get(module)})
+
         dialog = ModuleAssignmentDialog(
             self.view,
             dialog_data,
@@ -152,12 +179,14 @@ class CodeStructureController:
         )
         dialog.controller = self
         self.view.wait_window(dialog)
+
         if dialog.result:
             self._apply_dialog_result(dialog.result)
         else:
             self._rebuild_after_dialog()
 
     def _apply_dialog_result(self, assignments: Dict[str, str]):
+        """Применяет результаты диалога."""
         all_blocks = self.block_service.get_all_blocks()
         for block in all_blocks:
             if block.block_id in assignments:
@@ -172,6 +201,7 @@ class CodeStructureController:
             self._rebuild_after_dialog()
 
     def _resolve_remaining_after_dialog(self) -> List[MessageBlockInfo]:
+        """Повторно разрешает неопределённые блоки после диалога."""
         logger.info("=== Повторное автоматическое определение после диалога ===")
         all_blocks = self.block_service.get_all_blocks()
         unknown = [b for b in all_blocks if not b.module_hint and b.tree and not b.syntax_error]
@@ -181,12 +211,47 @@ class CodeStructureController:
         return new_unknown
 
     def _rebuild_after_dialog(self):
+        """Перестраивает структуру после диалога."""
         logger.info("=== Перестроение после диалога ===")
         all_blocks = self.block_service.get_all_blocks()
         self.module_service.rebuild_after_dialog(all_blocks)
         imported_items = self.import_service.get_imported_items(all_blocks)
         self._build_and_display_tree(imported_items)
 
+    def _reset_module_assignments(self):
+        """Сбрасывает все назначения модулей и запускает полный анализ заново."""
+        all_blocks = self.block_service.get_all_blocks()
+        self.module_service.reset_assignments(all_blocks)
+
+        # Построение дерева проекта
+        project_builder = ProjectTreeBuilder()
+        project_info = project_builder.process_blocks(all_blocks)
+        need_dialog_from_project = project_builder.assign_blocks_to_modules(all_blocks)
+
+        # Добавляем определения в идентификатор
+        for block in all_blocks:
+            if block.module_hint and block.tree and not block.syntax_error:
+                self.module_service.identifier.collect_from_tree(block.tree, block.module_hint)
+
+        # Обрабатываем блоки без hint
+        blocks_without_hint = [b for b in all_blocks if not b.module_hint]
+        if blocks_without_hint:
+            containers, unknown_from_orchestrator = self.module_service.process_blocks(blocks_without_hint)
+            need_dialog = need_dialog_from_project + unknown_from_orchestrator
+        else:
+            need_dialog = need_dialog_from_project
+
+        # Перестраиваем структуру
+        self._rebuild_after_dialog()
+
+        imported_items = self.import_service.get_imported_items(all_blocks)
+        self._build_and_display_tree(imported_items)
+
+        if need_dialog:
+            self._show_module_dialog(need_dialog)
+            self._build_and_display_tree(imported_items)
+
+    # ---------- Обработчики событий ----------
     def on_type_selected(self, event):
         idx = self.view.type_combo.current()
         langs = self.block_service.get_languages()
@@ -256,16 +321,3 @@ class CodeStructureController:
                         return
         else:
             self.view.display_merged_code("")
-
-    def _reset_module_assignments(self):
-        all_blocks = self.block_service.get_all_blocks()
-        self.module_service.reset_assignments(all_blocks)
-
-        containers, unknown = self.module_service.process_blocks(all_blocks)
-        imported_items = self.import_service.get_imported_items(all_blocks)
-        self._build_and_display_tree(imported_items)
-
-        if unknown:
-            self._show_module_dialog(unknown)
-            self._build_and_display_tree(imported_items)
-           
