@@ -144,7 +144,14 @@ class BaseNodeProcessor(ABC):
         return CodeBlockContainer(f"CodeBlock_{len(parent.children)}")
 
     def _create_version(self, node, block_info: MessageBlockInfo) -> Version:
-        return Version(node, block_info.block_id, block_info.global_index, block_info.content)
+        return Version(
+            node,
+            block_info.block_id,
+            block_info.global_index,
+            block_info.content,
+            timestamp=block_info.timestamp,
+            block_idx=block_info.block_idx
+        )
 
     def _has_self(self, node: FunctionNode) -> bool:
         has_self, _ = extract_function_signature(node)
@@ -159,7 +166,16 @@ class BaseNodeProcessor(ABC):
         version = self._create_version(node, block_info)
         existing = VersionComparator.find_existing(container.versions, version)
         if existing:
-            existing.add_source(block_info.block_id, node.lineno_start, node.lineno_end, block_info.global_index)
+            existing.add_source(
+                block_info.block_id,
+                node.lineno_start,
+                node.lineno_end,
+                block_info.global_index,
+                timestamp=block_info.timestamp,
+                block_idx=block_info.block_idx
+            )
+            # После обновления источника пересортировываем
+            container.versions.sort(key=lambda v: (v.max_timestamp, v.max_global_index, v.max_block_idx))
         else:
             container.add_version(version)
 

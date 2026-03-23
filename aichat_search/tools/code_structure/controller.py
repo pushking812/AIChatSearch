@@ -3,6 +3,7 @@
 import logging
 import pickle
 import os
+import textwrap
 from tkinter import messagebox
 from typing import List, Dict, Optional, Any, Tuple
 
@@ -15,6 +16,7 @@ from aichat_search.tools.code_structure.services.dialog_service import DialogSer
 from aichat_search.tools.code_structure.services.import_service import ImportService
 from aichat_search.tools.code_structure.models.block_info import MessageBlockInfo
 from aichat_search.tools.code_structure.core.project_tree_builder import ProjectTreeBuilder
+from aichat_search.tools.code_structure.models.containers import Container, Version
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -258,7 +260,6 @@ class CodeStructureController:
     def _save_structure(self):
         """Сохраняет текущую структуру проекта в файл .config/project_structure.pkl."""
         try:
-            # Нормализованный путь к .config
             config_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', '.config')
             config_dir = os.path.abspath(config_dir)
             os.makedirs(config_dir, exist_ok=True)
@@ -304,6 +305,54 @@ class CodeStructureController:
     def _create_project(self):
         """Создаёт проект на основе текущей структуры."""
         messagebox.showinfo("Создание проекта", "Функция создания проекта будет реализована в следующей версии.")
+
+    # ---------- Отображение кода для выбранного узла ----------
+    def _render_code_from_node(self, node_data: Dict[str, Any]) -> str:
+        """Рекурсивно генерирует код для узла дерева."""
+        if node_data.get('type') == 'version':
+            version = node_data.get('_version_data')
+            if version and version.sources:
+                block_id, start, end, _ = version.sources[0]
+                for block in self.block_service.get_all_blocks():
+                    if block.block_id == block_id:
+                        lines = block.content.splitlines()
+                        fragment = '\n'.join(lines[start-1:end]) if start and end else block.content
+                        return textwrap.dedent(fragment)
+        elif '_container' in node_data:
+            container = node_data['_container']
+            if container.node_type in ('method', 'function', 'code_block', 'import'):
+                latest = container.get_latest_version()
+                if latest and latest.sources:
+                    block_id, start, end, _ = latest.sources[0]
+                    for block in self.block_service.get_all_blocks():
+                        if block.block_id == block_id:
+                            lines = block.content.splitlines()
+                            fragment = '\n'.join(lines[start-1:end]) if start and end else block.content
+                            return textwrap.dedent(fragment)
+            elif container.node_type == 'class':
+                class_lines = [f"class {container.name}:"]
+                for child_node in node_data.get('children', []):
+                    child_code = self._render_code_from_node(child_node)
+                    if child_code:
+                        class_lines.extend("    " + line for line in child_code.splitlines())
+                return '\n'.join(class_lines)
+            elif container.node_type == 'module':
+                lines = []
+                for child_node in node_data.get('children', []):
+                    child_code = self._render_code_from_node(child_node)
+                    if child_code:
+                        lines.append(child_code)
+                return '\n\n'.join(lines)
+            elif container.node_type == 'package':
+                return "# Пакет (не содержит кода)"
+        return ""
+
+    def on_merged_node_selected(self, node_data: Dict[str, Any]):
+        code = self._render_code_from_node(node_data)
+        if code:
+            self.view.display_merged_code(code, "python")
+        else:
+            self.view.display_merged_code("")
 
     # ---------- Обработчики событий ----------
     def on_type_selected(self, event):
@@ -361,17 +410,7 @@ class CodeStructureController:
             end = min(len(lines), node.lineno_end)
             if start < end:
                 self.view.display_code("\n".join(lines[start:end]))
+                
+                
 
-    def on_merged_node_selected(self, node_data: Dict[str, Any]):
-        if node_data.get('type') == 'version':
-            version = node_data.get('_version_data')
-            if version and version.sources:
-                block_id, start, end, _ = version.sources[0]
-                for block in self.block_service.get_all_blocks():
-                    if block.block_id == block_id:
-                        lines = block.content.splitlines()
-                        code = '\n'.join(lines[start-1:end]) if start and end else block.content
-                        self.view.display_merged_code(code, block.language)
-                        return
-        else:
-            self.view.display_merged_code("")
+

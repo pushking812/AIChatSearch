@@ -2,7 +2,6 @@
 
 import logging
 import re
-import textwrap
 from typing import List, Dict, Optional, Tuple
 from aichat_search.services.block_parser import BlockParser, MessageBlock
 from aichat_search.model import Chat, MessagePair
@@ -12,10 +11,7 @@ from ..models.block_info import MessageBlockInfo
 from ..utils.helpers import extract_module_hint
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+
 
 class BlockManager:
     def __init__(self):
@@ -23,9 +19,16 @@ class BlockManager:
         self.blocks_by_lang: Dict[str, List[MessageBlockInfo]] = {}
 
     def load_from_items(self, items: List[Tuple[Chat, MessagePair]]) -> None:
+        def get_timestamp(pair: MessagePair) -> float:
+            if pair.response_time:
+                return pair.response_time.timestamp()
+            elif pair.request_time:
+                return pair.request_time.timestamp()
+            return 0.0
+
         sorted_items = sorted(
             items,
-            key=lambda x: (x[0].updated_at or "", x[1].index)
+            key=lambda x: (get_timestamp(x[1]), x[1].index)
         )
 
         parser = BlockParser()
@@ -45,6 +48,8 @@ class BlockManager:
                 content = block.content
                 module_hint = extract_module_hint(block)
 
+                timestamp = get_timestamp(pair)
+
                 metadata = {
                     'chat_id': chat.id,
                     'chat_title': chat.title,
@@ -59,7 +64,9 @@ class BlockManager:
                     block_id=block_id,
                     global_index=global_index,
                     module_hint=module_hint,
-                    metadata=metadata
+                    metadata=metadata,
+                    timestamp=timestamp,
+                    block_idx=block_idx
                 )
 
                 self._parse_block(block_info)
@@ -75,16 +82,12 @@ class BlockManager:
 
         parser = parser_class()
         try:
-            # Удаляем общий отступ у содержимого блока, чтобы избежать синтаксических ошибок
-            content = textwrap.dedent(block_info.content)
-            tree = parser.parse(content)
+            tree = parser.parse(block_info.content)
             block_info.set_tree(tree)
         except SyntaxError as e:
-            # Ошибка в коде блока - это ожидаемо
             logger.debug(f"Синтаксическая ошибка в блоке {block_info.block_id}: {e}")
             block_info.set_error(e)
         except Exception as e:
-            # Ошибка в самой программе - это серьёзно
             logger.error(f"КРИТИЧЕСКАЯ ОШИБКА ПРИ ПАРСИНГЕ БЛОКА {block_info.block_id}: {e}", exc_info=True)
             block_info.set_error(e)
 

@@ -8,7 +8,6 @@ from .node import Node
 class MessageBlockInfo:
     """
     Хранит всю информацию о блоке кода из сообщения.
-    Добавлено поле metadata для хранения информации о чате и паре.
     """
 
     def __init__(
@@ -19,7 +18,9 @@ class MessageBlockInfo:
         block_id: str = "",
         global_index: int = -1,
         module_hint: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        timestamp: Optional[float] = None,
+        block_idx: int = 0
     ):
         self.block = block
         self.language = language
@@ -27,14 +28,16 @@ class MessageBlockInfo:
         self.block_id = block_id
         self.global_index = global_index
         self.module_hint = module_hint
-        self.metadata = metadata or {}  # словарь для хранения информации о чате, времени и т.д.
+        self.metadata = metadata or {}
+        self.timestamp = timestamp
+        self.block_idx = block_idx
 
         # Результат парсинга
-        self.tree: Optional[Node] = None          # корневой узел (ModuleNode)
+        self.tree: Optional[Node] = None
         self.syntax_error: Optional[Exception] = None
 
         # Поле для будущих версий
-        self.cleaned_blocks: List[Tuple[int, int, str]] = []  # (start, end, cleaned_content)
+        self.cleaned_blocks: List[Tuple[int, int, str]] = []
 
     def set_tree(self, tree: Node):
         self.tree = tree

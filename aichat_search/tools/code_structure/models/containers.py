@@ -10,11 +10,13 @@ logger = logging.getLogger(__name__)
 
 
 class Version:
-    def __init__(self, node: Node, block_id: str, global_index: int, block_content: str):
+    def __init__(self, node: Node, block_id: str, global_index: int, block_content: str, timestamp: float = None, block_idx: int = 0):
         self.node = node
         self.sources = [(block_id, node.lineno_start, node.lineno_end, global_index)]
         self.min_global_index = global_index
         self.max_global_index = global_index
+        self.max_timestamp = timestamp if timestamp is not None else global_index
+        self.max_block_idx = block_idx
         self.cleaned_content = ""
 
         if node.lineno_start is not None and node.lineno_end is not None:
@@ -24,18 +26,18 @@ class Version:
                 end = min(len(lines), node.lineno_end)
                 fragment_lines = lines[start:end]
 
-                # Удаляем пустые строки в начале и конце, чтобы dedent работал корректно
+                # Удаляем пустые строки в начале и конце
                 while fragment_lines and not fragment_lines[0].strip():
                     fragment_lines.pop(0)
                 while fragment_lines and not fragment_lines[-1].strip():
                     fragment_lines.pop()
 
-                if not fragment_lines:
-                    code_fragment = ''
-                else:
+                if fragment_lines:
                     code_fragment = '\n'.join(fragment_lines)
                     dedented = textwrap.dedent(code_fragment)
                     code_fragment = dedented
+                else:
+                    code_fragment = ''
 
                 self.cleaned_content = clean_code(code_fragment)
 
@@ -44,22 +46,24 @@ class Version:
         else:
             logger.warning(f"Узел {node.name} (блок {block_id}) не имеет номеров строк")
 
-    def add_source(self, block_id: str, start: int, end: int, global_index: int):
+    def add_source(self, block_id: str, start: int, end: int, global_index: int, timestamp: float = None, block_idx: int = 0):
         self.sources.append((block_id, start, end, global_index))
         if global_index < self.min_global_index:
             self.min_global_index = global_index
         if global_index > self.max_global_index:
             self.max_global_index = global_index
+        if timestamp is not None and timestamp > self.max_timestamp:
+            self.max_timestamp = timestamp
+        if block_idx > self.max_block_idx:
+            self.max_block_idx = block_idx
 
     def get_last_source(self):
-        """Возвращает наиболее актуальный источник (последнее упоминание)."""
         if not self.sources:
             return None
-        last = max(self.sources, key=lambda s: s[3])  # s[3] = global_index
-        return last
+        return max(self.sources, key=lambda s: s[3])
 
     def __repr__(self):
-        return f"Version(sources={len(self.sources)}, min={self.min_global_index}, max={self.max_global_index})"
+        return f"Version(sources={len(self.sources)}, min={self.min_global_index}, max={self.max_global_index}, timestamp={self.max_timestamp}, block_idx={self.max_block_idx})"
 
 
 class Container:
@@ -74,7 +78,12 @@ class Container:
 
     def add_version(self, version: Version):
         self.versions.append(version)
-        self.versions.sort(key=lambda v: v.min_global_index)  # по самому раннему появлению
+        self.versions.sort(key=lambda v: (v.max_timestamp, v.max_global_index, v.max_block_idx))
+
+    def get_latest_version(self) -> Optional[Version]:
+        if not self.versions:
+            return None
+        return max(self.versions, key=lambda v: (v.max_timestamp, v.max_global_index, v.max_block_idx))
 
     def find_child_container(self, name: str, node_type: str) -> Optional['Container']:
         for child in self.children:

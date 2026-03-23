@@ -1,6 +1,7 @@
 # aichat_search/tools/code_structure/core/tree_builder.py
 
 import logging
+import textwrap
 from typing import Dict, Any, Optional, List, Set
 
 from aichat_search.tools.code_structure.models.containers import Container, Version
@@ -130,6 +131,7 @@ class TreeBuilder:
                             node['signature'] = container_node.get('signature', '')
                             node['version'] = container_node.get('version', '')
                             node['sources'] = container_node.get('sources', '')
+                            node['_container'] = container
                     else:
                         current = node['children']
                 else:
@@ -162,31 +164,24 @@ class TreeBuilder:
                 'version': '',
                 'sources': '',
                 'children': [],
-                'max_version': 0
+                'max_version': 0,
+                '_container': container
             }
 
-            if container.node_type in ('function', 'method', 'code_block'):
-                # Только для этих типов показываем версию (количество версий)
+            if container.node_type in ('function', 'method', 'code_block', 'import'):
                 max_version = len(container.versions)
                 node['version'] = f"v{max_version}" if max_version > 0 else ''
                 node['max_version'] = max_version
+                # Отладочный вывод
+                logger.debug(f"Container {container.name} versions: {[v.max_global_index for v in container.versions]}")
                 for i, version in enumerate(container.versions):
                     node['children'].append(self._version_to_node(version, i + 1))
 
             elif container.node_type in ('module', 'class'):
-                # Для классов и модулей не показываем версию
                 for child in container.children:
                     child_node = self._container_to_node(child)
                     if child_node:
                         node['children'].append(child_node)
-                        
-            elif container.node_type == 'import':
-                # Импортные блоки отображаем как обычные блоки кода, но с типом "import"
-                max_version = len(container.versions)
-                node['version'] = f"v{max_version}" if max_version > 0 else ''
-                node['max_version'] = max_version
-                for i, version in enumerate(container.versions):
-                    node['children'].append(self._version_to_node(version, i + 1))
 
             return node
 
