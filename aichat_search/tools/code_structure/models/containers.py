@@ -8,12 +8,13 @@ from ..utils.helpers import clean_code
 
 logger = logging.getLogger(__name__)
 
+
 class Version:
     def __init__(self, node: Node, block_id: str, global_index: int, block_content: str):
         self.node = node
         self.sources = [(block_id, node.lineno_start, node.lineno_end, global_index)]
-        self.min_global_index = global_index   # самый ранний источник
-        self.max_global_index = global_index   # самый поздний источник
+        self.min_global_index = global_index
+        self.max_global_index = global_index
         self.cleaned_content = ""
 
         if node.lineno_start is not None and node.lineno_end is not None:
@@ -54,7 +55,6 @@ class Version:
         """Возвращает наиболее актуальный источник (последнее упоминание)."""
         if not self.sources:
             return None
-        # sources хранятся в порядке добавления, но последний по max_global_index – не обязательно последний добавленный
         last = max(self.sources, key=lambda s: s[3])  # s[3] = global_index
         return last
 
@@ -74,8 +74,7 @@ class Container:
 
     def add_version(self, version: Version):
         self.versions.append(version)
-        # Сортировка по самому раннему источнику (старые версии в начале)
-        self.versions.sort(key=lambda v: v.min_global_index)
+        self.versions.sort(key=lambda v: v.min_global_index)  # по самому раннему появлению
 
     def find_child_container(self, name: str, node_type: str) -> Optional['Container']:
         for child in self.children:
@@ -110,3 +109,8 @@ class MethodContainer(Container):
 class CodeBlockContainer(Container):
     def __init__(self, name: str):
         super().__init__(name, "code_block")
+
+
+class ImportContainer(Container):
+    def __init__(self, name: str = "imports"):
+        super().__init__(name, "import")

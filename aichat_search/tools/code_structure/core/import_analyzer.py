@@ -1,5 +1,4 @@
-# aichat_search/tools/code_structure/core/import_analyzer.py
-
+# aichat_search/tools/code_structure/core/import_analyzer.py 
 import re
 import logging
 from typing import List, Optional, Set, Dict
@@ -148,3 +147,17 @@ def build_imported_items_by_module(blocks: List[MessageBlockInfo]) -> Dict[str, 
         if imports:
             result.setdefault(current_module, []).extend(imports)
     return result
+
+
+def is_import_block(content: str) -> bool:
+    """
+    Проверяет, состоит ли блок кода только из импортов, комментариев и пустых строк.
+    """
+    lines = content.splitlines()
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        if not line.startswith(('import ', 'from ')):
+            return False
+    return True

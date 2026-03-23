@@ -179,6 +179,14 @@ class TreeBuilder:
                     child_node = self._container_to_node(child)
                     if child_node:
                         node['children'].append(child_node)
+                        
+            elif container.node_type == 'import':
+                # Импортные блоки отображаем как обычные блоки кода, но с типом "import"
+                max_version = len(container.versions)
+                node['version'] = f"v{max_version}" if max_version > 0 else ''
+                node['max_version'] = max_version
+                for i, version in enumerate(container.versions):
+                    node['children'].append(self._version_to_node(version, i + 1))
 
             return node
 
