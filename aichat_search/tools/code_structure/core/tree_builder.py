@@ -13,14 +13,17 @@ class TreeBuilder:
     def build_display_tree(self, module_containers: Dict[str, Container]) -> Dict[str, Any]:
         if not module_containers:
             return self._empty_tree()
+
         max_version = 0
         children = []
+
         for module_name, container in module_containers.items():
             module_node = self._container_to_node(container)
             if module_node:
                 children.append(module_node)
                 if 'max_version' in module_node:
                     max_version = max(max_version, module_node['max_version'])
+
         return {
             'text': 'Все модули',
             'type': 'root',
@@ -40,7 +43,6 @@ class TreeBuilder:
         all_names = existing_modules | set(imported_items.keys())
 
         if local_only:
-            # Фильтрация локальных имён
             local_names = self._get_local_names(all_names, module_containers)
             all_names = local_names
 
@@ -61,15 +63,12 @@ class TreeBuilder:
 
     def _get_local_names(self, names: Set[str], module_containers: Dict[str, Container]) -> Set[str]:
         local_names = set()
-        # 1. Все имена модулей с кодом
         local_names.update(module_containers.keys())
-        # 2. Все префиксы этих имён
         for module in module_containers.keys():
             parts = module.split('.')
             for i in range(len(parts)):
                 prefix = '.'.join(parts[:i+1])
                 local_names.add(prefix)
-        # 3. Добавляем имена из names, которые являются префиксами локальных имён
         for name in names:
             if self._is_local_module(name, module_containers):
                 local_names.add(name)
@@ -156,38 +155,44 @@ class TreeBuilder:
 
     def _container_to_node(self, container: Container) -> Optional[Dict[str, Any]]:
         try:
-            max_version = len(container.versions) if container.versions else 0
             node = {
                 'text': container.name,
                 'type': container.node_type,
                 'signature': '',
-                'version': f"v{max_version}" if max_version > 0 else '',
+                'version': '',
                 'sources': '',
                 'children': [],
-                'max_version': max_version
+                'max_version': 0
             }
-            if container.node_type in ('module', 'class'):
-                child_max = 0
+
+            if container.node_type in ('function', 'method', 'code_block'):
+                # Только для этих типов показываем версию (количество версий)
+                max_version = len(container.versions)
+                node['version'] = f"v{max_version}" if max_version > 0 else ''
+                node['max_version'] = max_version
+                for i, version in enumerate(container.versions):
+                    node['children'].append(self._version_to_node(version, i + 1))
+
+            elif container.node_type in ('module', 'class'):
+                # Для классов и модулей не показываем версию
                 for child in container.children:
                     child_node = self._container_to_node(child)
                     if child_node:
                         node['children'].append(child_node)
-                        if 'max_version' in child_node:
-                            child_max = max(child_max, child_node['max_version'])
-                if child_max > max_version:
-                    max_version = child_max
-                    node['version'] = f"v{max_version}"
-                    node['max_version'] = max_version
-            elif container.node_type in ('function', 'method', 'code_block'):
-                for i, version in enumerate(container.versions):
-                    node['children'].append(self._version_to_node(version, i + 1))
+
             return node
+
         except Exception as e:
             logger.error(f"Ошибка преобразования контейнера {container.name}: {e}")
             return None
 
     def _version_to_node(self, version: Version, index: int) -> Dict[str, Any]:
-        sources = ', '.join(src[0] for src in version.sources) if version.sources else ''
+        last_source = version.get_last_source()
+        if last_source:
+            block_id, start, end, _ = last_source
+            sources = f"{block_id}:{start}-{end}"
+        else:
+            sources = ''
         return {
             'text': version.node.name,
             'type': 'version',

@@ -1,6 +1,9 @@
 # aichat_search/tools/code_structure/controller.py
 
 import logging
+import pickle
+import os
+from tkinter import messagebox
 from typing import List, Dict, Optional, Any, Tuple
 
 from aichat_search.model import Chat, MessagePair
@@ -250,6 +253,57 @@ class CodeStructureController:
         if need_dialog:
             self._show_module_dialog(need_dialog)
             self._build_and_display_tree(imported_items)
+
+    # ---------- Методы для сохранения/загрузки структуры и создания проекта ----------
+    def _save_structure(self):
+        """Сохраняет текущую структуру проекта в файл .config/project_structure.pkl."""
+        try:
+            # Нормализованный путь к .config
+            config_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', '.config')
+            config_dir = os.path.abspath(config_dir)
+            os.makedirs(config_dir, exist_ok=True)
+            file_path = os.path.join(config_dir, 'project_structure.pkl')
+
+            data = {
+                'module_containers': self.module_service.module_containers,
+                'imported_items': self.import_service.get_imported_items(self.block_service.get_all_blocks())
+            }
+            with open(file_path, 'wb') as f:
+                pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
+            logger.info(f"Структура сохранена в {file_path}")
+            messagebox.showinfo("Сохранение структуры", f"Структура сохранена в {file_path}")
+        except Exception as e:
+            logger.error(f"Ошибка при сохранении структуры: {e}", exc_info=True)
+            self.view.show_error(f"Не удалось сохранить структуру: {e}")
+
+    def _load_structure(self):
+        """Загружает структуру из файла .config/project_structure.pkl и восстанавливает дерево."""
+        try:
+            config_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', '.config')
+            config_dir = os.path.abspath(config_dir)
+            file_path = os.path.join(config_dir, 'project_structure.pkl')
+            if not os.path.exists(file_path):
+                messagebox.showinfo("Загрузка структуры", "Файл сохранённой структуры не найден.")
+                return
+
+            with open(file_path, 'rb') as f:
+                data = pickle.load(f)
+
+            # Восстанавливаем атрибуты
+            self.module_service.module_containers = data['module_containers']
+            imported_items = data['imported_items']
+
+            # Обновляем дерево
+            self._build_and_display_tree(imported_items)
+            logger.info(f"Структура загружена из {file_path}")
+            messagebox.showinfo("Загрузка структуры", f"Структура загружена из {file_path}")
+        except Exception as e:
+            logger.error(f"Ошибка при загрузке структуры: {e}", exc_info=True)
+            self.view.show_error(f"Не удалось загрузить структуру: {e}")
+
+    def _create_project(self):
+        """Создаёт проект на основе текущей структуры."""
+        messagebox.showinfo("Создание проекта", "Функция создания проекта будет реализована в следующей версии.")
 
     # ---------- Обработчики событий ----------
     def on_type_selected(self, event):

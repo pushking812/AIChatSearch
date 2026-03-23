@@ -36,7 +36,7 @@ class CodeStructureWindow(tk.Toplevel):
         self.module_button = ttk.Button(top_frame, text="Назначить модули", command=self._on_module_button)
         self.module_button.grid(row=0, column=4, padx=5)
 
-        # Панели управления раскрытием деревьев
+        # Панели управления раскрытием деревьев и кнопками
         control_frame = ttk.Frame(self)
         control_frame.pack(fill=tk.X, padx=5, pady=2)
 
@@ -54,6 +54,14 @@ class CodeStructureWindow(tk.Toplevel):
         self.right_level_combo.current(4)
         self.right_expand_button = ttk.Button(control_frame, text="+ / -", command=self._on_right_expand_level)
         self.right_expand_button.pack(side=tk.LEFT, padx=5)
+
+        # Кнопки для работы с проектом
+        self.save_button = ttk.Button(control_frame, text="Сохранить структуру", command=self._on_save_structure)
+        self.save_button.pack(side=tk.LEFT, padx=5)
+        self.load_button = ttk.Button(control_frame, text="Загрузить структуру", command=self._on_load_structure)
+        self.load_button.pack(side=tk.LEFT, padx=5)
+        self.create_button = ttk.Button(control_frame, text="Создать проект", command=self._on_create_project)
+        self.create_button.pack(side=tk.LEFT, padx=5)
 
         # Главный горизонтальный PanedWindow
         self.main_paned = tk.PanedWindow(self, orient=tk.HORIZONTAL, sashrelief=tk.RAISED, sashwidth=6)
@@ -117,7 +125,7 @@ class CodeStructureWindow(tk.Toplevel):
         self.merged_tree.heading("type", text="Тип")
         self.merged_tree.heading("signature", text="Сигнатура")
         self.merged_tree.heading("version", text="Версия")
-        self.merged_tree.heading("sources", text="Источники")
+        self.merged_tree.heading("sources", text="Последнее упоминание")
 
         self.merged_tree.column("#0", width=250, minwidth=150, stretch=True)
         self.merged_tree.column("type", width=80, minwidth=60, stretch=False)
@@ -156,7 +164,10 @@ class CodeStructureWindow(tk.Toplevel):
                      self.left_expand_button.winfo_reqwidth() +
                      self.right_level_combo.winfo_reqwidth() +
                      self.right_expand_button.winfo_reqwidth() +
-                     150)
+                     self.save_button.winfo_reqwidth() +
+                     self.load_button.winfo_reqwidth() +
+                     self.create_button.winfo_reqwidth() +
+                     200)
         self.minsize(min_width, 550)
 
     # ---- Обработчики для автоматического показа структуры ----
@@ -233,6 +244,19 @@ class CodeStructureWindow(tk.Toplevel):
         if self.controller:
             self.controller._reset_module_assignments()
 
+    # ---- Методы для работы с проектом (вызывают контроллер) ----
+    def _on_save_structure(self):
+        if self.controller:
+            self.controller._save_structure()
+
+    def _on_load_structure(self):
+        if self.controller:
+            self.controller._load_structure()
+
+    def _on_create_project(self):
+        if self.controller:
+            self.controller._create_project()
+
     # ---- Методы для левого дерева ----
     def clear_tree(self):
         for item in self.tree.get_children():
@@ -242,7 +266,6 @@ class CodeStructureWindow(tk.Toplevel):
     def display_structure(self, root_node):
         self.clear_tree()
         self._add_left_node("", root_node)
-        # Выделяем корневой узел
         if self.tree.get_children():
             first_item = self.tree.get_children()[0]
             self.tree.selection_set(first_item)
@@ -276,7 +299,6 @@ class CodeStructureWindow(tk.Toplevel):
     def display_merged_tree(self, root_node: Dict[str, Any]):
         self.clear_merged_tree()
         self._add_merged_node("", root_node)
-        # Выделяем корневой узел
         if self.merged_tree.get_children():
             first_item = self.merged_tree.get_children()[0]
             self.merged_tree.selection_set(first_item)

@@ -12,7 +12,8 @@ class Version:
     def __init__(self, node: Node, block_id: str, global_index: int, block_content: str):
         self.node = node
         self.sources = [(block_id, node.lineno_start, node.lineno_end, global_index)]
-        self.max_global_index = global_index
+        self.min_global_index = global_index   # самый ранний источник
+        self.max_global_index = global_index   # самый поздний источник
         self.cleaned_content = ""
 
         if node.lineno_start is not None and node.lineno_end is not None:
@@ -29,7 +30,6 @@ class Version:
                     fragment_lines.pop()
 
                 if not fragment_lines:
-                    # Фрагмент состоит только из пустых строк – оставляем пустую строку
                     code_fragment = ''
                 else:
                     code_fragment = '\n'.join(fragment_lines)
@@ -45,11 +45,21 @@ class Version:
 
     def add_source(self, block_id: str, start: int, end: int, global_index: int):
         self.sources.append((block_id, start, end, global_index))
+        if global_index < self.min_global_index:
+            self.min_global_index = global_index
         if global_index > self.max_global_index:
             self.max_global_index = global_index
 
+    def get_last_source(self):
+        """Возвращает наиболее актуальный источник (последнее упоминание)."""
+        if not self.sources:
+            return None
+        # sources хранятся в порядке добавления, но последний по max_global_index – не обязательно последний добавленный
+        last = max(self.sources, key=lambda s: s[3])  # s[3] = global_index
+        return last
+
     def __repr__(self):
-        return f"Version(sources={len(self.sources)}, max_idx={self.max_global_index})"
+        return f"Version(sources={len(self.sources)}, min={self.min_global_index}, max={self.max_global_index})"
 
 
 class Container:
@@ -64,7 +74,8 @@ class Container:
 
     def add_version(self, version: Version):
         self.versions.append(version)
-        self.versions.sort(key=lambda v: v.max_global_index, reverse=True)
+        # Сортировка по самому раннему источнику (старые версии в начале)
+        self.versions.sort(key=lambda v: v.min_global_index)
 
     def find_child_container(self, name: str, node_type: str) -> Optional['Container']:
         for child in self.children:
