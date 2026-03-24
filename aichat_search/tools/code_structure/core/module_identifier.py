@@ -16,61 +16,116 @@ logger.setLevel(logging.DEBUG)
 class ModuleIdentifier:
     def __init__(self):
         self._modules: Dict[str, ModuleInfo] = {}
-        self._imported: Dict[str, Dict[str, ImportInfo]] = {}  # module_name -> {fullname: ImportInfo}
+        self._imported: Dict[str, Dict[str, ImportInfo]] = {}
 
     # ---------- Сбор данных ----------
-    def collect_from_tree(self, node: Node, module_name: str):
+    def collect_from_tree(self, node: Node, module_name: str, class_hint: Optional[str] = None):
         module = self._modules.setdefault(module_name, ModuleInfo(name=module_name))
-        self._collect_node(node, module)
+        self._collect_node(node, module, class_hint)
 
-    def _collect_node(self, node: Node, module: ModuleInfo):
+    def _collect_node(self, node: Node, module: ModuleInfo, class_hint: Optional[str] = None):
         for child in node.children:
             if child.node_type == "class":
-                self._add_class(child, module)
+                class_name = class_hint if class_hint else child.name
+                self._add_class(child, module, class_name)
             elif child.node_type == "function":
-                self._add_function(child, module)
+                self._add_function(child, module, class_hint)
             elif child.node_type == "method":
-                self._add_method_as_function(child, module)
+                self._add_method_as_function(child, module, class_hint)
             else:
-                self._collect_node(child, module)
+                self._collect_node(child, module, class_hint)
 
-    def _add_class(self, class_node: Node, module: ModuleInfo):
-        class_info = ClassInfo(name=class_node.name)
-        for method_node in class_node.children:
-            if method_node.node_type == "method":
-                sig = extract_function_signature(method_node)
-                method = MethodInfo(
-                    name=method_node.name,
-                    signature=sig,
-                    class_name=class_node.name
-                )
-                if method.name in class_info.methods:
-                    existing = class_info.methods[method.name]
-                    if existing.signature == sig:
-                        logger.debug(f"Метод {class_node.name}.{method.name} с такой сигнатурой уже существует, пропускаем")
-                        continue
-                class_info.methods[method.name] = method
-        module.classes[class_info.name] = class_info
+    def _add_class(self, class_node: Node, module: ModuleInfo, class_name: str):
+        if class_name in module.classes:
+            existing_class = module.classes[class_name]
+            for method_node in class_node.children:
+                if method_node.node_type == "method":
+                    sig = extract_function_signature(method_node)
+                    method = MethodInfo(
+                        name=method_node.name,
+                        signature=sig,
+                        class_name=class_name
+                    )
+                    if method.name in existing_class.methods:
+                        existing_method = existing_class.methods[method.name]
+                        if existing_method.signature == sig:
+                            logger.debug(f"Метод {class_name}.{method.name} уже существует, пропускаем")
+                            continue
+                    existing_class.methods[method.name] = method
+            logger.debug(f"Обновлён существующий класс {class_name} в модуле {module.name}")
+        else:
+            class_info = ClassInfo(name=class_name)
+            for method_node in class_node.children:
+                if method_node.node_type == "method":
+                    sig = extract_function_signature(method_node)
+                    method = MethodInfo(
+                        name=method_node.name,
+                        signature=sig,
+                        class_name=class_name
+                    )
+                    class_info.methods[method.name] = method
+            module.classes[class_name] = class_info
+            logger.debug(f"Добавлен новый класс {class_name} в модуль {module.name}")
 
-    def _add_function(self, func_node: Node, module: ModuleInfo):
+    def _add_function(self, func_node: Node, module: ModuleInfo, class_hint: Optional[str] = None):
         sig = extract_function_signature(func_node)
-        func = FunctionInfo(name=func_node.name, signature=sig)
-        if func.name in module.functions:
-            existing = module.functions[func.name]
-            if existing.signature == sig:
-                logger.debug(f"Функция {func.name} с такой сигнатурой уже существует, пропускаем")
-                return
-        module.functions[func.name] = func
+        if class_hint and sig[0]:
+            class_name = class_hint
+            if class_name not in module.classes:
+                module.classes[class_name] = ClassInfo(name=class_name)
+                logger.debug(f"Создан плейсхолдер класса {class_name} для функции {func_node.name}")
+            class_info = module.classes[class_name]
+            method = MethodInfo(
+                name=func_node.name,
+                signature=sig,
+                class_name=class_name
+            )
+            if method.name in class_info.methods:
+                existing = class_info.methods[method.name]
+                if existing.signature == sig:
+                    logger.debug(f"Метод {class_name}.{method.name} уже существует, пропускаем")
+                    return
+            class_info.methods[method.name] = method
+            logger.debug(f"Добавлен метод {method.name} в класс {class_name} модуля {module.name}")
+        else:
+            func = FunctionInfo(name=func_node.name, signature=sig)
+            if func.name in module.functions:
+                existing = module.functions[func.name]
+                if existing.signature == sig:
+                    logger.debug(f"Функция {func.name} уже существует, пропускаем")
+                    return
+            module.functions[func.name] = func
+            logger.debug(f"Добавлена функция {func.name} в модуль {module.name}")
 
-    def _add_method_as_function(self, method_node: Node, module: ModuleInfo):
+    def _add_method_as_function(self, method_node: Node, module: ModuleInfo, class_hint: Optional[str] = None):
         sig = extract_function_signature(method_node)
-        func = FunctionInfo(name=method_node.name, signature=sig)
-        if func.name in module.functions:
-            existing = module.functions[func.name]
-            if existing.signature == sig:
-                logger.debug(f"Метод {method_node.name} вне класса с такой сигнатурой уже существует, пропускаем")
-                return
-        module.functions[func.name] = func
+        if class_hint:
+            class_name = class_hint
+            if class_name not in module.classes:
+                module.classes[class_name] = ClassInfo(name=class_name)
+                logger.debug(f"Создан плейсхолдер класса {class_name} для метода {method_node.name}")
+            class_info = module.classes[class_name]
+            method = MethodInfo(
+                name=method_node.name,
+                signature=sig,
+                class_name=class_name
+            )
+            if method.name in class_info.methods:
+                existing = class_info.methods[method.name]
+                if existing.signature == sig:
+                    logger.debug(f"Метод {class_name}.{method.name} уже существует, пропускаем")
+                    return
+            class_info.methods[method.name] = method
+            logger.debug(f"Добавлен метод {method.name} в класс {class_name} модуля {module.name}")
+        else:
+            func = FunctionInfo(name=method_node.name, signature=sig)
+            if func.name in module.functions:
+                existing = module.functions[func.name]
+                if existing.signature == sig:
+                    logger.debug(f"Метод {method_node.name} вне класса уже существует как функция, пропускаем")
+                    return
+            module.functions[func.name] = func
+            logger.debug(f"Добавлен метод {method_node.name} как функция в модуль {module.name}")
 
     # ---------- Импортированные объекты ----------
     def add_imported_item(self, module_name: str, import_info: ImportInfo):
@@ -85,25 +140,21 @@ class ModuleIdentifier:
         for mod_name, imports in self._imported.items():
             for fullname, info in imports.items():
                 if info.target_type == 'class' and fullname.endswith(f".{class_name}"):
-                    return mod_name
+                    return fullname.rsplit('.', 1)[0]
         return None
 
     def find_imported_function(self, func_name: str) -> Optional[str]:
         for mod_name, imports in self._imported.items():
             for fullname, info in imports.items():
                 if info.target_type == 'function' and fullname.endswith(f".{func_name}"):
-                    return mod_name
+                    return fullname.rsplit('.', 1)[0]
         return None
 
     def find_module_by_imported_name(self, name: str) -> Optional[str]:
-        """
-        Ищет модуль, который содержит импортированный объект с именем name.
-        name может быть полным (myapp.models.User) или простым (User).
-        """
         for mod_name, imports in self._imported.items():
             for fullname, info in imports.items():
                 if fullname == name or fullname.endswith('.' + name):
-                    return mod_name
+                    return fullname.rsplit('.', 1)[0]
         return None
 
     # ---------- Методы поиска ----------
@@ -192,6 +243,14 @@ class ModuleIdentifier:
         del self._modules[temp_name]
         logger.info(f"Модуль {temp_name} успешно объединён в {target_name}")
         return True
+
+    def add_class_placeholder(self, module_name: str, class_name: str):
+        if module_name not in self._modules:
+            self._modules[module_name] = ModuleInfo(name=module_name)
+        module = self._modules[module_name]
+        if class_name not in module.classes:
+            module.classes[class_name] = ClassInfo(name=class_name)
+            logger.debug(f"Добавлен плейсхолдер класса {class_name} в модуль {module_name}")
 
     # ---------- Обратная совместимость ----------
     def get_known_modules(self) -> Set[str]:

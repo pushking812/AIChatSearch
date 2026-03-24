@@ -6,11 +6,14 @@ from typing import List, Dict, Optional, Tuple, Any
 from collections import defaultdict
 
 from aichat_search.tools.code_structure.models.block_info import MessageBlockInfo
-from aichat_search.tools.code_structure.models.containers import Container, MethodContainer
+from aichat_search.tools.code_structure.models.containers import (
+    Container, MethodContainer, ClassContainer, ModuleContainer
+)
 from aichat_search.tools.code_structure.core.module_identifier import ModuleIdentifier
 from aichat_search.tools.code_structure.core.module_resolver import ModuleResolver
 from aichat_search.tools.code_structure.core.structure_builder import StructureBuilder
 from aichat_search.tools.code_structure.models.import_models import ImportInfo
+from aichat_search.tools.code_structure.core.signature_utils import extract_function_signature
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -27,27 +30,35 @@ class ModuleOrchestrator:
         self.assignment_stats: Dict[str, Tuple[str, None]] = {}
         self.temp_modules: List[str] = []
         self.error_blocks: List[MessageBlockInfo] = []
+        self.text_blocks_by_pair: Dict[str, Dict[int, str]] = {}
+        self.full_texts_by_pair: Dict[str, str] = {}
 
     def process_blocks(
         self,
         blocks: List[MessageBlockInfo],
-        imported_by_module: Optional[Dict[str, List[ImportInfo]]] = None
+        imported_by_module: Optional[Dict[str, List[ImportInfo]]] = None,
+        text_blocks_by_pair: Optional[Dict[str, Dict[int, str]]] = None,
+        full_texts_by_pair: Optional[Dict[str, str]] = None
     ) -> Tuple[Dict[str, Container], List[MessageBlockInfo]]:
         logger.info("=== process_blocks: НАЧАЛО ===")
         self._reset_state()
+        self.text_blocks_by_pair = text_blocks_by_pair or {}
+        self.full_texts_by_pair = full_texts_by_pair or {}
         valid_blocks, error_blocks = self._separate_error_blocks(blocks)
         self.error_blocks = error_blocks
         logger.info(f"Блоков с ошибками: {len(error_blocks)}")
 
         self._collect_initial_identifiers(valid_blocks)
 
-        # Добавляем импортированные объекты в идентификатор
         if imported_by_module:
             self._add_imported_identifiers(imported_by_module)
+
+        self._apply_text_hints(valid_blocks)
 
         unknown_blocks = self._resolve_modules_iteratively(valid_blocks)
         self.module_groups = self._group_blocks_by_module(valid_blocks)
         self._select_base_blocks()
+        self._create_placeholder_containers()  # создаём классы-плейсхолдеры
         self._build_initial_structures()
         self._merge_remaining_blocks()
         self._merge_temp_modules()
@@ -123,7 +134,6 @@ class ModuleOrchestrator:
 
         self.module_resolver = ModuleResolver(self.module_identifier)
 
-        # Категоризация блоков (как ранее)
         group_classes_with_hint = []
         group_imports_with_hint = []
         group_classes_only = []
@@ -229,25 +239,45 @@ class ModuleOrchestrator:
                 self.module_base_blocks[module] = base
                 logger.debug(f"Базовый блок для {module}: {base.block_id}")
 
+    def _create_placeholder_containers(self):
+        for module_name, module_info in self.module_identifier._modules.items():
+            if module_name not in self.module_containers:
+                self.module_containers[module_name] = ModuleContainer(module_name)
+            container = self.module_containers[module_name]
+            for class_name in module_info.classes.keys():
+                if not any(child.name == class_name and child.node_type == "class" for child in container.children):
+                    class_container = ClassContainer(class_name)
+                    container.add_child(class_container)
+                    logger.debug(f"Добавлен плейсхолдер класса {class_name} в модуль {module_name}")
+
     def _build_initial_structures(self):
         for module_name, base_block in self.module_base_blocks.items():
-            all_blocks = self.module_groups.get(module_name, [])
-            sorted_blocks = self._sort_blocks_for_module(all_blocks)
-            container = self.structure_builder.build_initial_structure(
-                module_name, base_block, sorted_blocks
-            )
-            self.module_containers[module_name] = container
+            container = self.module_containers.get(module_name)
+            if container is None:
+                container = ModuleContainer(module_name)
+                self.module_containers[module_name] = container
+            if base_block.tree and not base_block.syntax_error:
+                self.structure_builder.merge_node_into_container(base_block.tree, container, base_block)
 
     def _merge_remaining_blocks(self):
         for module_name, container in self.module_containers.items():
             base = self.module_base_blocks.get(module_name)
             if not base:
                 continue
+
             all_blocks = self.module_groups.get(module_name, [])
             sorted_blocks = self._sort_blocks_for_module(all_blocks)
             others = [b for b in sorted_blocks if b is not base]
+
             for block in others:
                 if block.tree and not block.syntax_error:
+                    class_hint = block.metadata.get('class_hint') if block.metadata else None
+                    if class_hint:
+                        # Убеждаемся, что класс существует
+                        if not any(child.name == class_hint and child.node_type == "class" for child in container.children):
+                            class_container = ClassContainer(class_hint)
+                            container.add_child(class_container)
+                            logger.debug(f"Создан класс {class_hint} в модуле {module_name} во время слияния")
                     try:
                         self.structure_builder.merge_node_into_container(
                             block.tree, container, block
@@ -260,11 +290,13 @@ class ModuleOrchestrator:
         temp_modules = self.module_identifier.get_temp_modules()
         if not temp_modules:
             return
+
         for temp in temp_modules:
             try:
                 temp_info = self.module_identifier.get_module_info(temp)
                 if not temp_info:
                     continue
+
                 temp_classes = set(temp_info.classes.keys())
                 target = None
                 for mod_name in self.module_identifier.get_all_module_names():
@@ -277,6 +309,7 @@ class ModuleOrchestrator:
                     if temp_classes & real_classes:
                         target = mod_name
                         break
+
                 if target:
                     self.module_identifier.merge_temp_module(temp, target)
                 else:
@@ -332,3 +365,58 @@ class ModuleOrchestrator:
         self.temp_modules.clear()
         self.assignment_stats.clear()
         self.module_identifier.remove_temp_modules()
+
+    def _apply_text_hints(self, blocks: List[MessageBlockInfo]):
+        for block in blocks:
+            if block.module_hint:
+                continue
+            if not block.tree:
+                continue
+            if not self._block_has_methods_or_functions(block):
+                continue
+            pair_index = block.metadata.get('pair_index')
+            if pair_index is None:
+                continue
+            text_blocks = self.text_blocks_by_pair.get(pair_index, {})
+            prev_text_idx = None
+            for idx in text_blocks:
+                if idx < block.block_idx:
+                    if prev_text_idx is None or idx > prev_text_idx:
+                        prev_text_idx = idx
+            if prev_text_idx is None:
+                continue
+            text = text_blocks[prev_text_idx]
+            match = re.search(r'класс[аеуы]?\s+(?:`|\'|")?([A-Za-z_][A-Za-z0-9_]*)(?:`|\'|")?', text, re.IGNORECASE)
+            if not match:
+                continue
+            class_name = match.group(1)
+            module = self.module_identifier.find_module_for_class(class_name)
+            if not module:
+                module = self.module_identifier.find_imported_class(class_name)
+            if module:
+                logger.info(f"Текстовая подсказка: класс {class_name} -> модуль {module} для блока {block.block_id}")
+                self.module_identifier.add_class_placeholder(module, class_name)
+                block.module_hint = module
+                if block.metadata is None:
+                    block.metadata = {}
+                block.metadata['class_hint'] = class_name
+                if block.tree:
+                    self.module_identifier.collect_from_tree(block.tree, module, class_name)
+
+    def _block_has_methods_or_functions(self, block: MessageBlockInfo) -> bool:
+        if not block.tree:
+            return False
+        return self._node_has_methods_or_functions(block.tree)
+
+    def _node_has_methods_or_functions(self, node) -> bool:
+        for child in node.children:
+            if child.node_type in ('method', 'function'):
+                if child.node_type == 'function':
+                    sig = extract_function_signature(child)
+                    if sig[0]:
+                        return True
+                else:
+                    return True
+            if self._node_has_methods_or_functions(child):
+                return True
+        return False

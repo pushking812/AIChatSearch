@@ -2,6 +2,7 @@
 
 from typing import List, Dict, Optional, Tuple
 import logging
+import sys
 
 from aichat_search.tools.code_structure.models.block_info import MessageBlockInfo
 from aichat_search.tools.code_structure.models.containers import Container
@@ -11,7 +12,12 @@ from aichat_search.tools.code_structure.models.import_models import ImportInfo
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-
+if not logger.handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
 
 class ModuleService:
     """Сервис для работы с модулями и их структурой."""
@@ -28,9 +34,13 @@ class ModuleService:
     def process_blocks(
         self,
         blocks: List[MessageBlockInfo],
-        imported_by_module: Optional[Dict[str, List[ImportInfo]]] = None
+        imported_by_module: Optional[Dict[str, List[ImportInfo]]] = None,
+        text_blocks_by_pair: Optional[Dict[str, Dict[int, str]]] = None,
+        full_texts_by_pair: Optional[Dict[str, str]] = None
     ) -> Tuple[Dict[str, Container], List[MessageBlockInfo]]:
-        containers, unknown = self.orchestrator.process_blocks(blocks, imported_by_module)
+        containers, unknown = self.orchestrator.process_blocks(
+            blocks, imported_by_module, text_blocks_by_pair, full_texts_by_pair
+        )
         self.module_containers = containers
         self.unknown_blocks = unknown
         logger.info(f"Обработано блоков: {len(blocks)}, определено модулей: {len(containers)}")

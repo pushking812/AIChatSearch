@@ -1,6 +1,7 @@
 # aichat_search/tools/code_structure/services/block_service.py
 
-from typing import List, Optional, Tuple
+import textwrap
+from typing import List, Dict, Optional, Tuple
 import logging
 
 from aichat_search.model import Chat, MessagePair
@@ -12,41 +13,32 @@ logger = logging.getLogger(__name__)
 
 
 class BlockService:
-    """Сервис для работы с блоками кода."""
-    
     def __init__(self):
         self.block_manager = BlockManager()
         self.parser = PythonParser()
     
     def load_from_items(self, items: List[Tuple[Chat, MessagePair]]):
-        """Загружает блоки из элементов чата."""
         self.block_manager.load_from_items(items)
         logger.info(f"Загружено блоков: {len(self.block_manager.get_all_blocks())}")
     
     def get_all_blocks(self) -> List[MessageBlockInfo]:
-        """Возвращает все блоки."""
         return self.block_manager.get_all_blocks()
     
     def get_blocks_by_language(self, lang: str) -> List[MessageBlockInfo]:
-        """Возвращает блоки для указанного языка."""
         return self.block_manager.get_blocks_by_lang(lang)
     
     def get_languages(self) -> List[str]:
-        """Возвращает список доступных языков."""
         return self.block_manager.get_languages()
     
     def get_error_blocks(self) -> List[MessageBlockInfo]:
-        """Возвращает блоки с ошибками."""
         return [b for b in self.block_manager.get_all_blocks() if b.syntax_error]
     
     def fix_error_block(self, block: MessageBlockInfo, new_content: str) -> bool:
-        """
-        Пытается исправить блок с ошибкой.
-        Возвращает True в случае успеха.
-        """
         block.content = new_content
         try:
-            tree = self.parser.parse(block.content)
+            content = new_content.replace('\t', '    ')
+            content = textwrap.dedent(content)
+            tree = self.parser.parse(content)
             block.set_tree(tree)
             block.syntax_error = None
             logger.info(f"Блок {block.block_id} успешно исправлен")
@@ -57,7 +49,6 @@ class BlockService:
             return False
     
     def get_block_description(self, block: MessageBlockInfo) -> str:
-        """Возвращает описание блока для отображения."""
         if block.module_hint:
             return block.module_hint
         if block.tree is None or block.syntax_error:
@@ -67,7 +58,6 @@ class BlockService:
         return desc or "блок_кода"
     
     def _find_first_definition(self, node) -> Optional[str]:
-        """Ищет первое определение (класс, метод, функцию) в дереве."""
         for child in node.children:
             if child.node_type == "class":
                 for m in child.children:
@@ -81,3 +71,9 @@ class BlockService:
                 if res:
                     return res
         return None
+    
+    def get_text_blocks_by_pair(self) -> Dict[str, Dict[int, str]]:
+        return self.block_manager.get_text_blocks_by_pair()
+    
+    def get_full_texts_by_pair(self) -> Dict[str, str]:
+        return self.block_manager.get_full_texts_by_pair()

@@ -7,7 +7,7 @@ import re
 from typing import Optional
 
 logger = logging.getLogger(__name__)
-
+logger.setLevel(logging.WARNING)
 
 class DocstringRemover(ast.NodeTransformer):
     @staticmethod

@@ -6,7 +6,7 @@ from aichat_search.tools.code_structure.models.block_info import MessageBlockInf
 from aichat_search.tools.code_structure.models.import_models import ImportInfo
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.WARNING)
 
 
 def extract_imports_from_block(content: str, current_module: Optional[str] = None) -> List[ImportInfo]:

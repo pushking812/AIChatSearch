@@ -8,7 +8,7 @@ from aichat_search.tools.code_structure.models.block_info import MessageBlockInf
 from aichat_search.tools.code_structure.models.containers import Container
 
 logger = logging.getLogger(__name__)
-
+logger.setLevel(logging.WARNING)
 
 class DialogService:
     """Сервис для управления диалогами."""

@@ -8,7 +8,7 @@ from aichat_search.tools.code_structure.ui.dialog_interfaces import ModuleAssign
 from aichat_search.tools.code_structure.core.tree_builder import TreeBuilder
 
 logger = logging.getLogger(__name__)
-
+logger.setLevel(logging.WARNING)
 
 class ModuleAssignmentPresenter:
     """Презентер для диалога назначения модулей."""

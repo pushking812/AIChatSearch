@@ -7,7 +7,7 @@ from aichat_search.tools.code_structure.core.tree_builder import TreeBuilder
 from aichat_search.tools.code_structure.models.containers import Container
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.WARNING)
 
 
 class TreeService:

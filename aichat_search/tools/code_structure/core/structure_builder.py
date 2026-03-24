@@ -14,7 +14,7 @@ from aichat_search.tools.code_structure.core.node_processor import (
 from aichat_search.tools.code_structure.core.structure_builder_base import StructureBuilderLogger
 
 logger = logging.getLogger(__name__)
-
+logger.setLevel(logging.WARNING)
 
 class StructureBuilder:
     """

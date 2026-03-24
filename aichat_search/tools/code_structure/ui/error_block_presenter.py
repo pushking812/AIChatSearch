@@ -7,7 +7,7 @@ from aichat_search.tools.code_structure.ui.dialog_interfaces import ErrorBlockVi
 from aichat_search.tools.code_structure.models.block_info import MessageBlockInfo
 
 logger = logging.getLogger(__name__)
-
+logger.setLevel(logging.WARNING)
 
 class ErrorBlockPresenter:
     """Презентер для диалога исправления ошибок."""

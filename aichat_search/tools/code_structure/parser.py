@@ -6,10 +6,7 @@ from abc import ABC, abstractmethod
 from .models.node import ModuleNode, ClassNode, FunctionNode, MethodNode, CodeBlockNode
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logger.setLevel(logging.WARNING)
 
 class CodeParser(ABC):
     @abstractmethod

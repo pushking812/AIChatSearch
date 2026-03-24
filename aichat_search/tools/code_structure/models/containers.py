@@ -7,7 +7,7 @@ from .node import Node
 from ..utils.helpers import clean_code
 
 logger = logging.getLogger(__name__)
-
+logger.setLevel(logging.WARNING)
 
 class Version:
     def __init__(self, node: Node, block_id: str, global_index: int, block_content: str, timestamp: float = None, block_idx: int = 0):

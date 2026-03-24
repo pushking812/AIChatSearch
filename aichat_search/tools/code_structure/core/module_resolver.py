@@ -10,7 +10,7 @@ from aichat_search.tools.code_structure.core.resolution_strategy import (
 )
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.WARNING)
 
 
 class ModuleResolver:

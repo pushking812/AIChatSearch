@@ -172,8 +172,6 @@ class TreeBuilder:
                 max_version = len(container.versions)
                 node['version'] = f"v{max_version}" if max_version > 0 else ''
                 node['max_version'] = max_version
-                # Отладочный вывод
-                logger.debug(f"Container {container.name} versions: {[v.max_global_index for v in container.versions]}")
                 for i, version in enumerate(container.versions):
                     node['children'].append(self._version_to_node(version, i + 1))
 

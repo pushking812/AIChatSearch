@@ -1,7 +1,5 @@
 # aichat_search/tools/code_structure/models/node.py
 
-
-
 class Node:
     """Базовый узел дерева структуры кода."""
     def __init__(self, name: str, node_type: str, signature: str = "", lineno_start=None, lineno_end=None):

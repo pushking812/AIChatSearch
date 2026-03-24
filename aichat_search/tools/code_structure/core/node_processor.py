@@ -50,7 +50,6 @@ class BaseNodeProcessor(ABC):
         pass
 
     def _process_code_block(self, node: CodeBlockNode, container: Container, block_info: MessageBlockInfo, path: str):
-        # Если контейнер не является модулем, не выделяем импорты
         if container.node_type != "module":
             block_container = self._create_code_block_container(container)
             self._add_version_to_container(block_container, node, block_info)
@@ -61,40 +60,27 @@ class BaseNodeProcessor(ABC):
         if not fragment_lines:
             return
 
-        # Удаляем пустые строки, чтобы не создавать пустые блоки
-        fragment_lines = [line for line in fragment_lines if line.strip() != '']
-        if not fragment_lines:
-            return
-
-        # Разбиваем на сегменты (импорты / не-импорты)
-        segments = []
-        current_type = None
-        current_lines = []
+        import_lines = []
+        code_lines = []
         for line in fragment_lines:
             stripped = line.strip()
             if stripped.startswith(('import ', 'from ')):
-                seg_type = 'import'
+                import_lines.append(line)
             else:
-                seg_type = 'code'
-            if current_type is None:
-                current_type = seg_type
-                current_lines = [line]
-            elif seg_type == current_type:
-                current_lines.append(line)
-            else:
-                segments.append((current_type, current_lines))
-                current_type = seg_type
-                current_lines = [line]
-        if current_lines:
-            segments.append((current_type, current_lines))
+                code_lines.append(line)
 
-        # Обрабатываем сегменты последовательно
-        for seg_type, seg_lines in segments:
-            if not seg_lines:
-                continue
-            # Вычисляем номера строк для сегмента
-            first_line = seg_lines[0]
-            last_line = seg_lines[-1]
+        if import_lines:
+            import_container = None
+            for child in container.children:
+                if isinstance(child, ImportContainer):
+                    import_container = child
+                    break
+            if import_container is None:
+                import_container = ImportContainer()
+                container.add_child(import_container)
+
+            first_line = import_lines[0]
+            last_line = import_lines[-1]
             start_idx = fragment_lines.index(first_line)
             end_idx = fragment_lines.index(last_line)
             temp_node = CodeBlockNode(
@@ -103,21 +89,22 @@ class BaseNodeProcessor(ABC):
                 lineno_start=node.lineno_start + start_idx,
                 lineno_end=node.lineno_start + end_idx
             )
-            if seg_type == 'import':
-                # Ищем или создаём ImportContainer
-                import_container = None
-                for child in container.children:
-                    if isinstance(child, ImportContainer):
-                        import_container = child
-                        break
-                if import_container is None:
-                    import_container = ImportContainer()
-                    container.add_child(import_container)
-                self._add_version_to_container(import_container, temp_node, block_info)
-            else:
-                block_container = self._create_code_block_container(container)
-                self._add_version_to_container(block_container, temp_node, block_info)
-                container.add_child(block_container)
+            self._add_version_to_container(import_container, temp_node, block_info)
+
+        if code_lines:
+            block_container = self._create_code_block_container(container)
+            first_line = code_lines[0]
+            last_line = code_lines[-1]
+            start_idx = fragment_lines.index(first_line)
+            end_idx = fragment_lines.index(last_line)
+            temp_node = CodeBlockNode(
+                name=node.name,
+                line_range=f"{node.lineno_start + start_idx}-{node.lineno_start + end_idx}",
+                lineno_start=node.lineno_start + start_idx,
+                lineno_end=node.lineno_start + end_idx
+            )
+            self._add_version_to_container(block_container, temp_node, block_info)
+            container.add_child(block_container)
 
     def _process_children(self, node: Node, container: Container, block_info: MessageBlockInfo, path: str):
         for child in node.children:
@@ -144,14 +131,7 @@ class BaseNodeProcessor(ABC):
         return CodeBlockContainer(f"CodeBlock_{len(parent.children)}")
 
     def _create_version(self, node, block_info: MessageBlockInfo) -> Version:
-        return Version(
-            node,
-            block_info.block_id,
-            block_info.global_index,
-            block_info.content,
-            timestamp=block_info.timestamp,
-            block_idx=block_info.block_idx
-        )
+        return Version(node, block_info.block_id, block_info.global_index, block_info.content)
 
     def _has_self(self, node: FunctionNode) -> bool:
         has_self, _ = extract_function_signature(node)
@@ -166,19 +146,11 @@ class BaseNodeProcessor(ABC):
         version = self._create_version(node, block_info)
         existing = VersionComparator.find_existing(container.versions, version)
         if existing:
-            existing.add_source(
-                block_info.block_id,
-                node.lineno_start,
-                node.lineno_end,
-                block_info.global_index,
-                timestamp=block_info.timestamp,
-                block_idx=block_info.block_idx
-            )
-            # После обновления источника пересортировываем
-            container.versions.sort(key=lambda v: (v.max_timestamp, v.max_global_index, v.max_block_idx))
+            existing.add_source(block_info.block_id, node.lineno_start, node.lineno_end, block_info.global_index)
         else:
             container.add_version(version)
 
+    # Методы поиска
     def _find_class_by_method_name(self, container: Container, method_name: str) -> Optional[ClassContainer]:
         for child in container.children:
             if child.node_type == "class":
@@ -213,7 +185,8 @@ class InitialBuildProcessor(BaseNodeProcessor):
     def _process_function(self, node: FunctionNode, container: Container, block_info: MessageBlockInfo, path: str):
         has_self = self._has_self(node)
         if has_self:
-            target_class = self._find_class_by_method_name(container, node.name)
+            # Ищем класс по имени (а не по наличию метода)
+            target_class = self._find_class_by_name(container, node.name)
             if target_class:
                 method_container = self._find_method_in_class(target_class, node.name)
                 if method_container is None:
@@ -241,7 +214,7 @@ class InitialBuildProcessor(BaseNodeProcessor):
                 container.add_child(method_container)
             self._add_version_to_container(method_container, node, block_info)
         else:
-            target_class = self._find_class_by_method_name(container, node.name)
+            target_class = self._find_class_by_name(container, node.name)
             if target_class:
                 method_container = self._find_method_in_class(target_class, node.name)
                 if method_container is None:
@@ -271,9 +244,8 @@ class MergeProcessor(BaseNodeProcessor):
 
     def _process_function(self, node: FunctionNode, container: Container, block_info: MessageBlockInfo, path: str):
         has_self = self._has_self(node)
-        order = self.builder._get_block_order(block_info)
         if has_self:
-            target_class = self._find_class_by_method_name(container, node.name)
+            target_class = self._find_class_by_name(container, node.name)
             if target_class:
                 method_container = self._find_method_in_class(target_class, node.name)
                 if method_container is None:
@@ -294,7 +266,6 @@ class MergeProcessor(BaseNodeProcessor):
             self._add_version_to_container(func_container, node, block_info)
 
     def _process_method(self, node: MethodNode, container: Container, block_info: MessageBlockInfo, path: str):
-        order = self.builder._get_block_order(block_info)
         if container.node_type == "class":
             method_container = self._find_method_in_class(container, node.name)
             if method_container is None:
@@ -302,7 +273,7 @@ class MergeProcessor(BaseNodeProcessor):
                 container.add_child(method_container)
             self._add_version_to_container(method_container, node, block_info)
         else:
-            target_class = self._find_class_by_method_name(container, node.name)
+            target_class = self._find_class_by_name(container, node.name)
             if target_class:
                 method_container = self._find_method_in_class(target_class, node.name)
                 if method_container is None:

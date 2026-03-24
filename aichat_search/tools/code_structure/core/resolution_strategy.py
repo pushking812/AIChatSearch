@@ -11,7 +11,7 @@ from aichat_search.tools.code_structure.core.signature_utils import extract_func
 from aichat_search.tools.code_structure.core.import_analyzer import extract_imports_from_block
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.WARNING)
 
 
 class ResolutionStrategy(ABC):

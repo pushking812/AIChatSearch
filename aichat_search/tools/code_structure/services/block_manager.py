@@ -1,8 +1,9 @@
 # aichat_search/tools/code_structure/services/block_manager.py
 
 import logging
+import textwrap
 import re
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 from aichat_search.services.block_parser import BlockParser, MessageBlock
 from aichat_search.model import Chat, MessagePair
 from ..parser import PARSERS
@@ -17,6 +18,8 @@ class BlockManager:
     def __init__(self):
         self.blocks_info: List[MessageBlockInfo] = []
         self.blocks_by_lang: Dict[str, List[MessageBlockInfo]] = {}
+        self.text_blocks_by_pair: Dict[str, Dict[int, str]] = {}   # key = pair.index, value = {block_idx: content}
+        self.full_texts_by_pair: Dict[str, str] = {}
 
     def load_from_items(self, items: List[Tuple[Chat, MessagePair]]) -> None:
         def get_timestamp(pair: MessagePair) -> float:
@@ -34,15 +37,20 @@ class BlockManager:
         parser = BlockParser()
         self.blocks_info.clear()
         self.blocks_by_lang.clear()
+        self.text_blocks_by_pair.clear()
+        self.full_texts_by_pair.clear()
 
         for global_index, (chat, pair) in enumerate(sorted_items):
             text = pair.response_text
+            self.full_texts_by_pair[pair.index] = text
             blocks = parser.parse(text)
             for block_idx, block in enumerate(blocks):
                 lang = block.language.lower() if block.language else ""
+                # Если язык не поддерживается парсером, считаем текстовым блоком
                 if lang not in PARSERS:
+                    self.text_blocks_by_pair.setdefault(pair.index, {})[block_idx] = block.content
                     continue
-
+                # Далее только кодовые блоки
                 chat_name = re.sub(r'\W+', '_', chat.title) if chat.title else "unknown"
                 block_id = f"chat_{chat_name}_msg_{pair.index}_block{block_idx}"
                 content = block.content
@@ -82,7 +90,10 @@ class BlockManager:
 
         parser = parser_class()
         try:
-            tree = parser.parse(block_info.content)
+            content = block_info.content
+            content = content.replace('\t', '    ')
+            content = textwrap.dedent(content)
+            tree = parser.parse(content)
             block_info.set_tree(tree)
         except SyntaxError as e:
             logger.debug(f"Синтаксическая ошибка в блоке {block_info.block_id}: {e}")
@@ -99,3 +110,9 @@ class BlockManager:
 
     def get_languages(self) -> List[str]:
         return sorted(self.blocks_by_lang.keys())
+
+    def get_text_blocks_by_pair(self) -> Dict[str, Dict[int, str]]:
+        return self.text_blocks_by_pair
+
+    def get_full_texts_by_pair(self) -> Dict[str, str]:
+        return self.full_texts_by_pair
