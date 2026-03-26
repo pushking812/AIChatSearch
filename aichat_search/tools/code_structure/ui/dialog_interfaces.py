@@ -77,6 +77,10 @@ class ModuleAssignmentView(ABC):
         """Закрывает диалог."""
         pass
 
+    @abstractmethod
+    def show_error(self, message: str):
+        """Показывает сообщение об ошибке."""
+        pass
 
 class ErrorBlockView(ABC):
     """Интерфейс для представления диалога исправления ошибок."""

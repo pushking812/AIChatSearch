@@ -7,7 +7,7 @@ from collections import defaultdict
 
 from aichat_search.tools.code_structure.models.block_info import MessageBlockInfo
 from aichat_search.tools.code_structure.models.containers import (
-    Container, MethodContainer, ClassContainer, ModuleContainer
+    Container, MethodContainer, ClassContainer, ModuleContainer, FunctionContainer, PackageContainer
 )
 from aichat_search.tools.code_structure.core.module_identifier import ModuleIdentifier
 from aichat_search.tools.code_structure.core.module_resolver import ModuleResolver
@@ -58,10 +58,12 @@ class ModuleOrchestrator:
         unknown_blocks = self._resolve_modules_iteratively(valid_blocks)
         self.module_groups = self._group_blocks_by_module(valid_blocks)
         self._select_base_blocks()
-        self._create_placeholder_containers()  # создаём классы-плейсхолдеры
+        self._create_placeholder_containers()
         self._build_initial_structures()
         self._merge_remaining_blocks()
         self._merge_temp_modules()
+
+        self._build_unified_containers()
 
         self.unknown_blocks = unknown_blocks
         self.log_analysis_result()
@@ -273,7 +275,6 @@ class ModuleOrchestrator:
                 if block.tree and not block.syntax_error:
                     class_hint = block.metadata.get('class_hint') if block.metadata else None
                     if class_hint:
-                        # Убеждаемся, что класс существует
                         if not any(child.name == class_hint and child.node_type == "class" for child in container.children):
                             class_container = ClassContainer(class_hint)
                             container.add_child(class_container)
@@ -316,6 +317,91 @@ class ModuleOrchestrator:
                     logger.warning(f"Не найден целевой модуль для временного {temp}, пропускаем")
             except Exception as e:
                 logger.error(f"Ошибка при объединении {temp}: {e}")
+
+    def _build_unified_containers(self):
+        """Строит полную иерархию контейнеров, включая пакеты и импортированные модули."""
+        # 1. Собираем все имена модулей
+        all_module_names = set()
+        all_module_names.update(self.module_containers.keys())
+        all_module_names.update(self.module_identifier.get_all_module_names())
+        for module_name, imports in self.module_identifier._imported.items():
+            for imp in imports.values():
+                if '.' in imp.target_fullname:
+                    module = imp.target_fullname.rsplit('.', 1)[0]
+                else:
+                    module = imp.target_fullname
+                all_module_names.add(module)
+
+        # 2. Строим иерархию
+        root_containers = {}
+        for full_name in sorted(all_module_names):
+            parts = full_name.split('.')
+            current = root_containers
+            parent = None
+            for i, part in enumerate(parts):
+                is_last = (i == len(parts) - 1)
+
+                if is_last and full_name in self.module_containers:
+                    container = self.module_containers[full_name]
+                    container.name = part
+                else:
+                    if part not in current:
+                        if is_last:
+                            container = ModuleContainer(part)
+                            container.set_placeholder(True)
+                        else:
+                            container = PackageContainer(part)
+                        current[part] = container
+                    else:
+                        container = current[part]
+
+                if parent is not None:
+                    if container not in parent.children:
+                        parent.add_child(container)
+
+                parent = container
+                if hasattr(container, 'children_dict'):
+                    current = container.children_dict
+                else:
+                    container.children_dict = {c.name: c for c in container.children}
+                    current = container.children_dict
+
+            # После построения иерархии для последнего уровня заполняем контейнер
+            if is_last:
+                self._populate_placeholder_container(parent, full_name)
+
+        self.module_containers = root_containers
+
+    def _populate_placeholder_container(self, container: ModuleContainer, full_name: str):
+        """Заполняет контейнер классами и функциями из module_identifier (включая импортированные)."""
+        module_info = self.module_identifier.get_module_info(full_name)
+        if not module_info:
+            return
+
+        # Добавляем классы
+        for class_name, class_info in module_info.classes.items():
+            existing = container.find_child_container(class_name, "class")
+            if not existing:
+                class_container = ClassContainer(class_name)
+                class_container.set_placeholder(True)
+                container.add_child(class_container)
+            else:
+                class_container = existing
+                # Если класс уже существует (реальный код), не меняем его тип
+
+            # Добавляем методы класса
+            for method_name, method_info in class_info.methods.items():
+                if not class_container.find_child_container(method_name, "method"):
+                    method_container = MethodContainer(method_name)
+                    method_container.set_placeholder(True)
+                    class_container.add_child(method_container)
+
+        # Добавляем функции
+        for func_name, func_info in module_info.functions.items():
+            if not container.find_child_container(func_name, "function"):
+                func_container = FunctionContainer(func_name)
+                func_container.set_placeholder(True)
+                container.add_child(func_container)
 
     def _log_module_tree(self, module_name: str, container: Container, level: int = 0, order: int = 0):
         indent = "  " * level

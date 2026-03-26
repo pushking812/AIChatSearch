@@ -19,9 +19,8 @@ if not logger.handlers:
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
-class ModuleService:
-    """Сервис для работы с модулями и их структурой."""
 
+class ModuleService:
     def __init__(self):
         self.orchestrator = ModuleOrchestrator()
         self.module_containers: Dict[str, Container] = {}
@@ -83,4 +82,5 @@ class ModuleService:
         self.orchestrator._build_initial_structures()
         self.orchestrator._merge_remaining_blocks()
         self.orchestrator._merge_temp_modules()
+        self.orchestrator._build_unified_containers()   # <-- добавлено
         self.module_containers = self.orchestrator.module_containers

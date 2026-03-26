@@ -129,9 +129,36 @@ class ModuleIdentifier:
 
     # ---------- Импортированные объекты ----------
     def add_imported_item(self, module_name: str, import_info: ImportInfo):
+        # Сохраняем в _imported для обратной совместимости
         if module_name not in self._imported:
             self._imported[module_name] = {}
         self._imported[module_name][import_info.target_fullname] = import_info
+
+        # Добавляем целевую сущность в _modules для соответствующего модуля
+        target = import_info.target_fullname
+        if '.' in target:
+            target_module, target_name = target.rsplit('.', 1)
+        else:
+            target_module = target
+            target_name = target  # для модуля (import x) не добавляем функцию/класс
+
+        if import_info.target_type in ('class', 'function') and target_name:
+            # Создаём модуль-получатель, если его нет
+            mod = self._modules.setdefault(target_module, ModuleInfo(name=target_module))
+            mod.is_imported = True
+            if import_info.target_type == 'class':
+                if target_name not in mod.classes:
+                    mod.classes[target_name] = ClassInfo(name=target_name)
+                    logger.debug(f"Добавлен импортированный класс {target_name} в модуль {target_module}")
+            elif import_info.target_type == 'function':
+                if target_name not in mod.functions:
+                    mod.functions[target_name] = FunctionInfo(name=target_name, signature=(False, []))
+                    logger.debug(f"Добавлена импортированная функция {target_name} в модуль {target_module}")
+
+        # Если это импорт модуля целиком (import x.y), то добавляем модуль как плейсхолдер
+        if import_info.target_type == 'module' and '.' not in target:
+            mod = self._modules.setdefault(target, ModuleInfo(name=target))
+            mod.is_imported = True
 
     def get_imported_info(self, module_name: str) -> Optional[Dict[str, ImportInfo]]:
         return self._imported.get(module_name)
@@ -192,7 +219,7 @@ class ModuleIdentifier:
     def find_modules_by_method_name(self, method_name: str) -> List[Tuple[str, str]]:
         results = []
         for mod_name, mod in self._modules.items():
-            for cls_name, cls in mod.classes.values():
+            for cls_name, cls in mod.classes.items():
                 if method_name in cls.methods:
                     results.append((mod_name, cls_name))
         return results

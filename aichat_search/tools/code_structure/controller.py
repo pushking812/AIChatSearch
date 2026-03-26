@@ -11,11 +11,11 @@ from aichat_search.model import Chat, MessagePair
 from aichat_search.tools.code_structure.view import CodeStructureWindow
 from aichat_search.tools.code_structure.services.block_service import BlockService
 from aichat_search.tools.code_structure.services.module_service import ModuleService
-from aichat_search.tools.code_structure.services.tree_service import TreeService
 from aichat_search.tools.code_structure.services.dialog_service import DialogService
 from aichat_search.tools.code_structure.services.import_service import ImportService
 from aichat_search.tools.code_structure.models.block_info import MessageBlockInfo
 from aichat_search.tools.code_structure.core.project_tree_builder import ProjectTreeBuilder
+from aichat_search.tools.code_structure.core.tree_builder import TreeBuilder
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -28,7 +28,7 @@ class CodeStructureController:
 
         self.block_service = BlockService()
         self.module_service = ModuleService()
-        self.tree_service = TreeService()
+        self.tree_builder = TreeBuilder()          # добавлено
         self.dialog_service = DialogService(parent)
         self.import_service = ImportService()
 
@@ -72,8 +72,7 @@ class CodeStructureController:
 
         self._rebuild_after_dialog()
 
-        imported_items = self.import_service.get_imported_items(all_blocks)
-        self._build_and_display_tree(imported_items)
+        self._build_and_display_tree()
 
         self._setup_interface()
 
@@ -88,15 +87,13 @@ class CodeStructureController:
             if dialog.result is not None:
                 self.block_service.fix_error_block(block, dialog.result)
 
-    def _build_and_display_tree(self, imported_items: Dict[str, str]):
-        display_root = self.tree_service.build_package_tree(
-            self.module_service.module_containers,
-            imported_items,
-            local_only=False
+    def _build_and_display_tree(self):
+        display_root = self.tree_builder.build_display_tree(
+            self.module_service.module_containers
         )
         if display_root:
             self.view.display_merged_tree(display_root)
-            logger.info(f"Дерево с пакетами отображено")
+            logger.info("Дерево с пакетами отображено")
 
     def _setup_interface(self):
         languages = self.block_service.get_languages()
@@ -161,13 +158,20 @@ class CodeStructureController:
         else:
             self._rebuild_after_dialog()
 
-    def _apply_dialog_result(self, assignments: Dict[str, str]):
+    def _apply_dialog_result(self, dialog_result):
+        assignments = dialog_result.get('assignments', {})
+        new_containers = dialog_result.get('module_containers')
+        
         all_blocks = self.block_service.get_all_blocks()
         for block in all_blocks:
             if block.block_id in assignments:
                 self.module_service.assign_module_to_block(block, assignments[block.block_id])
             else:
                 block.module_hint = None
+        
+        if new_containers is not None:
+            self.module_service.module_containers = new_containers
+        
         self.module_service.remove_temp_modules()
         unknown = self._resolve_remaining_after_dialog()
         if unknown:
@@ -188,8 +192,7 @@ class CodeStructureController:
         logger.info("=== Перестроение после диалога ===")
         all_blocks = self.block_service.get_all_blocks()
         self.module_service.rebuild_after_dialog(all_blocks)
-        imported_items = self.import_service.get_imported_items(all_blocks)
-        self._build_and_display_tree(imported_items)
+        self._build_and_display_tree()
 
     def _reset_module_assignments(self):
         all_blocks = self.block_service.get_all_blocks()
@@ -217,12 +220,11 @@ class CodeStructureController:
 
         self._rebuild_after_dialog()
 
-        imported_items = self.import_service.get_imported_items(all_blocks)
-        self._build_and_display_tree(imported_items)
+        self._build_and_display_tree()
 
         if need_dialog:
             self._show_module_dialog(need_dialog)
-            self._build_and_display_tree(imported_items)
+            self._build_and_display_tree()
 
     def _save_structure(self):
         try:
@@ -254,7 +256,7 @@ class CodeStructureController:
                 data = pickle.load(f)
             self.module_service.module_containers = data['module_containers']
             imported_items = data['imported_items']
-            self._build_and_display_tree(imported_items)
+            self._build_and_display_tree()
             logger.info(f"Структура загружена из {file_path}")
             messagebox.showinfo("Загрузка структуры", f"Структура загружена из {file_path}")
         except Exception as e:
@@ -276,6 +278,9 @@ class CodeStructureController:
                         return textwrap.dedent(fragment)
         elif '_container' in node_data:
             container = node_data['_container']
+            # Проверяем, является ли контейнер плейсхолдером
+            if getattr(container, 'is_placeholder', False):
+                return "# Этот элемент определён только по импорту или комментарию, код отсутствует"
             if container.node_type in ('method', 'function', 'code_block', 'import'):
                 latest = container.get_latest_version()
                 if latest and latest.sources:

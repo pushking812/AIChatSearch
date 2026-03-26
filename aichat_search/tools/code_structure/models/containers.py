@@ -2,15 +2,13 @@
 
 import logging
 import textwrap
-from typing import List, Optional, Tuple
-from .node import Node
-from ..utils.helpers import clean_code
+from typing import List, Optional, Tuple, Dict
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
 
 class Version:
-    def __init__(self, node: Node, block_id: str, global_index: int, block_content: str, timestamp: float = None, block_idx: int = 0):
+    def __init__(self, node, block_id: str, global_index: int, block_content: str, timestamp: float = None, block_idx: int = 0):
         self.node = node
         self.sources = [(block_id, node.lineno_start, node.lineno_end, global_index)]
         self.min_global_index = global_index
@@ -26,7 +24,6 @@ class Version:
                 end = min(len(lines), node.lineno_end)
                 fragment_lines = lines[start:end]
 
-                # Удаляем пустые строки в начале и конце
                 while fragment_lines and not fragment_lines[0].strip():
                     fragment_lines.pop(0)
                 while fragment_lines and not fragment_lines[-1].strip():
@@ -39,6 +36,7 @@ class Version:
                 else:
                     code_fragment = ''
 
+                from ..utils.helpers import clean_code
                 self.cleaned_content = clean_code(code_fragment)
 
             except Exception as e:
@@ -72,9 +70,12 @@ class Container:
         self.node_type = node_type
         self.children: List['Container'] = []
         self.versions: List[Version] = []
+        self.is_placeholder = False
+        self.children_dict: Dict[str, 'Container'] = {}
 
     def add_child(self, child: 'Container'):
         self.children.append(child)
+        self.children_dict[child.name] = child
 
     def add_version(self, version: Version):
         self.versions.append(version)
@@ -86,10 +87,10 @@ class Container:
         return max(self.versions, key=lambda v: (v.max_timestamp, v.max_global_index, v.max_block_idx))
 
     def find_child_container(self, name: str, node_type: str) -> Optional['Container']:
-        for child in self.children:
-            if child.name == name and child.node_type == node_type:
-                return child
-        return None
+        return self.children_dict.get(name)
+
+    def set_placeholder(self, value: bool = True):
+        self.is_placeholder = value
 
     def __repr__(self):
         return f"Container(name={self.name}, type={self.node_type}, children={len(self.children)}, versions={len(self.versions)})"
@@ -123,3 +124,8 @@ class CodeBlockContainer(Container):
 class ImportContainer(Container):
     def __init__(self, name: str = "imports"):
         super().__init__(name, "import")
+
+
+class PackageContainer(Container):
+    def __init__(self, name: str):
+        super().__init__(name, "package")

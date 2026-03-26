@@ -28,7 +28,6 @@ class ClassInfo:
 
 @dataclass
 class ImportedInfo:
-    """Информация об импортированном объекте."""
     fullname: str
     target_type: str  # 'module', 'class', 'function'
     alias: Optional[str] = None
@@ -39,4 +38,5 @@ class ModuleInfo:
     name: str
     classes: Dict[str, ClassInfo] = field(default_factory=dict)
     functions: Dict[str, FunctionInfo] = field(default_factory=dict)
-    imports: Dict[str, ImportedInfo] = field(default_factory=dict)  # ключ - полное имя
+    imports: Dict[str, ImportedInfo] = field(default_factory=dict)
+    is_imported: bool = False   # флаг, указывающий, что модуль добавлен только из импорта

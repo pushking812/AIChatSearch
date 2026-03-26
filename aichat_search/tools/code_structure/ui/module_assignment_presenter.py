@@ -6,13 +6,12 @@ from typing import List, Dict, Any, Optional
 
 from aichat_search.tools.code_structure.ui.dialog_interfaces import ModuleAssignmentView
 from aichat_search.tools.code_structure.core.tree_builder import TreeBuilder
+from aichat_search.tools.code_structure.models.containers import ModuleContainer, PackageContainer
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
 
 class ModuleAssignmentPresenter:
-    """Презентер для диалога назначения модулей."""
-    
     def __init__(self, view: ModuleAssignmentView, controller):
         self.view = view
         self.controller = controller
@@ -38,7 +37,6 @@ class ModuleAssignmentPresenter:
                    module_info: List[Dict[str, Any]],
                    module_code_map: Dict[str, str],
                    module_containers: Dict[str, Any]):
-        """Инициализация данными."""
         self.unknown_blocks = unknown_blocks
         self.module_info = module_info
         self.module_code_map = module_code_map
@@ -48,41 +46,26 @@ class ModuleAssignmentPresenter:
         if unknown_blocks:
             self.current_block_id = unknown_blocks[0]['id']
         
-        # Обновляем представление
         self._refresh_view()
     
     def _refresh_view(self):
-        """Обновляет все элементы представления."""
-        # Устанавливаем списки блоков и модулей
-        block_display_names = [block['display_name'] for block in self.unknown_blocks]
         self.view.set_blocks([{'id': b['id'], 'display_name': b['display_name']} 
                               for b in self.unknown_blocks])
-        
-        module_display_names = []
-        for info in self.module_info:
-            if info['source']:
-                module_display_names.append(f"{info['name']} (из {info['source']})")
-            else:
-                module_display_names.append(info['name'])
         self.view.set_modules(self.module_info, self.module_code_map)
         
-        # Строим и устанавливаем дерево
         if self.module_containers:
             tree_data = self.tree_builder.build_display_tree(self.module_containers)
             self.view.set_tree_data(tree_data)
         
-        # Обновляем отображение текущего блока
         self._update_current_block_display()
     
     def _update_current_block_display(self):
-        """Обновляет отображение текущего блока."""
         if not self.unknown_blocks or self.current_block_index >= len(self.unknown_blocks):
             return
         
         block = self.unknown_blocks[self.current_block_index]
         self.view.show_block_code(block['content'])
         
-        # Восстанавливаем предыдущее назначение, если есть
         if self.current_block_id in self.assignments:
             assigned_module = self.assignments[self.current_block_id]
             self.view.update_assignment_label(assigned_module)
@@ -94,7 +77,6 @@ class ModuleAssignmentPresenter:
         self.view.enable_apply_button(False)
     
     def on_block_selected(self, block_id: str):
-        """Обработчик выбора блока."""
         for idx, block in enumerate(self.unknown_blocks):
             if block['id'] == block_id:
                 self.current_block_index = idx
@@ -103,40 +85,32 @@ class ModuleAssignmentPresenter:
                 break
     
     def on_module_selected(self, module_name: str):
-        """Обработчик выбора модуля в дереве."""
-        # Показываем код модуля, если есть
         if module_name in self.module_code_map:
             self.view.show_module_code(self.module_code_map[module_name])
         else:
             self.view.show_module_code("")
     
     def on_action_changed(self, mode: str):
-        """Обработчик изменения режима действия."""
         self.view.set_action_mode(mode)
         self._check_changes()
     
     def on_new_module_name_changed(self, name: str):
-        """Обработчик изменения имени нового модуля."""
         self._check_changes()
     
     def _check_changes(self):
-        """Проверяет, изменилось ли значение по сравнению с применённым."""
         current_value = self._get_current_value()
         self.view.enable_apply_button(current_value != self.current_applied)
     
     def _get_current_value(self) -> str:
-        """Возвращает текущее выбранное значение."""
         if self.view.get_action_mode() == "create_new":
             return self.view.get_new_module_name().strip()
         else:
             selected = self.view.get_selected_module()
-            # Очищаем от суффикса (из ...)
             if ' (из ' in selected:
                 return selected.split(' (из ')[0]
             return selected
     
     def on_apply(self):
-        """Обработчик нажатия кнопки Apply."""
         if not self.current_block_id:
             return
         
@@ -145,13 +119,20 @@ class ModuleAssignmentPresenter:
         if action == "create_new":
             new_name = self.view.get_new_module_name().strip()
             if not new_name:
-                return  # Должно быть обработано во view
+                return
             if not re.match(r'^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)*$', new_name):
-                return  # Некорректное имя
-            if new_name in self.known_modules:
-                return  # Уже существует
+                return
             
-            # Создаём новый модуль
+            # Проверяем, существует ли уже такой модуль
+            if new_name in self.known_modules:
+                # Предлагаем использовать существующий
+                self.view.show_error(f"Модуль {new_name} уже существует. Пожалуйста, выберите его из списка.")
+                return
+            
+            # Создаём новый модуль-плейсхолдер в контейнерах
+            self._add_new_module_to_containers(new_name)
+            
+            # Обновляем локальные списки
             self.known_modules.append(new_name)
             self.known_modules.sort()
             
@@ -163,8 +144,11 @@ class ModuleAssignmentPresenter:
             self.assignments[self.current_block_id] = new_name
             self.changed = True
             
-            # Обновляем представление
+            # Обновляем дерево и списки в представлении
             self.view.set_modules(self.module_info, self.module_code_map)
+            if self.module_containers:
+                tree_data = self.tree_builder.build_display_tree(self.module_containers)
+                self.view.set_tree_data(tree_data)
             
         else:  # assign_existing
             selected = self.view.get_selected_module()
@@ -186,17 +170,51 @@ class ModuleAssignmentPresenter:
             self.current_block_id = self.unknown_blocks[self.current_block_index]['id']
             self._update_current_block_display()
     
+    def _add_new_module_to_containers(self, full_name: str):
+        """
+        Добавляет новый модуль-плейсхолдер в иерархию module_containers.
+        """
+        parts = full_name.split('.')
+        current = self.module_containers
+        parent = None
+        for i, part in enumerate(parts):
+            is_last = (i == len(parts) - 1)
+            if part not in current:
+                if is_last:
+                    container = ModuleContainer(part)
+                    container.set_placeholder(True)
+                else:
+                    container = PackageContainer(part)
+                current[part] = container
+            else:
+                container = current[part]
+            
+            if parent is not None:
+                if container not in parent.children:
+                    parent.add_child(container)
+            parent = container
+            # Переходим к детям
+            if hasattr(container, 'children_dict'):
+                current = container.children_dict
+            else:
+                container.children_dict = {c.name: c for c in container.children}
+                current = container.children_dict
+        
+        # Обновляем глобальные контейнеры в контроллере, если нужно
+        # Здесь мы изменили локальную копию, но контроллер должен получить обновление
+        # В контроллере после закрытия диалога мы передадим module_containers обратно
+    
     def on_ok(self):
-        """Обработчик нажатия кнопки OK."""
-        return self.assignments.copy()
+        # Возвращаем назначения, а также обновлённые контейнеры
+        return {
+            'assignments': self.assignments.copy(),
+            'module_containers': self.module_containers
+        }
     
     def on_cancel(self):
-        """Обработчик нажатия кнопки Cancel."""
         return None
     
     def on_close(self):
-        """Обработчик закрытия окна."""
         if self.changed:
-            # Запрос подтверждения должен быть во view
             return self.changed
         return False

@@ -305,9 +305,14 @@ class CodeStructureWindow(tk.Toplevel):
             self.merged_tree.focus(first_item)
 
     def _add_merged_node(self, parent: str, node_data: Dict[str, Any]):
+        text = node_data['text']
+        # Проверяем, является ли контейнер плейсхолдером
+        container = node_data.get('_container')
+        if container and getattr(container, 'is_placeholder', False):
+            text += " *"
         item = self.merged_tree.insert(
             parent, tk.END,
-            text=node_data['text'],
+            text=text,
             values=(
                 node_data.get('type', ''),
                 node_data.get('signature', ''),
