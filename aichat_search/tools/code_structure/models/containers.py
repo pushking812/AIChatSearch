@@ -73,6 +73,7 @@ class Container:
         self.versions: List[Version] = []
         self.is_placeholder = False
         self.children_dict: Dict[str, 'Container'] = {}
+        self.full_path = name
 
     def add_child(self, child: 'Container'):
         self.children.append(child)

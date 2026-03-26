@@ -11,11 +11,11 @@ from aichat_search.model import Chat, MessagePair
 from aichat_search.tools.code_structure.view import CodeStructureWindow
 from aichat_search.tools.code_structure.services.block_service import BlockService
 from aichat_search.tools.code_structure.services.module_service import ModuleService
+from aichat_search.tools.code_structure.core.tree_builder import TreeBuilder
 from aichat_search.tools.code_structure.services.dialog_service import DialogService
 from aichat_search.tools.code_structure.services.import_service import ImportService
 from aichat_search.tools.code_structure.models.block_info import MessageBlockInfo
 from aichat_search.tools.code_structure.core.project_tree_builder import ProjectTreeBuilder
-from aichat_search.tools.code_structure.core.tree_builder import TreeBuilder
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -28,7 +28,7 @@ class CodeStructureController:
 
         self.block_service = BlockService()
         self.module_service = ModuleService()
-        self.tree_builder = TreeBuilder()          # добавлено
+        self.tree_builder = TreeBuilder()
         self.dialog_service = DialogService(parent)
         self.import_service = ImportService()
 
@@ -57,7 +57,7 @@ class CodeStructureController:
 
         for block in all_blocks:
             if block.module_hint and block.tree and not block.syntax_error:
-                self.module_service.identifier.collect_from_tree(block.tree, block.module_hint)
+                self.module_service.identifier.collect_from_tree(block.tree, block.module_hint, block_info=block)
 
         imported_by_module = self.import_service.get_imported_items_by_module(all_blocks)
 
@@ -204,7 +204,7 @@ class CodeStructureController:
 
         for block in all_blocks:
             if block.module_hint and block.tree and not block.syntax_error:
-                self.module_service.identifier.collect_from_tree(block.tree, block.module_hint)
+                self.module_service.identifier.collect_from_tree(block.tree, block.module_hint, block_info=block)
 
         imported_by_module = self.import_service.get_imported_items_by_module(all_blocks)
         text_blocks_by_pair = self.block_service.get_text_blocks_by_pair()
@@ -255,7 +255,6 @@ class CodeStructureController:
             with open(file_path, 'rb') as f:
                 data = pickle.load(f)
             self.module_service.module_containers = data['module_containers']
-            imported_items = data['imported_items']
             self._build_and_display_tree()
             logger.info(f"Структура загружена из {file_path}")
             messagebox.showinfo("Загрузка структуры", f"Структура загружена из {file_path}")
@@ -278,7 +277,6 @@ class CodeStructureController:
                         return textwrap.dedent(fragment)
         elif '_container' in node_data:
             container = node_data['_container']
-            # Убираем проверку на is_placeholder
             if container.node_type in ('method', 'function', 'code_block', 'import'):
                 latest = container.get_latest_version()
                 if latest and latest.sources:

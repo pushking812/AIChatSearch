@@ -65,7 +65,7 @@ class ModuleService:
         block.module_hint = module_name
         logger.info(f"Блок {block.block_id}: {old_hint} -> {module_name}")
         if block.tree and not block.syntax_error:
-            self.identifier.collect_from_tree(block.tree, module_name)
+            self.identifier.collect_from_tree(block.tree, module_name, block_info=block)
 
     def reset_assignments(self, blocks: List[MessageBlockInfo]):
         for block in blocks:
@@ -75,12 +75,8 @@ class ModuleService:
         self.identifier.remove_temp_modules()
 
     def rebuild_after_dialog(self, blocks: List[MessageBlockInfo]):
-        self.orchestrator.module_identifier.remove_temp_modules()
-        self.orchestrator.module_groups = self.orchestrator._group_blocks_by_module(blocks)
-        self.orchestrator._select_base_blocks()
-        self.orchestrator.module_containers = {}
-        self.orchestrator._build_initial_structures()
-        self.orchestrator._merge_remaining_blocks()
-        self.orchestrator._merge_temp_modules()
-        self.orchestrator._build_unified_containers()   # <-- добавлено
-        self.module_containers = self.orchestrator.module_containers
+        """Перестраивает контейнеры на основе текущего состояния module_identifier."""
+        # После диалога блоки уже имеют module_hint, и они добавлены в module_identifier
+        # Просто строим контейнеры заново
+        self.module_containers = self.orchestrator._build_unified_containers()
+        logger.info(f"Контейнеры перестроены, модулей: {len(self.module_containers)}")
