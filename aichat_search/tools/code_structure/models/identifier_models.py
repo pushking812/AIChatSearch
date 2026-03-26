@@ -39,4 +39,4 @@ class ModuleInfo:
     classes: Dict[str, ClassInfo] = field(default_factory=dict)
     functions: Dict[str, FunctionInfo] = field(default_factory=dict)
     imports: Dict[str, ImportedInfo] = field(default_factory=dict)
-    is_imported: bool = False   # флаг, указывающий, что модуль добавлен только из импорта
+    is_imported: bool = False

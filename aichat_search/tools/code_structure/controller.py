@@ -278,9 +278,7 @@ class CodeStructureController:
                         return textwrap.dedent(fragment)
         elif '_container' in node_data:
             container = node_data['_container']
-            # Проверяем, является ли контейнер плейсхолдером
-            if getattr(container, 'is_placeholder', False):
-                return "# Этот элемент определён только по импорту или комментарию, код отсутствует"
+            # Убираем проверку на is_placeholder
             if container.node_type in ('method', 'function', 'code_block', 'import'):
                 latest = container.get_latest_version()
                 if latest and latest.sources:

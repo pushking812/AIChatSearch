@@ -7,6 +7,7 @@ from typing import List, Optional, Tuple, Dict
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
 
+
 class Version:
     def __init__(self, node, block_id: str, global_index: int, block_content: str, timestamp: float = None, block_idx: int = 0):
         self.node = node

@@ -140,10 +140,9 @@ class ModuleIdentifier:
             target_module, target_name = target.rsplit('.', 1)
         else:
             target_module = target
-            target_name = target  # для модуля (import x) не добавляем функцию/класс
+            target_name = target
 
         if import_info.target_type in ('class', 'function') and target_name:
-            # Создаём модуль-получатель, если его нет
             mod = self._modules.setdefault(target_module, ModuleInfo(name=target_module))
             mod.is_imported = True
             if import_info.target_type == 'class':

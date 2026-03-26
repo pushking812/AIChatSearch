@@ -318,12 +318,33 @@ class ModuleOrchestrator:
             except Exception as e:
                 logger.error(f"Ошибка при объединении {temp}: {e}")
 
+    # -------------------------------------------------------------------------
+    # НОВЫЕ МЕТОДЫ ДЛЯ УНИФИЦИРОВАННОЙ ИЕРАРХИИ
+    # -------------------------------------------------------------------------
+
     def _build_unified_containers(self):
-        """Строит полную иерархию контейнеров, включая пакеты и импортированные модули."""
-        # 1. Собираем все имена модулей
-        all_module_names = set()
-        all_module_names.update(self.module_containers.keys())
-        all_module_names.update(self.module_identifier.get_all_module_names())
+        """
+        Строит унифицированную иерархию контейнеров на основе данных из module_identifier,
+        а затем сливает с реальными блоками.
+        """
+        # 1. Строим иерархию на основе module_identifier._modules
+        new_containers = self._build_hierarchy_from_identifier()
+
+        # 2. Сливаем реальные блоки (из старых контейнеров) в новую иерархию
+        self._merge_real_blocks_into_hierarchy(new_containers)
+
+        # 3. Заменяем старые контейнеры новыми
+        self.module_containers = new_containers
+
+    def _build_hierarchy_from_identifier(self) -> Dict[str, Container]:
+        """
+        Строит иерархию контейнеров на основе module_identifier._modules.
+        Возвращает словарь корневых контейнеров.
+        """
+        # Собираем все имена модулей из identifier
+        all_module_names = set(self.module_identifier.get_all_module_names())
+
+        # Также добавляем модули из импортов (целевые модули), которые могли не попасть в _modules
         for module_name, imports in self.module_identifier._imported.items():
             for imp in imports.values():
                 if '.' in imp.target_fullname:
@@ -332,28 +353,29 @@ class ModuleOrchestrator:
                     module = imp.target_fullname
                 all_module_names.add(module)
 
-        # 2. Строим иерархию
         root_containers = {}
+
         for full_name in sorted(all_module_names):
             parts = full_name.split('.')
             current = root_containers
             parent = None
+            parent_path = ""
             for i, part in enumerate(parts):
                 is_last = (i == len(parts) - 1)
 
-                if is_last and full_name in self.module_containers:
-                    container = self.module_containers[full_name]
-                    container.name = part
-                else:
-                    if part not in current:
-                        if is_last:
-                            container = ModuleContainer(part)
-                            container.set_placeholder(True)
-                        else:
-                            container = PackageContainer(part)
-                        current[part] = container
+                if part not in current:
+                    if is_last:
+                        container = ModuleContainer(part)
                     else:
-                        container = current[part]
+                        container = PackageContainer(part)
+                    current[part] = container
+                    # Устанавливаем полный путь
+                    if parent_path:
+                        container.full_path = f"{parent_path}.{part}"
+                    else:
+                        container.full_path = part
+                else:
+                    container = current[part]
 
                 if parent is not None:
                     if container not in parent.children:
@@ -365,43 +387,95 @@ class ModuleOrchestrator:
                 else:
                     container.children_dict = {c.name: c for c in container.children}
                     current = container.children_dict
+                parent_path = container.full_path
 
-            # После построения иерархии для последнего уровня заполняем контейнер
-            if is_last:
-                self._populate_placeholder_container(parent, full_name)
+            # Заполняем последний уровень классами и методами из module_info
+            module_info = self.module_identifier.get_module_info(full_name)
+            if module_info:
+                self._populate_hierarchy_container(parent, module_info)
 
-        self.module_containers = root_containers
+        return root_containers
 
-    def _populate_placeholder_container(self, container: ModuleContainer, full_name: str):
-        """Заполняет контейнер классами и функциями из module_identifier (включая импортированные)."""
-        module_info = self.module_identifier.get_module_info(full_name)
-        if not module_info:
-            return
-
-        # Добавляем классы
+    def _populate_hierarchy_container(self, module_container: ModuleContainer, module_info):
+        """Заполняет контейнер модуля классами и функциями из module_info."""
+        # Добавляем классы и их методы
         for class_name, class_info in module_info.classes.items():
-            existing = container.find_child_container(class_name, "class")
-            if not existing:
+            class_container = module_container.find_child_container(class_name, "class")
+            if not class_container:
                 class_container = ClassContainer(class_name)
-                class_container.set_placeholder(True)
-                container.add_child(class_container)
+                module_container.add_child(class_container)
+                class_container.full_path = f"{module_container.full_path}.{class_name}"
             else:
-                class_container = existing
-                # Если класс уже существует (реальный код), не меняем его тип
+                class_container.full_path = f"{module_container.full_path}.{class_name}"
 
-            # Добавляем методы класса
             for method_name, method_info in class_info.methods.items():
-                if not class_container.find_child_container(method_name, "method"):
+                method_container = class_container.find_child_container(method_name, "method")
+                if not method_container:
                     method_container = MethodContainer(method_name)
-                    method_container.set_placeholder(True)
                     class_container.add_child(method_container)
+                    method_container.full_path = f"{class_container.full_path}.{method_name}"
+                else:
+                    method_container.full_path = f"{class_container.full_path}.{method_name}"
 
-        # Добавляем функции
+        # Добавляем функции (не принадлежащие классам)
         for func_name, func_info in module_info.functions.items():
-            if not container.find_child_container(func_name, "function"):
+            func_container = module_container.find_child_container(func_name, "function")
+            if not func_container:
                 func_container = FunctionContainer(func_name)
-                func_container.set_placeholder(True)
-                container.add_child(func_container)
+                module_container.add_child(func_container)
+                func_container.full_path = f"{module_container.full_path}.{func_name}"
+            else:
+                func_container.full_path = f"{module_container.full_path}.{func_name}"
+
+    def _merge_real_blocks_into_hierarchy(self, new_containers: Dict[str, Container]):
+        """
+        Сливает реальные блоки кода из старых контейнеров (self.module_containers)
+        в новую иерархию new_containers.
+        """
+        for module_name, old_module_container in self.module_containers.items():
+            new_module = self._find_container_by_path(module_name, new_containers)
+            if new_module and new_module.node_type == old_module_container.node_type:
+                # Копируем версии модуля
+                for version in old_module_container.versions:
+                    new_module.add_version(version)
+                # Рекурсивно обрабатываем детей
+                self._copy_old_container_children(old_module_container, new_module, module_name, new_containers)
+
+    def _find_container_by_path(self, path: str, root_containers: Dict[str, Container]) -> Optional[Container]:
+        """
+        Ищет контейнер по полному пути (например, 'a.b.c.MyClass').
+        """
+        parts = path.split('.')
+        current = root_containers
+        for i, part in enumerate(parts):
+            if part not in current:
+                return None
+            container = current[part]
+            if i == len(parts) - 1:
+                return container
+            # Переходим к детям
+            if hasattr(container, 'children_dict'):
+                current = container.children_dict
+            else:
+                current = {c.name: c for c in container.children}
+        return None
+
+    def _copy_old_container_children(self, old_container: Container, new_container: Container, current_path: str, new_containers: Dict[str, Container]):
+        """
+        Рекурсивно копирует версии детей старого контейнера в соответствующие новые контейнеры.
+        """
+        for old_child in old_container.children:
+            child_path = f"{current_path}.{old_child.name}"
+            new_child = self._find_container_by_path(child_path, new_containers)
+            if new_child and new_child.node_type == old_child.node_type:
+                for version in old_child.versions:
+                    new_child.add_version(version)
+                # Рекурсивно для внуков
+                self._copy_old_container_children(old_child, new_child, child_path, new_containers)
+
+    # -------------------------------------------------------------------------
+    # ЛОГИРОВАНИЕ И ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
+    # -------------------------------------------------------------------------
 
     def _log_module_tree(self, module_name: str, container: Container, level: int = 0, order: int = 0):
         indent = "  " * level
@@ -452,6 +526,7 @@ class ModuleOrchestrator:
         self.assignment_stats.clear()
         self.module_identifier.remove_temp_modules()
 
+    # Текстовые подсказки
     def _apply_text_hints(self, blocks: List[MessageBlockInfo]):
         for block in blocks:
             if block.module_hint:
