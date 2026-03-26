@@ -98,7 +98,8 @@ class ProjectTreeBuilder:
 
     def _build_module_tree(self):
         """Строит иерархическое дерево модулей из плоского словаря."""
-        for name, module in self.project_info.modules.items():
+        for name in list(self.project_info.modules.keys()):  # копия ключей
+            module = self.project_info.modules[name]
             parts = name.split('.')
             if len(parts) > 1:
                 parent_name = '.'.join(parts[:-1])

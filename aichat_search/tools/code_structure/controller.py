@@ -166,26 +166,25 @@ class CodeStructureController:
         for block in all_blocks:
             if block.block_id in assignments:
                 self.module_service.assign_module_to_block(block, assignments[block.block_id])
-            else:
-                block.module_hint = None
         
         if new_containers is not None:
             self.module_service.module_containers = new_containers
         
         self.module_service.remove_temp_modules()
-        unknown = self._resolve_remaining_after_dialog()
-        if unknown:
-            self._show_module_dialog(unknown)
-        else:
-            self._rebuild_after_dialog()
+        # Больше не вызываем _resolve_remaining_after_dialog, чтобы избежать зацикливания
+        self._rebuild_after_dialog()
 
     def _resolve_remaining_after_dialog(self) -> List[MessageBlockInfo]:
-        logger.info("=== Повторное автоматическое определение после диалога ===")
+        print("=== Повторное автоматическое определение после диалога ===")
         all_blocks = self.block_service.get_all_blocks()
         unknown = [b for b in all_blocks if not b.module_hint and b.tree and not b.syntax_error]
+        print(f"Блоков без module_hint после диалога: {len(unknown)}")
+        for b in unknown:
+            print(f"Блок без hint: {b.block_id}")
         if not unknown:
             return []
         containers, new_unknown = self.module_service.process_blocks(unknown)
+        print(f"После повторного определения осталось неизвестных: {len(new_unknown)}")
         return new_unknown
 
     def _rebuild_after_dialog(self):

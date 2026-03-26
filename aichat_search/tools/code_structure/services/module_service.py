@@ -75,8 +75,5 @@ class ModuleService:
         self.identifier.remove_temp_modules()
 
     def rebuild_after_dialog(self, blocks: List[MessageBlockInfo]):
-        """Перестраивает контейнеры на основе текущего состояния module_identifier."""
-        # После диалога блоки уже имеют module_hint, и они добавлены в module_identifier
-        # Просто строим контейнеры заново
         self.module_containers = self.orchestrator._build_unified_containers()
         logger.info(f"Контейнеры перестроены, модулей: {len(self.module_containers)}")

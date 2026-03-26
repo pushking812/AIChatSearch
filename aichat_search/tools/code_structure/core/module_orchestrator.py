@@ -9,12 +9,12 @@ from aichat_search.tools.code_structure.models.block_info import MessageBlockInf
 from aichat_search.tools.code_structure.models.containers import (
     Container, MethodContainer, ClassContainer, ModuleContainer, FunctionContainer, PackageContainer, Version
 )
-from aichat_search.tools.code_structure.models.identifier_models import ModuleInfo, ClassInfo, MethodInfo, FunctionInfo, VersionInfo
-from aichat_search.tools.code_structure.models.node import Node
+from aichat_search.tools.code_structure.models.identifier_models import ModuleInfo, ClassInfo, MethodInfo, FunctionInfo
 from aichat_search.tools.code_structure.core.module_identifier import ModuleIdentifier
 from aichat_search.tools.code_structure.core.module_resolver import ModuleResolver
 from aichat_search.tools.code_structure.models.import_models import ImportInfo
 from aichat_search.tools.code_structure.core.signature_utils import extract_function_signature
+from aichat_search.tools.code_structure.core.version_comparator import VersionComparator
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -41,15 +41,20 @@ class ModuleOrchestrator:
         valid_blocks, error_blocks = self._separate_error_blocks(blocks)
         logger.info(f"Блоков с ошибками: {len(error_blocks)}")
 
+        # 1. Блоки с явным module_hint
         self._add_blocks_with_hint(valid_blocks)
 
+        # 2. Добавляем импорты
         if imported_by_module:
             self._add_imported_identifiers(imported_by_module)
 
+        # 3. Текстовые подсказки
         self._apply_text_hints(valid_blocks)
 
+        # 4. Итеративное разрешение модулей для блоков без подсказок
         unknown_blocks = self._resolve_modules_iteratively(valid_blocks)
 
+        # 5. Строим итоговые контейнеры
         containers = self._build_unified_containers()
         self.module_containers = containers
 
@@ -119,17 +124,56 @@ class ModuleOrchestrator:
 
         self.module_resolver = ModuleResolver(self.module_identifier)
 
-        # Группировка (упрощённая)
-        blocks_without_hint = [b for b in blocks if not b.module_hint]
-        unknown = []
-        for block in blocks_without_hint:
-            resolved, module, _ = self.module_resolver.resolve_block(block)
-            if resolved:
-                block.module_hint = module
-                self.module_identifier.collect_from_tree(block.tree, module, block_info=block)
+        group_classes_with_hint = []
+        group_imports_with_hint = []
+        group_classes_only = []
+        group_imports_only = []
+        group_neither = []
+
+        for b in blocks:
+            if not b.tree or b.syntax_error:
+                continue
+            has_classes = self._block_has_classes(b)
+            has_imports = self._block_has_imports(b.content)
+
+            if has_classes and b.module_hint:
+                group_classes_with_hint.append(b)
+            elif not has_classes and has_imports and b.module_hint:
+                group_imports_with_hint.append(b)
+            elif has_classes and not b.module_hint:
+                group_classes_only.append(b)
+            elif not has_classes and has_imports and not b.module_hint:
+                group_imports_only.append(b)
             else:
-                unknown.append(block)
-        return unknown
+                group_neither.append(b)
+
+        def process_group(group):
+            unknown = group[:]
+            while True:
+                newly = []
+                still = []
+                for block in unknown:
+                    resolved, module, _ = self.module_resolver.resolve_block(block)
+                    if resolved:
+                        block.module_hint = module
+                        self.module_identifier.collect_from_tree(block.tree, module, block_info=block)
+                        newly.append(block)
+                    else:
+                        still.append(block)
+                if not newly:
+                    break
+                unknown = still
+            return unknown
+
+        unknown1 = process_group(group_classes_with_hint)
+        unknown2 = process_group(group_imports_with_hint)
+        unknown3 = process_group(group_classes_only)
+        unknown4 = process_group(group_imports_only)
+        unknown5 = process_group(group_neither)
+
+        final_unknown = unknown2 + unknown4 + unknown5
+        logger.info(f"Неопределено: {len(final_unknown)}")
+        return final_unknown
 
     def _block_has_classes(self, block):
         if not block.tree:
@@ -208,59 +252,49 @@ class ModuleOrchestrator:
 
     def _populate_container_with_module_info(self, module_container: ModuleContainer, module_info: ModuleInfo):
         """Заполняет контейнер модуля классами и функциями из ModuleInfo."""
-        # 1. Создаём классы и их методы, добавляя версии из class_info
+        # 1. Создаём классы и их методы, копируя версии из class_info.methods
         for class_name, class_info in module_info.classes.items():
             class_container = module_container.find_child_container(class_name, "class")
             if not class_container:
                 class_container = ClassContainer(class_name)
                 module_container.add_child(class_container)
                 class_container.full_path = f"{module_container.full_path}.{class_name}"
-            # Добавляем методы класса с их версиями
+            for v in class_info.versions:
+                class_container.add_version(v)
             for method_name, method_info in class_info.methods.items():
                 method_container = class_container.find_child_container(method_name, "method")
                 if not method_container:
                     method_container = MethodContainer(method_name)
                     class_container.add_child(method_container)
                     method_container.full_path = f"{class_container.full_path}.{method_name}"
-                # Добавляем все версии метода из method_info.sources
-                for src in method_info.sources:
-                    # Создаём фиктивный узел, чтобы удовлетворить конструктор Version
-                    class DummyNode:
-                        def __init__(self):
-                            self.name = method_name
-                            self.lineno_start = src.start
-                            self.lineno_end = src.end
-                            self.signature = ""
-                    dummy_node = DummyNode()
-                    version = Version(dummy_node, src.block_id, src.global_index, "", src.timestamp, src.block_idx)
-                    method_container.add_version(version)
+                for v in method_info.versions:
+                    method_container.add_version(v)
 
-        # 2. Обрабатываем функции (не принадлежащие классам)
-        # Собираем все имена методов из классов, чтобы исключить их
+        # 2. Собираем все имена методов для последующей обработки функций
         method_names = set()
         for class_info in module_info.classes.values():
             method_names.update(class_info.methods.keys())
 
+        # 3. Обрабатываем функции из module_info.functions
         for func_name, func_info in module_info.functions.items():
             if func_name in method_names:
-                continue  # это метод, уже обработан
-            func_container = module_container.find_child_container(func_name, "function")
-            if not func_container:
-                func_container = FunctionContainer(func_name)
-                module_container.add_child(func_container)
-                func_container.full_path = f"{module_container.full_path}.{func_name}"
-            for src in func_info.sources:
-                class DummyNode:
-                    def __init__(self):
-                        self.name = func_name
-                        self.lineno_start = src.start
-                        self.lineno_end = src.end
-                        self.signature = ""
-                dummy_node = DummyNode()
-                version = Version(dummy_node, src.block_id, src.global_index, "", src.timestamp, src.block_idx)
-                func_container.add_version(version)
-
-    def _create_version_from_info(self, src: VersionInfo, name: str) -> Version:
-        # Создаём фиктивный узел
-        node = Node(name=name, node_type="code_block", lineno_start=src.start, lineno_end=src.end)
-        return Version(node, src.block_id, src.global_index, src.block_content, src.timestamp, src.block_idx)
+                # Это метод класса – добавляем его версии в существующий метод
+                for class_name, class_info in module_info.classes.items():
+                    if func_name in class_info.methods:
+                        class_container = module_container.find_child_container(class_name, "class")
+                        if class_container:
+                            method_container = class_container.find_child_container(func_name, "method")
+                            if method_container:
+                                for v in func_info.versions:
+                                    existing = VersionComparator.find_existing(method_container.versions, v)
+                                    if not existing:
+                                        method_container.add_version(v)
+            else:
+                # Обычная функция – создаём контейнер и добавляем версии
+                func_container = module_container.find_child_container(func_name, "function")
+                if not func_container:
+                    func_container = FunctionContainer(func_name)
+                    module_container.add_child(func_container)
+                    func_container.full_path = f"{module_container.full_path}.{func_name}"
+                for v in func_info.versions:
+                    func_container.add_version(v)
