@@ -20,16 +20,16 @@ class ModuleResolver:
             ClassStrategy(),
             MethodStrategy(),
             FunctionStrategy(),
-            ImportStrategy()  # добавлена стратегия на основе импортов
+            ImportStrategy()
         ]
         self.auto_assign: Dict[str, str] = {}
         self.need_dialog: List[MessageBlockInfo] = []
 
     def resolve_block(self, block_info: MessageBlockInfo) -> Tuple[bool, Optional[str], None]:
-        logger.info(f"=== resolve_block для {block_info.block_id} ===")
+        print(f"=== resolve_block для {block_info.block_id} ===")
 
         if block_info.tree is None or block_info.syntax_error:
-            logger.info(f"  Блок имеет ошибку или пустое дерево")
+            print(f"  Блок имеет ошибку или пустое дерево")
             return False, None, None
 
         for strategy in self.strategies:
@@ -37,17 +37,18 @@ class ModuleResolver:
             module = strategy.resolve(block_info, self.module_identifier)
 
             if strategy.ambiguous:
-                logger.info(f"  -> НЕОДНОЗНАЧНО ПО {strategy.__class__.__name__}, требуется диалог")
+                print(f"  -> НЕОДНОЗНАЧНО ПО {strategy.__class__.__name__}, требуется диалог")
                 self.need_dialog.append(block_info)
                 return False, None, None
 
             if module:
-                logger.info(f"  -> НАЙДЕН ПО {strategy.__class__.__name__}: {module}")
+                print(f"  -> НАЙДЕН ПО {strategy.__class__.__name__}: {module}")
                 self.auto_assign[block_info.block_id] = module
                 return True, module, None
 
-        logger.info(f"  -> НЕ ОПРЕДЕЛЕН")
+        print(f"  -> НЕ ОПРЕДЕЛЕН")
         self.need_dialog.append(block_info)
+        print(f"Результат для {block_info.block_id}: {module} (ambiguous={strategy.ambiguous})")
         return False, None, None
 
     def get_auto_assignments(self):

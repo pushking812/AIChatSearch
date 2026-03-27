@@ -1,64 +1,69 @@
-# aichat_search/tools/code_structure/core/module_orchestrator.py
+# aichat_search/tools/code_structure/services/module_resolver_service.py
 
 import logging
 import re
-from typing import List, Dict, Optional, Tuple, Any
+from typing import List, Dict, Optional, Tuple, Set
 from collections import defaultdict
 
 from aichat_search.tools.code_structure.models.block_info import MessageBlockInfo
 from aichat_search.tools.code_structure.models.containers import (
-    Container, MethodContainer, ClassContainer, ModuleContainer, FunctionContainer, PackageContainer, Version
+    Container, ModuleContainer, PackageContainer, ClassContainer, MethodContainer, FunctionContainer
 )
-from aichat_search.tools.code_structure.models.identifier_models import ModuleInfo, ClassInfo, MethodInfo, FunctionInfo
+from aichat_search.tools.code_structure.models.identifier_models import ModuleInfo
 from aichat_search.tools.code_structure.core.module_identifier import ModuleIdentifier
 from aichat_search.tools.code_structure.core.module_resolver import ModuleResolver
-from aichat_search.tools.code_structure.models.import_models import ImportInfo
+from aichat_search.tools.code_structure.services.import_service import ImportService
 from aichat_search.tools.code_structure.core.signature_utils import extract_function_signature
 from aichat_search.tools.code_structure.core.version_comparator import VersionComparator
+from aichat_search.tools.code_structure.utils.helpers import extract_module_hint
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 
-class ModuleOrchestrator:
-    def __init__(self):
+class ModuleResolverService:
+    def __init__(self, import_service: ImportService):
+        self.import_service = import_service
         self.module_identifier = ModuleIdentifier()
-        self.module_resolver = None
         self.text_blocks_by_pair: Dict[str, Dict[int, str]] = {}
         self.full_texts_by_pair: Dict[str, str] = {}
-        self.module_containers: Dict[str, Container] = {}
 
-    def process_blocks(
+    def resolve_blocks(
         self,
         blocks: List[MessageBlockInfo],
-        imported_by_module: Optional[Dict[str, List[ImportInfo]]] = None,
-        text_blocks_by_pair: Optional[Dict[str, Dict[int, str]]] = None,
-        full_texts_by_pair: Optional[Dict[str, str]] = None
+        text_blocks_by_pair: Dict[str, Dict[int, str]],
+        full_texts_by_pair: Dict[str, str]
     ) -> Tuple[Dict[str, Container], List[MessageBlockInfo]]:
-        logger.info("=== process_blocks: НАЧАЛО ===")
-        self.text_blocks_by_pair = text_blocks_by_pair or {}
-        self.full_texts_by_pair = full_texts_by_pair or {}
-        valid_blocks, error_blocks = self._separate_error_blocks(blocks)
-        logger.info(f"Блоков с ошибками: {len(error_blocks)}")
+        """
+        Определяет модули для блоков кода.
 
-        # 1. Блоки с явным module_hint
+        Returns:
+            tuple: (module_containers, unknown_blocks)
+        """
+        self.text_blocks_by_pair = text_blocks_by_pair
+        self.full_texts_by_pair = full_texts_by_pair
+
+        valid_blocks, error_blocks = self._separate_error_blocks(blocks)
+        print(f"Блоков с ошибками: {len(error_blocks)}")
+
+        # 1. Блоки с явным module_hint из комментариев
         self._add_blocks_with_hint(valid_blocks)
 
-        # 2. Добавляем импорты
-        if imported_by_module:
-            self._add_imported_identifiers(imported_by_module)
+        # 2. Анализ комментариев и импортов для назначения модулей
+        self._assign_from_comments_and_imports(valid_blocks)
 
-        # 3. Текстовые подсказки
+        # 3. Собираем импорты (для идентификации импортированных объектов)
+        imported_by_module = self.import_service.get_imported_items_by_module(valid_blocks)
+        self._add_imported_identifiers(imported_by_module)
+
+        # 4. Текстовые подсказки
         self._apply_text_hints(valid_blocks)
 
-        # 4. Итеративное разрешение модулей для блоков без подсказок
+        # 5. Итеративное разрешение модулей для блоков без подсказок
         unknown_blocks = self._resolve_modules_iteratively(valid_blocks)
 
-        # 5. Строим итоговые контейнеры
+        # 6. Строим итоговые контейнеры
         containers = self._build_unified_containers()
-        self.module_containers = containers
 
-        logger.info(f"Обработано блоков: {len(blocks)}, построено контейнеров: {len(containers)}")
         return containers, unknown_blocks + error_blocks
 
     def _separate_error_blocks(self, blocks):
@@ -72,16 +77,143 @@ class ModuleOrchestrator:
 
     def _add_blocks_with_hint(self, blocks):
         for b in blocks:
+            if not b.module_hint and b.content:
+                hint = extract_module_hint(b)
+                if hint:
+                    b.module_hint = hint
             if b.module_hint and b.tree and not b.syntax_error:
                 self.module_identifier.collect_from_tree(b.tree, b.module_hint, block_info=b)
 
-    def _add_imported_identifiers(self, imported_by_module: Dict[str, List[ImportInfo]]):
+    def _add_imported_identifiers(self, imported_by_module: Dict[str, List]):
         for module_name, imports in imported_by_module.items():
             for imp in imports:
                 self.module_identifier.add_imported_item(module_name, imp)
 
+    def _assign_from_comments_and_imports(self, blocks: List[MessageBlockInfo]):
+        """
+        Анализирует комментарии-подсказки и импорты для назначения module_hint блокам,
+        содержащим классы или функции.
+        """
+        # Сбор информации: для каждого имени класса/функции собираем модули-источники
+        module_for_def = defaultdict(lambda: defaultdict(set))  # {name: {type: set(modules)}}
+        
+        # 1. Сбор из комментариев-подсказок
+        for block in blocks:
+            if block.syntax_error or not block.content:
+                continue
+            hint = extract_module_hint(block)
+            if hint:
+                self._collect_definitions_from_block(block, hint, module_for_def)
+
+        # 2. Сбор из импортов
+        for block in blocks:
+            if block.syntax_error or not block.content:
+                continue
+            current_module = block.module_hint
+            if not current_module:
+                continue
+            imports = self.import_service.get_imported_items_by_module([block]).get(current_module, [])
+            for imp in imports:
+                target_module = imp.target_fullname.rsplit('.', 1)[0] if '.' in imp.target_fullname else imp.target_fullname
+                name = imp.target_fullname.split('.')[-1]
+                module_for_def[name][imp.target_type].add(target_module)
+
+        # 3. Определение наиболее вероятного модуля для каждого имени
+        resolved_def = {}  # {name: {type: module}}
+        for name, types in module_for_def.items():
+            resolved_def[name] = {}
+            for def_type, modules in types.items():
+                if len(modules) == 1:
+                    resolved_def[name][def_type] = next(iter(modules))
+                else:
+                    # Несколько возможных модулей – конфликт, помечаем None
+                    resolved_def[name][def_type] = None
+
+        # 4. Назначение module_hint для блоков, содержащих классы или функции
+        already_assigned = set()
+        for block in blocks:
+            if block.module_hint and block not in already_assigned:
+                print(f"Блоку {block.block_id} назначен модуль {block.module_hint} из комментариев/импортов")
+            if block.module_hint or block.syntax_error or not block.tree:
+                continue
+            if not self._block_has_classes_or_functions(block.tree):
+                continue
+
+            classes = self._extract_class_names(block.tree)
+            functions = self._extract_function_names(block.tree)
+            possible_modules = set()
+            for cls in classes:
+                mod = resolved_def.get(cls, {}).get('class')
+                if mod:
+                    possible_modules.add(mod)
+            for func in functions:
+                mod = resolved_def.get(func, {}).get('function')
+                if mod:
+                    possible_modules.add(mod)
+
+            if len(possible_modules) == 1:
+                module = next(iter(possible_modules))
+                block.module_hint = module
+                self.module_identifier.collect_from_tree(block.tree, module, block_info=block)
+                print(f"[COMMENTS/IMPORTS] Блоку {block.block_id} назначен модуль {module}")
+            elif len(possible_modules) > 1:
+                logger.warning(f"[COMMENTS/IMPORTS] Блок {block.block_id} содержит определения из разных модулей: {possible_modules}")
+
+    def _collect_definitions_from_block(self, block: MessageBlockInfo, module_name: str, module_for_def: dict):
+        """Собирает имена классов и функций из дерева блока."""
+        if not block.tree:
+            return
+        for child in block.tree.children:
+            if child.node_type == "class":
+                module_for_def[child.name]['class'].add(module_name)
+                self._collect_definitions_from_node(child, module_name, module_for_def)
+            elif child.node_type == "function":
+                module_for_def[child.name]['function'].add(module_name)
+            elif child.node_type == "method":
+                pass
+            else:
+                self._collect_definitions_from_node(child, module_name, module_for_def)
+
+    def _collect_definitions_from_node(self, node, module_name: str, module_for_def: dict):
+        for child in node.children:
+            if child.node_type == "class":
+                module_for_def[child.name]['class'].add(module_name)
+                self._collect_definitions_from_node(child, module_name, module_for_def)
+            elif child.node_type == "function":
+                module_for_def[child.name]['function'].add(module_name)
+            elif child.node_type == "method":
+                pass
+            else:
+                self._collect_definitions_from_node(child, module_name, module_for_def)
+
+    def _block_has_classes_or_functions(self, node) -> bool:
+        """Проверяет, содержит ли дерево узлов класс или функцию (не метод)."""
+        for child in node.children:
+            if child.node_type in ("class", "function"):
+                return True
+            if self._block_has_classes_or_functions(child):
+                return True
+        return False
+
+    def _extract_class_names(self, node) -> Set[str]:
+        classes = set()
+        for child in node.children:
+            if child.node_type == "class":
+                classes.add(child.name)
+            classes.update(self._extract_class_names(child))
+        return classes
+
+    def _extract_function_names(self, node) -> Set[str]:
+        functions = set()
+        for child in node.children:
+            if child.node_type == "function":
+                functions.add(child.name)
+            elif child.node_type == "method":
+                continue
+            functions.update(self._extract_function_names(child))
+        return functions
+
     def _apply_text_hints(self, blocks: List[MessageBlockInfo]):
-        import re
         for block in blocks:
             if block.module_hint:
                 continue
@@ -101,29 +233,36 @@ class ModuleOrchestrator:
             if prev_text_idx is None:
                 continue
             text = text_blocks[prev_text_idx]
-            match = re.search(r'класс[аеуы]?\s+(?:`|\'|")?([A-Za-z_][A-Za-z0-9_]*)(?:`|\'|")?', text, re.IGNORECASE)
-            if not match:
+            class_match = re.search(
+                r'(?:в\s+)?класс[еауы]?\s+(?:`|\'|")?([A-Za-z_][A-Za-z0-9_]*)(?:`|\'|")?',
+                text, re.IGNORECASE
+            )
+            if not class_match:
                 continue
-            class_name = match.group(1)
+            class_name = class_match.group(1)
             module = self.module_identifier.find_module_for_class(class_name)
             if not module:
                 module = self.module_identifier.find_imported_class(class_name)
             if module:
-                logger.info(f"Текстовая подсказка: класс {class_name} -> модуль {module} для блока {block.block_id}")
+                print(f"Текстовая подсказка: класс {class_name} -> модуль {module} для блока {block.block_id}")
                 if block.tree:
                     self.module_identifier.collect_from_tree(block.tree, module, class_hint=class_name, block_info=block)
-                block.module_hint = module
                 if block.metadata is None:
                     block.metadata = {}
                 block.metadata['class_hint'] = class_name
 
     def _resolve_modules_iteratively(self, blocks):
+        # 1. Обрабатываем уже назначенные (из комментариев/импортов)
         for b in blocks:
             if b.module_hint and b.tree and not b.syntax_error:
                 self.module_identifier.collect_from_tree(b.tree, b.module_hint, block_info=b)
 
-        self.module_resolver = ModuleResolver(self.module_identifier)
+        # 2. Применяем текстовые подсказки, чтобы получить hint для оставшихся
+        self._apply_text_hints(blocks)
 
+        module_resolver = ModuleResolver(self.module_identifier)
+
+        # 3. Формируем группы с учётом всех hint (включая полученные из текста)
         group_classes_with_hint = []
         group_imports_with_hint = []
         group_classes_only = []
@@ -153,7 +292,10 @@ class ModuleOrchestrator:
                 newly = []
                 still = []
                 for block in unknown:
-                    resolved, module, _ = self.module_resolver.resolve_block(block)
+                    # Если у блока уже есть hint, пропускаем (хотя он не должен сюда попадать)
+                    if block.module_hint:
+                        continue
+                    resolved, module, _ = module_resolver.resolve_block(block)
                     if resolved:
                         block.module_hint = module
                         self.module_identifier.collect_from_tree(block.tree, module, block_info=block)
@@ -252,7 +394,7 @@ class ModuleOrchestrator:
 
     def _populate_container_with_module_info(self, module_container: ModuleContainer, module_info: ModuleInfo):
         """Заполняет контейнер модуля классами и функциями из ModuleInfo."""
-        # 1. Создаём классы и их методы, копируя версии из class_info.methods
+        # 1. Создаём классы и их методы
         for class_name, class_info in module_info.classes.items():
             class_container = module_container.find_child_container(class_name, "class")
             if not class_container:
@@ -270,7 +412,7 @@ class ModuleOrchestrator:
                 for v in method_info.versions:
                     method_container.add_version(v)
 
-        # 2. Собираем все имена методов для последующей обработки функций
+        # 2. Собираем все имена методов для обработки функций
         method_names = set()
         for class_info in module_info.classes.values():
             method_names.update(class_info.methods.keys())

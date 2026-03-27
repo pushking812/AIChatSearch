@@ -6,7 +6,8 @@ import sys
 
 from aichat_search.tools.code_structure.models.block_info import MessageBlockInfo
 from aichat_search.tools.code_structure.models.containers import Container
-from aichat_search.tools.code_structure.core.module_orchestrator import ModuleOrchestrator
+from aichat_search.tools.code_structure.services.module_resolver_service import ModuleResolverService
+from aichat_search.tools.code_structure.services.import_service import ImportService
 from aichat_search.tools.code_structure.core.module_identifier import ModuleIdentifier
 from aichat_search.tools.code_structure.models.import_models import ImportInfo
 
@@ -22,13 +23,14 @@ if not logger.handlers:
 
 class ModuleService:
     def __init__(self):
-        self.orchestrator = ModuleOrchestrator()
+        self.import_service = ImportService()
+        self.resolver_service = ModuleResolverService(self.import_service)
         self.module_containers: Dict[str, Container] = {}
         self.unknown_blocks: List[MessageBlockInfo] = []
 
     @property
     def identifier(self) -> ModuleIdentifier:
-        return self.orchestrator.module_identifier
+        return self.resolver_service.module_identifier
 
     def process_blocks(
         self,
@@ -37,8 +39,10 @@ class ModuleService:
         text_blocks_by_pair: Optional[Dict[str, Dict[int, str]]] = None,
         full_texts_by_pair: Optional[Dict[str, str]] = None
     ) -> Tuple[Dict[str, Container], List[MessageBlockInfo]]:
-        containers, unknown = self.orchestrator.process_blocks(
-            blocks, imported_by_module, text_blocks_by_pair, full_texts_by_pair
+        containers, unknown = self.resolver_service.resolve_blocks(
+            blocks,
+            text_blocks_by_pair or {},
+            full_texts_by_pair or {}
         )
         self.module_containers = containers
         self.unknown_blocks = unknown
@@ -66,14 +70,18 @@ class ModuleService:
         logger.info(f"Блок {block.block_id}: {old_hint} -> {module_name}")
         if block.tree and not block.syntax_error:
             self.identifier.collect_from_tree(block.tree, module_name, block_info=block)
+        # После изменения нужно перестроить контейнеры
+        self.module_containers = self.resolver_service._build_unified_containers()
 
     def reset_assignments(self, blocks: List[MessageBlockInfo]):
         for block in blocks:
             block.module_hint = None
+        self.module_containers = self.resolver_service._build_unified_containers()
 
     def remove_temp_modules(self):
         self.identifier.remove_temp_modules()
+        self.module_containers = self.resolver_service._build_unified_containers()
 
     def rebuild_after_dialog(self, blocks: List[MessageBlockInfo]):
-        self.module_containers = self.orchestrator._build_unified_containers()
+        self.module_containers = self.resolver_service._build_unified_containers()
         logger.info(f"Контейнеры перестроены, модулей: {len(self.module_containers)}")

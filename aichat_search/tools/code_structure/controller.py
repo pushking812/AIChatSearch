@@ -15,7 +15,6 @@ from aichat_search.tools.code_structure.core.tree_builder import TreeBuilder
 from aichat_search.tools.code_structure.services.dialog_service import DialogService
 from aichat_search.tools.code_structure.services.import_service import ImportService
 from aichat_search.tools.code_structure.models.block_info import MessageBlockInfo
-from aichat_search.tools.code_structure.core.project_tree_builder import ProjectTreeBuilder
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -50,34 +49,20 @@ class CodeStructureController:
         text_blocks_by_pair = self.block_service.get_text_blocks_by_pair()
         full_texts_by_pair = self.block_service.get_full_texts_by_pair()
 
-        project_builder = ProjectTreeBuilder()
-        project_info = project_builder.process_blocks(all_blocks)
-
-        need_dialog_from_project = project_builder.assign_blocks_to_modules(all_blocks)
-
-        for block in all_blocks:
-            if block.module_hint and block.tree and not block.syntax_error:
-                self.module_service.identifier.collect_from_tree(block.tree, block.module_hint, block_info=block)
-
-        imported_by_module = self.import_service.get_imported_items_by_module(all_blocks)
-
-        blocks_without_hint = [b for b in all_blocks if not b.module_hint]
-        if blocks_without_hint:
-            containers, unknown_from_orchestrator = self.module_service.process_blocks(
-                blocks_without_hint, imported_by_module, text_blocks_by_pair, full_texts_by_pair
-            )
-            need_dialog = need_dialog_from_project + unknown_from_orchestrator
-        else:
-            need_dialog = need_dialog_from_project
-
-        self._rebuild_after_dialog()
+        # Единый вызов сервиса разрешения модулей
+        containers, unknown_blocks = self.module_service.process_blocks(
+            all_blocks,
+            text_blocks_by_pair=text_blocks_by_pair,
+            full_texts_by_pair=full_texts_by_pair
+        )
+        self.module_service.module_containers = containers
+        self.module_service.unknown_blocks = unknown_blocks
 
         self._build_and_display_tree()
-
         self._setup_interface()
 
-        if need_dialog:
-            self._show_module_dialog(need_dialog)
+        if unknown_blocks:
+            self._show_module_dialog(unknown_blocks)
 
     def _handle_error_blocks(self, error_blocks: List[MessageBlockInfo]):
         from aichat_search.tools.code_structure.ui import ErrorBlockDialog
@@ -155,8 +140,6 @@ class CodeStructureController:
         self.view.wait_window(dialog)
         if dialog.result:
             self._apply_dialog_result(dialog.result)
-        else:
-            self._rebuild_after_dialog()
 
     def _apply_dialog_result(self, dialog_result):
         assignments = dialog_result.get('assignments', {})
@@ -171,59 +154,7 @@ class CodeStructureController:
             self.module_service.module_containers = new_containers
         
         self.module_service.remove_temp_modules()
-        # Больше не вызываем _resolve_remaining_after_dialog, чтобы избежать зацикливания
-        self._rebuild_after_dialog()
-
-    def _resolve_remaining_after_dialog(self) -> List[MessageBlockInfo]:
-        print("=== Повторное автоматическое определение после диалога ===")
-        all_blocks = self.block_service.get_all_blocks()
-        unknown = [b for b in all_blocks if not b.module_hint and b.tree and not b.syntax_error]
-        print(f"Блоков без module_hint после диалога: {len(unknown)}")
-        for b in unknown:
-            print(f"Блок без hint: {b.block_id}")
-        if not unknown:
-            return []
-        containers, new_unknown = self.module_service.process_blocks(unknown)
-        print(f"После повторного определения осталось неизвестных: {len(new_unknown)}")
-        return new_unknown
-
-    def _rebuild_after_dialog(self):
-        logger.info("=== Перестроение после диалога ===")
-        all_blocks = self.block_service.get_all_blocks()
-        self.module_service.rebuild_after_dialog(all_blocks)
         self._build_and_display_tree()
-
-    def _reset_module_assignments(self):
-        all_blocks = self.block_service.get_all_blocks()
-        self.module_service.reset_assignments(all_blocks)
-
-        project_builder = ProjectTreeBuilder()
-        project_info = project_builder.process_blocks(all_blocks)
-        need_dialog_from_project = project_builder.assign_blocks_to_modules(all_blocks)
-
-        for block in all_blocks:
-            if block.module_hint and block.tree and not block.syntax_error:
-                self.module_service.identifier.collect_from_tree(block.tree, block.module_hint, block_info=block)
-
-        imported_by_module = self.import_service.get_imported_items_by_module(all_blocks)
-        text_blocks_by_pair = self.block_service.get_text_blocks_by_pair()
-        full_texts_by_pair = self.block_service.get_full_texts_by_pair()
-        blocks_without_hint = [b for b in all_blocks if not b.module_hint]
-        if blocks_without_hint:
-            containers, unknown_from_orchestrator = self.module_service.process_blocks(
-                blocks_without_hint, imported_by_module, text_blocks_by_pair, full_texts_by_pair
-            )
-            need_dialog = need_dialog_from_project + unknown_from_orchestrator
-        else:
-            need_dialog = need_dialog_from_project
-
-        self._rebuild_after_dialog()
-
-        self._build_and_display_tree()
-
-        if need_dialog:
-            self._show_module_dialog(need_dialog)
-            self._build_and_display_tree()
 
     def _save_structure(self):
         try:
@@ -365,3 +296,19 @@ class CodeStructureController:
             end = min(len(lines), node.lineno_end)
             if start < end:
                 self.view.display_code("\n".join(lines[start:end]))
+                
+    def _reset_module_assignments(self):
+        """Сброс назначений модулей и повторный анализ."""
+        all_blocks = self.block_service.get_all_blocks()
+        self.module_service.reset_assignments(all_blocks)
+        text_blocks_by_pair = self.block_service.get_text_blocks_by_pair()
+        full_texts_by_pair = self.block_service.get_full_texts_by_pair()
+        containers, unknown_blocks = self.module_service.process_blocks(
+            all_blocks,
+            text_blocks_by_pair=text_blocks_by_pair,
+            full_texts_by_pair=full_texts_by_pair
+        )
+        self.module_service.module_containers = containers
+        self._build_and_display_tree()
+        if unknown_blocks:
+            self._show_module_dialog(unknown_blocks)

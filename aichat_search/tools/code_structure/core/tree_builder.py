@@ -80,6 +80,10 @@ class TreeBuilder:
         if last_source:
             block_id, start, end, _ = last_source
             sources = f"{block_id}:{start}-{end}"
+            # Добавляем количество источников
+            sources_count = len(version.sources)
+            if sources_count > 1:
+                sources += f" ({sources_count})"
         else:
             sources = ''
         return {

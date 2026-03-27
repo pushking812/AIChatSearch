@@ -20,10 +20,77 @@ class ModuleIdentifier:
         self._modules: Dict[str, ModuleInfo] = {}
         self._imported: Dict[str, Dict[str, ImportInfo]] = {}
 
-    # ---------- Сбор данных ----------
+    # ---------- Вспомогательные методы ----------
+    def _create_version(self, node: Node, block_info=None) -> Optional[Version]:
+        if not block_info:
+            return None
+        return Version(node, block_info.block_id, block_info.global_index, block_info.content,
+                      block_info.timestamp, block_info.block_idx)
+
+    def _add_version_to_object(self, versions: List[Version], new_version: Version):
+        existing = VersionComparator.find_existing(versions, new_version)
+        if existing:
+            existing.add_source(*new_version.sources[0])
+        else:
+            versions.append(new_version)
+
+    def _add_or_update_class(self, module: ModuleInfo, class_name: str, class_node: Node, block_info=None):
+        version = self._create_version(class_node, block_info)
+        if version is None:
+            return
+
+        if class_name in module.classes:
+            existing_class = module.classes[class_name]
+            self._add_version_to_object(existing_class.versions, version)
+        else:
+            class_info = ClassInfo(name=class_name)
+            class_info.versions.append(version)
+            module.classes[class_name] = class_info
+
+        # Обрабатываем методы внутри класса
+        for method_node in class_node.children:
+            if method_node.node_type == "method":
+                self._add_or_update_callable(module, method_node.name, method_node, block_info, class_name=class_name)
+
+    def _add_or_update_callable(self, module: ModuleInfo, name: str, node: Node, block_info=None,
+                                class_name: Optional[str] = None):
+        version = self._create_version(node, block_info)
+        if version is None:
+            return
+
+        if class_name:
+            # Метод класса
+            if class_name not in module.classes:
+                module.classes[class_name] = ClassInfo(name=class_name)
+            class_info = module.classes[class_name]
+
+            if name in class_info.methods:
+                existing_method = class_info.methods[name]
+                self._add_version_to_object(existing_method.versions, version)
+            else:
+                sig = extract_function_signature(node)
+                method = MethodInfo(name=name, signature=sig, class_name=class_name)
+                method.versions.append(version)
+                class_info.methods[name] = method
+        else:
+            # Функция верхнего уровня
+            sig = extract_function_signature(node)
+            if name in module.functions:
+                existing_func = module.functions[name]
+                self._add_version_to_object(existing_func.versions, version)
+            else:
+                func = FunctionInfo(name=name, signature=sig)
+                func.versions.append(version)
+                module.functions[name] = func
+
+    # ---------- Публичные методы ----------
     def collect_from_tree(self, node: Node, module_name: str, class_hint: Optional[str] = None, block_info=None):
         module = self._modules.setdefault(module_name, ModuleInfo(name=module_name))
         self._collect_node(node, module, class_hint, block_info)
+        # Устанавливаем module_hint блоку, если он ещё не задан
+        if block_info and not block_info.module_hint:
+            block_info.module_hint = module_name
+            logger.debug(f"[IDENTIFIER] Блоку {block_info.block_id} назначен модуль {module_name}")
 
     def _collect_node(self, node: Node, module: ModuleInfo, class_hint: Optional[str] = None, block_info=None):
         for child in node.children:
@@ -37,209 +104,16 @@ class ModuleIdentifier:
             else:
                 self._collect_node(child, module, class_hint, block_info)
 
-    def _create_version(self, node, block_info):
-        if not block_info:
-            return None
-        return Version(node, block_info.block_id, block_info.global_index, block_info.content,
-                      block_info.timestamp, block_info.block_idx)
-
     def _add_class(self, class_node: Node, module: ModuleInfo, class_name: str, block_info):
-        version = self._create_version(class_node, block_info)
-        if version is None:
-            return
+        self._add_or_update_class(module, class_name, class_node, block_info)
 
-        if class_name in module.classes:
-            existing_class = module.classes[class_name]
-            existing = VersionComparator.find_existing(existing_class.versions, version)
-            if existing:
-                existing.add_source(*version.sources[0])
-                # Блок добавлен как источник к существующей версии класса
-                if block_info and not block_info.module_hint:
-                    block_info.module_hint = module.name
-                    logger.debug(f"[КЛАСС] Блоку {block_info.block_id} назначен модуль {module.name} (существующая версия класса)")
-            else:
-                existing_class.versions.append(version)
-                if block_info and not block_info.module_hint:
-                    block_info.module_hint = module.name
-                    logger.debug(f"[КЛАСС] Блоку {block_info.block_id} назначен модуль {module.name} (новая версия класса)")
-            # Обрабатываем методы внутри класса
-            for method_node in class_node.children:
-                if method_node.node_type == "method":
-                    sig = extract_function_signature(method_node)
-                    method = MethodInfo(
-                        name=method_node.name,
-                        signature=sig,
-                        class_name=class_name
-                    )
-                    method_version = self._create_version(method_node, block_info)
-                    if method_version:
-                        existing_method = existing_class.methods.get(method.name)
-                        if existing_method:
-                            existing = VersionComparator.find_existing(existing_method.versions, method_version)
-                            if existing:
-                                existing.add_source(*method_version.sources[0])
-                                # Метод добавлен как источник – блок уже помечен выше, но на всякий случай
-                            else:
-                                existing_method.versions.append(method_version)
-                        else:
-                            method.versions.append(method_version)
-                            existing_class.methods[method.name] = method
-        else:
-            class_info = ClassInfo(name=class_name)
-            class_info.versions.append(version)
-            if block_info and not block_info.module_hint:
-                block_info.module_hint = module.name
-                logger.debug(f"[КЛАСС] Блоку {block_info.block_id} назначен модуль {module.name} (новый класс)")
-            for method_node in class_node.children:
-                if method_node.node_type == "method":
-                    sig = extract_function_signature(method_node)
-                    method = MethodInfo(
-                        name=method_node.name,
-                        signature=sig,
-                        class_name=class_name
-                    )
-                    method_version = self._create_version(method_node, block_info)
-                    if method_version:
-                        method.versions.append(method_version)
-                    class_info.methods[method.name] = method
-            module.classes[class_name] = class_info
+    def _add_function(self, func_node: Node, module: ModuleInfo, class_hint: Optional[str], block_info):
+        self._add_or_update_callable(module, func_node.name, func_node, block_info, class_name=class_hint)
 
-        # Защита: если вдруг module_hint не был установлен, принудительно ставим
-        if block_info and not block_info.module_hint:
-            block_info.module_hint = module.name
-            logger.warning(f"[КЛАСС] Принудительно назначен модуль {module.name} блоку {block_info.block_id}")
+    def _add_method_as_function(self, method_node: Node, module: ModuleInfo, class_hint: Optional[str], block_info):
+        self._add_or_update_callable(module, method_node.name, method_node, block_info, class_name=class_hint)
 
-        logger.debug(f"Обновлён класс {class_name} в модуле {module.name}")
-
-
-    def _add_function(self, func_node: Node, module: ModuleInfo, class_hint: Optional[str] = None, block_info=None):
-        sig = extract_function_signature(func_node)
-        version = self._create_version(func_node, block_info)
-        if version is None:
-            return
-
-        if class_hint and sig[0]:
-            class_name = class_hint
-            if class_name not in module.classes:
-                module.classes[class_name] = ClassInfo(name=class_name)
-            class_info = module.classes[class_name]
-            method = MethodInfo(
-                name=func_node.name,
-                signature=sig,
-                class_name=class_name
-            )
-            if method.name in class_info.methods:
-                existing_method = class_info.methods[method.name]
-                existing = VersionComparator.find_existing(existing_method.versions, version)
-                if existing:
-                    existing.add_source(*version.sources[0])
-                    if block_info and not block_info.module_hint:
-                        block_info.module_hint = module.name
-                        logger.debug(f"[ФУНКЦИЯ-МЕТОД] Блоку {block_info.block_id} назначен модуль {module.name} (существующая версия метода)")
-                else:
-                    existing_method.versions.append(version)
-                    if block_info and not block_info.module_hint:
-                        block_info.module_hint = module.name
-                        logger.debug(f"[ФУНКЦИЯ-МЕТОД] Блоку {block_info.block_id} назначен модуль {module.name} (новая версия метода)")
-            else:
-                method.versions.append(version)
-                class_info.methods[method.name] = method
-                if block_info and not block_info.module_hint:
-                    block_info.module_hint = module.name
-                    logger.debug(f"[ФУНКЦИЯ-МЕТОД] Блоку {block_info.block_id} назначен модуль {module.name} (новый метод)")
-            logger.debug(f"Добавлен метод {method.name} в класс {class_name} модуля {module.name}")
-        else:
-            func = FunctionInfo(name=func_node.name, signature=sig)
-            if func.name in module.functions:
-                existing_func = module.functions[func.name]
-                existing = VersionComparator.find_existing(existing_func.versions, version)
-                if existing:
-                    existing.add_source(*version.sources[0])
-                    if block_info and not block_info.module_hint:
-                        block_info.module_hint = module.name
-                        logger.debug(f"[ФУНКЦИЯ] Блоку {block_info.block_id} назначен модуль {module.name} (существующая версия функции)")
-                else:
-                    existing_func.versions.append(version)
-                    if block_info and not block_info.module_hint:
-                        block_info.module_hint = module.name
-                        logger.debug(f"[ФУНКЦИЯ] Блоку {block_info.block_id} назначен модуль {module.name} (новая версия функции)")
-            else:
-                func.versions.append(version)
-                module.functions[func.name] = func
-                if block_info and not block_info.module_hint:
-                    block_info.module_hint = module.name
-                    logger.debug(f"[ФУНКЦИЯ] Блоку {block_info.block_id} назначен модуль {module.name} (новая функция)")
-            logger.debug(f"Добавлена функция {func.name} в модуль {module.name}")
-
-        if block_info and not block_info.module_hint:
-            block_info.module_hint = module.name
-            logger.warning(f"[ФУНКЦИЯ] Принудительно назначен модуль {module.name} блоку {block_info.block_id}")
-
-
-    def _add_method_as_function(self, method_node: Node, module: ModuleInfo, class_hint: Optional[str] = None, block_info=None):
-        sig = extract_function_signature(method_node)
-        version = self._create_version(method_node, block_info)
-        if version is None:
-            return
-
-        if class_hint:
-            class_name = class_hint
-            if class_name not in module.classes:
-                module.classes[class_name] = ClassInfo(name=class_name)
-            class_info = module.classes[class_name]
-            method = MethodInfo(
-                name=method_node.name,
-                signature=sig,
-                class_name=class_name
-            )
-            if method.name in class_info.methods:
-                existing_method = class_info.methods[method.name]
-                existing = VersionComparator.find_existing(existing_method.versions, version)
-                if existing:
-                    existing.add_source(*version.sources[0])
-                    if block_info and not block_info.module_hint:
-                        block_info.module_hint = module.name
-                        logger.debug(f"[МЕТОД-КАК-ФУНКЦИЯ] Блоку {block_info.block_id} назначен модуль {module.name} (существующая версия метода)")
-                else:
-                    existing_method.versions.append(version)
-                    if block_info and not block_info.module_hint:
-                        block_info.module_hint = module.name
-                        logger.debug(f"[МЕТОД-КАК-ФУНКЦИЯ] Блоку {block_info.block_id} назначен модуль {module.name} (новая версия метода)")
-            else:
-                method.versions.append(version)
-                class_info.methods[method.name] = method
-                if block_info and not block_info.module_hint:
-                    block_info.module_hint = module.name
-                    logger.debug(f"[МЕТОД-КАК-ФУНКЦИЯ] Блоку {block_info.block_id} назначен модуль {module.name} (новый метод)")
-            logger.debug(f"Добавлен метод {method.name} в класс {class_name} модуля {module.name}")
-        else:
-            func = FunctionInfo(name=method_node.name, signature=sig)
-            if func.name in module.functions:
-                existing_func = module.functions[func.name]
-                existing = VersionComparator.find_existing(existing_func.versions, version)
-                if existing:
-                    existing.add_source(*version.sources[0])
-                    if block_info and not block_info.module_hint:
-                        block_info.module_hint = module.name
-                        logger.debug(f"[МЕТОД-КАК-ФУНКЦИЯ] Блоку {block_info.block_id} назначен модуль {module.name} (существующая версия функции)")
-                else:
-                    existing_func.versions.append(version)
-                    if block_info and not block_info.module_hint:
-                        block_info.module_hint = module.name
-                        logger.debug(f"[МЕТОД-КАК-ФУНКЦИЯ] Блоку {block_info.block_id} назначен модуль {module.name} (новая версия функции)")
-            else:
-                func.versions.append(version)
-                module.functions[func.name] = func
-                if block_info and not block_info.module_hint:
-                    block_info.module_hint = module.name
-                    logger.debug(f"[МЕТОД-КАК-ФУНКЦИЯ] Блоку {block_info.block_id} назначен модуль {module.name} (новая функция)")
-            logger.debug(f"Добавлен метод {method_node.name} как функция в модуль {module.name}")
-
-        if block_info and not block_info.module_hint:
-            block_info.module_hint = module.name
-            logger.warning(f"[МЕТОД-КАК-ФУНКЦИЯ] Принудительно назначен модуль {module.name} блоку {block_info.block_id}")
-
-    # ---------- Импортированные объекты ----------
+    # ---------- Методы работы с импортированными объектами ----------
     def add_imported_item(self, module_name: str, import_info: ImportInfo):
         if module_name not in self._imported:
             self._imported[module_name] = {}
@@ -307,7 +181,8 @@ class ModuleIdentifier:
                     return mod_name
         return None
 
-    def find_module_for_method_with_class(self, method_name: str, signature: Signature, class_name: Optional[str] = None) -> Optional[str]:
+    def find_module_for_method_with_class(self, method_name: str, signature: Signature,
+                                          class_name: Optional[str] = None) -> Optional[str]:
         for mod_name, mod in self._modules.items():
             for cls_name, cls in mod.classes.items():
                 if class_name and cls_name != class_name:
