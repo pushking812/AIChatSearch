@@ -20,10 +20,13 @@ logger.setLevel(logging.DEBUG)
 
 
 class BaseNodeProcessor(ABC):
+    """Базовый класс для процессоров, обрабатывающих узлы AST."""
+
     def __init__(self, builder):
         self.builder = builder
 
     def process(self, node: Node, container: Container, block_info: MessageBlockInfo, path: str = "") -> None:
+        """Обрабатывает узел дерева и добавляет его в контейнер."""
         if isinstance(node, ClassNode):
             self._process_class(node, container, block_info, path)
         elif isinstance(node, FunctionNode):
@@ -36,6 +39,7 @@ class BaseNodeProcessor(ABC):
             self._process_children(node, container, block_info, path)
 
     def _process_class(self, node: ClassNode, container: Container, block_info: MessageBlockInfo, path: str):
+        """Обрабатывает класс: создаёт контейнер класса и рекурсивно обрабатывает детей."""
         class_container = self._create_class_container(node)
         container.add_child(class_container)
         for child in node.children:
@@ -43,13 +47,16 @@ class BaseNodeProcessor(ABC):
 
     @abstractmethod
     def _process_function(self, node: FunctionNode, container: Container, block_info: MessageBlockInfo, path: str):
+        """Обрабатывает функцию (должен быть переопределён в наследниках)."""
         pass
 
     @abstractmethod
     def _process_method(self, node: MethodNode, container: Container, block_info: MessageBlockInfo, path: str):
+        """Обрабатывает метод (должен быть переопределён в наследниках)."""
         pass
 
     def _process_code_block(self, node: CodeBlockNode, container: Container, block_info: MessageBlockInfo, path: str):
+        """Обрабатывает блок кода: разделяет импорты и обычный код."""
         if container.node_type != "module":
             block_container = self._create_code_block_container(container)
             self._add_version_to_container(block_container, node, block_info)
@@ -107,9 +114,11 @@ class BaseNodeProcessor(ABC):
             container.add_child(block_container)
 
     def _process_children(self, node: Node, container: Container, block_info: MessageBlockInfo, path: str):
+        """Рекурсивно обрабатывает детей узла."""
         for child in node.children:
             self.process(child, container, block_info, f"{path}/child")
 
+    # ---------- Вспомогательные методы ----------
     def _get_block_fragment(self, node: CodeBlockNode, block_info: MessageBlockInfo) -> List[str]:
         if node.lineno_start is None or node.lineno_end is None:
             return []
@@ -150,15 +159,7 @@ class BaseNodeProcessor(ABC):
         else:
             container.add_version(version)
 
-    # Методы поиска
-    def _find_class_by_method_name(self, container: Container, method_name: str) -> Optional[ClassContainer]:
-        for child in container.children:
-            if child.node_type == "class":
-                for method in child.children:
-                    if method.node_type == "method" and method.name == method_name:
-                        return child
-        return None
-
+    # ---------- Методы поиска ----------
     def _find_class_by_name(self, container: Container, class_name: str) -> Optional[ClassContainer]:
         for child in container.children:
             if child.node_type == "class" and child.name == class_name:
@@ -179,13 +180,15 @@ class BaseNodeProcessor(ABC):
 
 
 class InitialBuildProcessor(BaseNodeProcessor):
+    """Процессор для начального построения структуры (первый блок модуля)."""
+
     def __init__(self, builder):
         super().__init__(builder)
 
     def _process_function(self, node: FunctionNode, container: Container, block_info: MessageBlockInfo, path: str):
         has_self = self._has_self(node)
         if has_self:
-            # Ищем класс по имени (а не по наличию метода)
+            # Ищем класс по имени (не по наличию метода)
             target_class = self._find_class_by_name(container, node.name)
             if target_class:
                 method_container = self._find_method_in_class(target_class, node.name)
@@ -231,10 +234,13 @@ class InitialBuildProcessor(BaseNodeProcessor):
 
 
 class MergeProcessor(BaseNodeProcessor):
+    """Процессор для слияния дополнительных блоков в существующую структуру."""
+
     def __init__(self, builder):
         super().__init__(builder)
 
     def _process_class(self, node: ClassNode, container: Container, block_info: MessageBlockInfo, path: str):
+        # В отличие от начального процессора, здесь мы ищем существующий контейнер класса
         class_container = self._find_class_by_name(container, node.name)
         if class_container is None:
             class_container = self._create_class_container(node)
