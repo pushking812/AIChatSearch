@@ -142,9 +142,6 @@ class ModuleIdentifier:
             mod = self._modules.setdefault(target, ModuleInfo(name=target))
             mod.is_imported = True
 
-    def get_imported_info(self, module_name: str) -> Optional[Dict[str, ImportInfo]]:
-        return self._imported.get(module_name)
-
     def find_imported_class(self, class_name: str) -> Optional[str]:
         for mod_name, imports in self._imported.items():
             for fullname, info in imports.items():
@@ -173,40 +170,6 @@ class ModuleIdentifier:
                 return mod_name
         return None
 
-    def find_module_for_method(self, method_name: str, signature: Signature) -> Optional[str]:
-        for mod_name, mod in self._modules.items():
-            for cls in mod.classes.values():
-                method = cls.methods.get(method_name)
-                if method and method.signature == signature:
-                    return mod_name
-        return None
-
-    def find_module_for_method_with_class(self, method_name: str, signature: Signature,
-                                          class_name: Optional[str] = None) -> Optional[str]:
-        for mod_name, mod in self._modules.items():
-            for cls_name, cls in mod.classes.items():
-                if class_name and cls_name != class_name:
-                    continue
-                method = cls.methods.get(method_name)
-                if method and method.signature == signature:
-                    return mod_name
-        return None
-
-    def find_module_for_function(self, func_name: str, signature: Signature) -> Optional[str]:
-        for mod_name, mod in self._modules.items():
-            func = mod.functions.get(func_name)
-            if func and func.signature == signature:
-                return mod_name
-        return None
-
-    def find_modules_by_method_name(self, method_name: str) -> List[Tuple[str, str]]:
-        results = []
-        for mod_name, mod in self._modules.items():
-            for cls_name, cls in mod.classes.items():
-                if method_name in cls.methods:
-                    results.append((mod_name, cls_name))
-        return results
-
     # ---------- Доступ к данным ----------
     def get_module_info(self, module_name: str) -> Optional[ModuleInfo]:
         return self._modules.get(module_name)
@@ -222,51 +185,6 @@ class ModuleIdentifier:
         logger.info(f"Удаление временных модулей: {to_remove}")
         for name in to_remove:
             del self._modules[name]
-
-    def merge_temp_module(self, temp_name: str, target_name: str) -> bool:
-        if temp_name not in self._modules or target_name not in self._modules:
-            logger.error(f"Не удалось найти модули: {temp_name} -> {target_name}")
-            return False
-        temp = self._modules[temp_name]
-        target = self._modules[target_name]
-
-        # Объединяем классы
-        for class_name, class_info in temp.classes.items():
-            if class_name not in target.classes:
-                target.classes[class_name] = ClassInfo(name=class_name)
-            target_class = target.classes[class_name]
-            for method_name, method_info in class_info.methods.items():
-                if method_name in target_class.methods:
-                    for v in method_info.versions:
-                        existing = VersionComparator.find_existing(target_class.methods[method_name].versions, v)
-                        if existing:
-                            existing.add_source(*v.sources[0])
-                        else:
-                            target_class.methods[method_name].versions.append(v)
-                else:
-                    target_class.methods[method_name] = method_info
-            for v in class_info.versions:
-                existing = VersionComparator.find_existing(target_class.versions, v)
-                if existing:
-                    existing.add_source(*v.sources[0])
-                else:
-                    target_class.versions.append(v)
-
-        # Объединяем функции
-        for func_name, func_info in temp.functions.items():
-            if func_name in target.functions:
-                for v in func_info.versions:
-                    existing = VersionComparator.find_existing(target.functions[func_name].versions, v)
-                    if existing:
-                        existing.add_source(*v.sources[0])
-                    else:
-                        target.functions[func_name].versions.append(v)
-            else:
-                target.functions[func_name] = func_info
-
-        del self._modules[temp_name]
-        logger.info(f"Модуль {temp_name} успешно объединён в {target_name}")
-        return True
 
     def add_class_placeholder(self, module_name: str, class_name: str):
         if module_name not in self._modules:

@@ -1,7 +1,7 @@
 # aichat_search/tools/code_structure/core/resolution_strategy.py
 
 from abc import ABC, abstractmethod
-from typing import Optional, Set, Dict, List, Tuple
+from typing import Optional, Set, Dict, Tuple
 import logging
 
 from aichat_search.tools.code_structure.models.block_info import MessageBlockInfo
@@ -15,14 +15,11 @@ logger.setLevel(logging.WARNING)
 
 
 class ResolutionStrategy(ABC):
-    def __init__(self):
-        self.ambiguous = False
-
     @abstractmethod
     def resolve(self, block: MessageBlockInfo, identifier: ModuleIdentifier) -> Optional[str]:
         pass
 
-    def get_signatures(self, tree: Node, names: Set[str], node_type: str) -> Dict[str, Tuple[bool, List[str]]]:
+    def get_signatures(self, tree: Node, names: Set[str], node_type: str) -> Dict[str, Tuple[bool, list]]:
         sigs = {}
         for name in names:
             node = self._find_node(tree, name, node_type)
@@ -42,7 +39,6 @@ class ResolutionStrategy(ABC):
 
 class ClassStrategy(ResolutionStrategy):
     def resolve(self, block: MessageBlockInfo, identifier: ModuleIdentifier) -> Optional[str]:
-        self.ambiguous = False
         classes = self._extract_classes(block.tree)
         if not classes:
             return None
@@ -69,7 +65,6 @@ class ClassStrategy(ResolutionStrategy):
 
 class MethodStrategy(ResolutionStrategy):
     def resolve(self, block: MessageBlockInfo, identifier: ModuleIdentifier) -> Optional[str]:
-        self.ambiguous = False
         methods, funcs_with_self = self._extract_methods_and_funcs_with_self(block.tree)
         if not methods and not funcs_with_self:
             return None
@@ -102,14 +97,18 @@ class MethodStrategy(ResolutionStrategy):
             if not candidates_for_name:
                 continue
             if len(candidates_for_name) > 1:
-                self.ambiguous = True
-                logger.info(f"MethodStrategy: несколько кандидатов для {name}: {candidates_for_name}")
-                return None
+                # Попытаемся выбрать неимпортированный модуль
+                non_imported = [m for m in candidates_for_name 
+                                if not identifier.get_module_info(m).is_imported]
+                if len(non_imported) == 1:
+                    candidates_for_name = set(non_imported)
+                else:
+                    logger.info(f"MethodStrategy: несколько кандидатов для {name}: {candidates_for_name}")
+                    return None
             module_for_name = next(iter(candidates_for_name))
             if common_module is None:
                 common_module = module_for_name
             elif common_module != module_for_name:
-                self.ambiguous = True
                 logger.info(f"MethodStrategy: имена указывают на разные модули: {common_module} и {module_for_name}")
                 return None
         return common_module
@@ -135,7 +134,6 @@ class MethodStrategy(ResolutionStrategy):
 
 class FunctionStrategy(ResolutionStrategy):
     def resolve(self, block: MessageBlockInfo, identifier: ModuleIdentifier) -> Optional[str]:
-        self.ambiguous = False
         func_names = self._extract_functions(block.tree)
         if not func_names:
             return None
@@ -179,7 +177,11 @@ class FunctionStrategy(ResolutionStrategy):
         if len(candidates) == 1:
             return next(iter(candidates))
         elif len(candidates) > 1:
-            self.ambiguous = True
+            # Попытаемся выбрать неимпортированный модуль
+            non_imported = [m for m in candidates 
+                            if not identifier.get_module_info(m).is_imported]
+            if len(non_imported) == 1:
+                return non_imported[0]
             logger.info(f"FunctionStrategy: несколько кандидатов для функций: {candidates}")
         return None
 
@@ -196,7 +198,6 @@ class FunctionStrategy(ResolutionStrategy):
 class ImportStrategy(ResolutionStrategy):
     """Стратегия, основанная на импортах блока."""
     def resolve(self, block: MessageBlockInfo, identifier: ModuleIdentifier) -> Optional[str]:
-        self.ambiguous = False
         if not block.content:
             return None
         imports = extract_imports_from_block(block.content, block.module_hint)
@@ -204,10 +205,8 @@ class ImportStrategy(ResolutionStrategy):
             return None
         candidates = set()
         for imp in imports:
-            # Ищем модуль, из которого импортируется объект
             module = identifier.find_module_by_imported_name(imp.target_fullname)
             if not module:
-                # Пробуем последнюю часть (для import X)
                 last_part = imp.target_fullname.split('.')[-1]
                 module = identifier.find_module_by_imported_name(last_part)
             if module:
@@ -215,6 +214,5 @@ class ImportStrategy(ResolutionStrategy):
         if len(candidates) == 1:
             return next(iter(candidates))
         elif len(candidates) > 1:
-            self.ambiguous = True
             logger.info(f"ImportStrategy: несколько кандидатов для блока {block.block_id}: {candidates}")
         return None
