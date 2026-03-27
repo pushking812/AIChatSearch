@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from chlorophyll import CodeView
 import pygments.lexers
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 
 class CodeStructureWindow(tk.Toplevel):
@@ -16,7 +16,6 @@ class CodeStructureWindow(tk.Toplevel):
         self.grab_set()
 
         self.controller = None
-        self._left_item_to_node = {}
         self._right_item_to_data = {}
 
         # Верхняя панель с элементами управления
@@ -28,27 +27,13 @@ class CodeStructureWindow(tk.Toplevel):
         self.type_combo.grid(row=0, column=1, padx=5, sticky="w")
         self.type_combo.bind("<<ComboboxSelected>>", self._on_type_selected)
 
-        ttk.Label(top_frame, text="Блок:").grid(row=0, column=2, padx=5, sticky="w")
-        self.block_combo = ttk.Combobox(top_frame, state="readonly", width=113)
-        self.block_combo.grid(row=0, column=3, padx=5, sticky="w")
-        self.block_combo.bind("<<ComboboxSelected>>", self._on_block_selected)
-
-        self.module_button = ttk.Button(top_frame, text="Назначить модули", command=self._on_module_button)
-        self.module_button.grid(row=0, column=4, padx=5)
-
         # Панели управления раскрытием деревьев и кнопками
         control_frame = ttk.Frame(self)
         control_frame.pack(fill=tk.X, padx=5, pady=2)
 
-        # Левое дерево
-        ttk.Label(control_frame, text="Левое дерево, уровень:").pack(side=tk.LEFT, padx=5)
-        self.left_level_combo = ttk.Combobox(control_frame, values=[1,2,3,4,5], state="readonly", width=5)
-        self.left_level_combo.pack(side=tk.LEFT, padx=5)
-        self.left_level_combo.current(4)
-        self.left_expand_button = ttk.Button(control_frame, text="+ / -", command=self._on_left_expand_level)
-        self.left_expand_button.pack(side=tk.LEFT, padx=5)
-
-        ttk.Label(control_frame, text="    Правое дерево, уровень:").pack(side=tk.LEFT, padx=5)
+        # Левое дерево (теперь плоский список) – управление не требуется
+        # Правое дерево оставляем
+        ttk.Label(control_frame, text="Правое дерево, уровень:").pack(side=tk.LEFT, padx=5)
         self.right_level_combo = ttk.Combobox(control_frame, values=[1,2,3,4,5], state="readonly", width=5)
         self.right_level_combo.pack(side=tk.LEFT, padx=5)
         self.right_level_combo.current(4)
@@ -63,6 +48,18 @@ class CodeStructureWindow(tk.Toplevel):
         self.create_button = ttk.Button(control_frame, text="Создать проект", command=self._on_create_project)
         self.create_button.pack(side=tk.LEFT, padx=5)
 
+        # Кнопка "Назначить модули" и галочка "Только локальные импорты"
+        self.module_button = ttk.Button(control_frame, text="Назначить модули", command=self._on_module_button)
+        self.module_button.pack(side=tk.LEFT, padx=5)
+        self.local_only_var = tk.BooleanVar(value=True)
+        self.local_only_check = ttk.Checkbutton(
+            control_frame,
+            text="Только локальные импорты",
+            variable=self.local_only_var,
+            command=self._on_local_only_toggled
+        )
+        self.local_only_check.pack(side=tk.LEFT, padx=5)
+
         # Главный горизонтальный PanedWindow
         self.main_paned = tk.PanedWindow(self, orient=tk.HORIZONTAL, sashrelief=tk.RAISED, sashwidth=6)
         self.main_paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -71,24 +68,41 @@ class CodeStructureWindow(tk.Toplevel):
         left_vertical = tk.PanedWindow(self.main_paned, orient=tk.VERTICAL, sashrelief=tk.RAISED, sashwidth=6)
         self.main_paned.add(left_vertical, width=600, minsize=400)
 
-        left_tree_frame = ttk.Frame(left_vertical)
-        left_vertical.add(left_tree_frame, height=350, minsize=200)
+        # Плоский список
+        flat_frame = ttk.Frame(left_vertical)
+        left_vertical.add(flat_frame, height=350, minsize=200)
 
-        self.tree = ttk.Treeview(left_tree_frame, columns=("type", "signature"), show="tree headings")
-        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.flat_tree = ttk.Treeview(
+            flat_frame,
+            columns=("block_name", "node_path", "parent_path", "lines", "module", "class", "strategy"),
+            show="tree headings"
+        )
+        self.flat_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        self.tree.heading("#0", text="Имя")
-        self.tree.heading("type", text="Тип")
-        self.tree.heading("signature", text="Сигнатура")
-        self.tree.column("#0", width=250, minwidth=150, stretch=True)
-        self.tree.column("type", width=80, minwidth=60, stretch=False)
-        self.tree.column("signature", width=250, minwidth=150, stretch=True)
+        self.flat_tree.heading("#0", text="ID")
+        self.flat_tree.heading("block_name", text="Блок")
+        self.flat_tree.heading("node_path", text="Узел")
+        self.flat_tree.heading("parent_path", text="Родитель")
+        self.flat_tree.heading("lines", text="Строки")
+        self.flat_tree.heading("module", text="Модуль")
+        self.flat_tree.heading("class", text="Класс")
+        self.flat_tree.heading("strategy", text="Стратегия")
 
-        tree_scroll = ttk.Scrollbar(left_tree_frame, orient=tk.VERTICAL, command=self.tree.yview)
-        tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-        self.tree.configure(yscrollcommand=tree_scroll.set)
-        self.tree.bind("<<TreeviewSelect>>", self._on_left_tree_select)
+        self.flat_tree.column("#0", width=0, stretch=False)
+        self.flat_tree.column("block_name", width=200, minwidth=150)
+        self.flat_tree.column("node_path", width=200, minwidth=150)
+        self.flat_tree.column("parent_path", width=200, minwidth=150)
+        self.flat_tree.column("lines", width=80, minwidth=60)
+        self.flat_tree.column("module", width=150, minwidth=120)
+        self.flat_tree.column("class", width=150, minwidth=120)
+        self.flat_tree.column("strategy", width=100, minwidth=80)
 
+        flat_scroll = ttk.Scrollbar(flat_frame, orient=tk.VERTICAL, command=self.flat_tree.yview)
+        flat_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.flat_tree.configure(yscrollcommand=flat_scroll.set)
+        self.flat_tree.bind("<<TreeviewSelect>>", self._on_flat_tree_select)
+
+        # Текстовое поле для кода
         left_code_frame = ttk.Frame(left_vertical)
         left_vertical.add(left_code_frame, height=300, minsize=150)
         left_code_frame.grid_rowconfigure(0, weight=1)
@@ -157,11 +171,10 @@ class CodeStructureWindow(tk.Toplevel):
         self.merged_code.grid(row=0, column=0, sticky="nsew")
 
         self.update_idletasks()
+        # Минимальная ширина: учитываем вторую строку (control_frame)
         min_width = (self.type_combo.winfo_reqwidth() +
-                     self.block_combo.winfo_reqwidth() +
+                     self.local_only_check.winfo_reqwidth() +
                      self.module_button.winfo_reqwidth() +
-                     self.left_level_combo.winfo_reqwidth() +
-                     self.left_expand_button.winfo_reqwidth() +
                      self.right_level_combo.winfo_reqwidth() +
                      self.right_expand_button.winfo_reqwidth() +
                      self.save_button.winfo_reqwidth() +
@@ -170,31 +183,60 @@ class CodeStructureWindow(tk.Toplevel):
                      200)
         self.minsize(min_width, 550)
 
-    # ---- Обработчики для автоматического показа структуры ----
-    def _on_block_selected(self, event):
+    # ---- Обработчики для работы с проектом (вызывают контроллер) ----
+    def _on_save_structure(self):
         if self.controller:
-            self.controller.on_block_selected(event)
+            self.controller._save_structure()
 
-    # ---- Методы для управления левым деревом ----
-    def _on_left_expand_level(self):
-        try:
-            level = int(self.left_level_combo.get())
-        except (ValueError, TypeError):
-            level = 5
-        self._collapse_all_left('')
-        self._expand_to_level_left('', 1, level)
+    def _on_load_structure(self):
+        if self.controller:
+            self.controller._load_structure()
 
-    def _collapse_all_left(self, parent):
-        for child in self.tree.get_children(parent):
-            self.tree.item(child, open=False)
-            self._collapse_all_left(child)
+    def _on_create_project(self):
+        if self.controller:
+            self.controller._create_project()
 
-    def _expand_to_level_left(self, parent, current_level, target_level):
-        if current_level >= target_level:
+    def _on_module_button(self):
+        if self.controller:
+            self.controller._reset_module_assignments()
+
+    def _on_local_only_toggled(self):
+        if self.controller:
+            self.controller.on_local_only_toggled(self.local_only_var.get())
+
+    # ---- Методы для плоского списка ----
+    def set_flat_list(self, items: List[Dict[str, Any]]):
+        """Заполняет плоский список данными."""
+        for item in self.flat_tree.get_children():
+            self.flat_tree.delete(item)
+        for i, data in enumerate(items):
+            self.flat_tree.insert(
+                "", tk.END,
+                text=str(i),
+                values=(
+                    data.get('block_name', ''),
+                    data.get('node_path', ''),
+                    data.get('parent_path', ''),
+                    data.get('lines', ''),
+                    data.get('module', ''),
+                    data.get('class', ''),
+                    data.get('strategy', '')
+                ),
+                tags=(data.get('block_id', ''),)
+            )
+
+    def _on_flat_tree_select(self, event):
+        selected = self.flat_tree.selection()
+        if not selected:
             return
-        for child in self.tree.get_children(parent):
-            self.tree.item(child, open=True)
-            self._expand_to_level_left(child, current_level + 1, target_level)
+        item = selected[0]
+        tags = self.flat_tree.item(item, 'tags')
+        if tags:
+            block_id = tags[0]
+            values = self.flat_tree.item(item, 'values')
+            # values[3] - строки (не используем)
+            if self.controller:
+                self.controller.on_flat_node_selected(block_id)
 
     # ---- Методы для управления правым деревом ----
     def _on_right_expand_level(self):
@@ -217,80 +259,21 @@ class CodeStructureWindow(tk.Toplevel):
             self.merged_tree.item(child, open=True)
             self._expand_to_level_right(child, current_level + 1, target_level)
 
-    # ---- Методы для работы с комбобоксами ----
+    # ---- Методы для работы с комбобоксом типов ----
     def set_type_combo_values(self, values):
         self.type_combo['values'] = values
         if values:
             self.type_combo.current(0)
 
-    def set_block_combo_values(self, values):
-        self.block_combo['values'] = values
-
-    def set_current_block_index(self, index):
-        if 0 <= index < len(self.block_combo['values']):
-            self.block_combo.current(index)
-
-    def get_selected_block_index(self):
-        return self.block_combo.current()
-
-    def set_controller(self, controller):
-        self.controller = controller
+    def set_type_combo_state(self, enabled: bool):
+        state = 'readonly' if enabled else 'disabled'
+        self.type_combo.config(state=state)
 
     def _on_type_selected(self, event):
         if self.controller:
             self.controller.on_type_selected(event)
 
-    def _on_module_button(self):
-        if self.controller:
-            self.controller._reset_module_assignments()
-
-    # ---- Методы для работы с проектом (вызывают контроллер) ----
-    def _on_save_structure(self):
-        if self.controller:
-            self.controller._save_structure()
-
-    def _on_load_structure(self):
-        if self.controller:
-            self.controller._load_structure()
-
-    def _on_create_project(self):
-        if self.controller:
-            self.controller._create_project()
-
-    # ---- Методы для левого дерева ----
-    def clear_tree(self):
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-        self._left_item_to_node.clear()
-
-    def display_structure(self, root_node):
-        self.clear_tree()
-        self._add_left_node("", root_node)
-        if self.tree.get_children():
-            first_item = self.tree.get_children()[0]
-            self.tree.selection_set(first_item)
-            self.tree.focus(first_item)
-        self._expand_all_left("")
-
-    def _add_left_node(self, parent, node):
-        item = self.tree.insert(parent, tk.END, text=node.name, values=(node.node_type, node.signature))
-        self._left_item_to_node[item] = node
-        for child in node.children:
-            self._add_left_node(item, child)
-
-    def get_node_by_item(self, item):
-        return self._left_item_to_node.get(item)
-
-    def _expand_all_left(self, parent):
-        for child in self.tree.get_children(parent):
-            self.tree.item(child, open=True)
-            self._expand_all_left(child)
-
-    def _on_left_tree_select(self, event):
-        if self.controller:
-            self.controller.on_node_selected()
-
-    # ---- Методы для правого дерева ----
+    # ---- Методы для работы с правым деревом ----
     def clear_merged_tree(self):
         for item in self.merged_tree.get_children():
             self.merged_tree.delete(item)
@@ -305,7 +288,7 @@ class CodeStructureWindow(tk.Toplevel):
             self.merged_tree.focus(first_item)
 
     def _add_merged_node(self, parent: str, node_data: Dict[str, Any]):
-        text = node_data['text']   # без добавления звёздочки
+        text = node_data['text']
         item = self.merged_tree.insert(
             parent, tk.END,
             text=text,
@@ -362,3 +345,10 @@ class CodeStructureWindow(tk.Toplevel):
     # ---- Вспомогательные методы ----
     def show_error(self, message):
         messagebox.showerror("Ошибка", message, parent=self)
+
+    def set_controller(self, controller):
+        self.controller = controller
+
+    def set_module_button_state(self, enabled: bool):
+        state = tk.NORMAL if enabled else tk.DISABLED
+        self.module_button.config(state=state)

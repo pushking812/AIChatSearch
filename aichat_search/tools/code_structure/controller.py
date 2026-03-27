@@ -33,6 +33,7 @@ class CodeStructureController:
         self.view.set_controller(self)
 
         self.current_lang: Optional[str] = None
+        self._flat_items: List[Dict[str, Any]] = []  # храним плоские данные
 
         self._run_analysis()
 
@@ -56,6 +57,8 @@ class CodeStructureController:
         self.module_service.unknown_blocks = unknown_blocks
 
         self._build_and_display_tree()
+        self._update_flat_list()
+        self._update_module_button_state()
         self._setup_interface()
 
         if unknown_blocks:
@@ -69,13 +72,53 @@ class CodeStructureController:
             if dialog.result is not None:
                 self.block_service.fix_error_block(block, dialog.result)
 
-    def _build_and_display_tree(self):
-        display_root = self.tree_builder.build_display_tree(
-            self.module_service.module_containers
+    def _build_and_display_tree(self, local_only: bool = None):
+        """Построение дерева с учётом фильтра локальности."""
+        if local_only is None:
+            local_only = self.view.local_only_var.get()
+        root, flat_items = self.tree_builder.build_display_tree(
+            self.module_service.module_containers,
+            local_only=local_only
         )
-        if display_root:
-            self.view.display_merged_tree(display_root)
+        if root:
+            self.view.display_merged_tree(root)
             logger.info("Дерево с пакетами отображено")
+        self._flat_items = flat_items
+
+    def _update_flat_list(self):
+        """Обновляет плоский список, добавляя модуль и стратегию из блоков."""
+        if not hasattr(self, '_flat_items'):
+            return
+        all_blocks = self.block_service.get_all_blocks()
+        block_map = {b.block_id: b for b in all_blocks}
+        enriched = []
+        for item in self._flat_items:
+            block_id = item['block_id']
+            block = block_map.get(block_id)
+            if block:
+                module = block.module_hint or ''
+                strategy = block.assignment_strategy or ''
+                # Определяем класс для методов
+                node_type = item.get('node_type', '')
+                if node_type == 'method':
+                    # Из parent_path берём последний сегмент как имя класса
+                    parent_path = item.get('parent_path', '')
+                    class_name = parent_path.split('.')[-1] if parent_path else '-'
+                else:
+                    class_name = '-'
+                enriched_item = item.copy()
+                enriched_item['module'] = module
+                enriched_item['strategy'] = strategy
+                enriched_item['class'] = class_name
+                enriched.append(enriched_item)
+            else:
+                # Если блок не найден, всё равно добавляем
+                enriched.append(item)
+        self.view.set_flat_list(enriched)
+
+    def _update_module_button_state(self):
+        enabled = len(self.module_service.unknown_blocks) > 0
+        self.view.set_module_button_state(enabled)
 
     def _setup_interface(self):
         languages = self.block_service.get_languages()
@@ -84,20 +127,15 @@ class CodeStructureController:
             self.view.destroy()
             return
         self.view.set_type_combo_values([lang.capitalize() for lang in languages])
+        # Блокируем комбо, если только один язык
+        self.view.set_type_combo_state(len(languages) > 1)
         self.current_lang = languages[0]
         self._switch_language(self.current_lang)
 
     def _switch_language(self, lang: str):
         self.current_lang = lang
-        blocks = self.block_service.get_blocks_by_language(lang)
-        block_names = []
-        for block in blocks:
-            desc = self.block_service.get_block_description(block)
-            block_names.append(f"{block.block_id} – {desc}")
-        self.view.set_block_combo_values(sorted(block_names))
-        if block_names:
-            self.view.set_current_block_index(0)
-        self.view.clear_tree()
+        # Плоский список и дерево не зависят от языка, поэтому ничего не меняем
+        # Но левое текстовое поле очищаем
         self.view.display_code("")
 
     def _show_module_dialog(self, unknown_blocks: List[MessageBlockInfo]):
@@ -151,6 +189,8 @@ class CodeStructureController:
         
         self.module_service.remove_temp_modules()
         self._build_and_display_tree()
+        self._update_flat_list()
+        self._update_module_button_state()
 
     def _reset_module_assignments(self):
         """Сброс назначений модулей и повторный анализ."""
@@ -165,6 +205,8 @@ class CodeStructureController:
         )
         self.module_service.module_containers = containers
         self._build_and_display_tree()
+        self._update_flat_list()
+        self._update_module_button_state()
         if unknown_blocks:
             self._show_module_dialog(unknown_blocks)
 
@@ -198,6 +240,7 @@ class CodeStructureController:
                 data = pickle.load(f)
             self.module_service.module_containers = data['module_containers']
             self._build_and_display_tree()
+            self._update_flat_list()
             logger.info(f"Структура загружена из {file_path}")
             messagebox.showinfo("Загрузка структуры", f"Структура загружена из {file_path}")
         except Exception as e:
@@ -261,50 +304,14 @@ class CodeStructureController:
             if lang != self.current_lang:
                 self._switch_language(lang)
 
-    def on_block_selected(self, event=None):
-        self.on_show_structure()
+    def on_local_only_toggled(self, local_only: bool):
+        self._build_and_display_tree(local_only)
+        # Плоский список обновлять не нужно, так как он не зависит от фильтра
 
-    def on_show_structure(self):
-        idx = self.view.get_selected_block_index()
-        if idx < 0:
-            return
-        blocks = self.block_service.get_blocks_by_language(self.current_lang)
-        if idx >= len(blocks):
-            return
-        selected = self.view.block_combo.get()
-        block = None
-        for b in blocks:
-            desc = self.block_service.get_block_description(b)
-            if f"{b.block_id} – {desc}" == selected:
-                block = b
-                break
-        if block and block.tree and not block.syntax_error:
-            self.view.display_structure(block.tree)
-
-    def on_node_selected(self):
-        selected = self.view.tree.selection()
-        if not selected:
-            return
-        item = selected[0]
-        node = self.view.get_node_by_item(item)
-        if not (node and node.lineno_start and node.lineno_end):
-            return
-        idx = self.view.get_selected_block_index()
-        if idx < 0:
-            return
-        blocks = self.block_service.get_blocks_by_language(self.current_lang)
-        if idx >= len(blocks):
-            return
-        selected_name = self.view.block_combo.get()
-        block = None
-        for b in blocks:
-            desc = self.block_service.get_block_description(b)
-            if f"{b.block_id} – {desc}" == selected_name:
-                block = b
-                break
+    def on_flat_node_selected(self, block_id: str):
+        """Отображает код выбранного блока в левом текстовом поле."""
+        block = next((b for b in self.block_service.get_all_blocks() if b.block_id == block_id), None)
         if block:
-            lines = block.content.splitlines()
-            start = max(0, node.lineno_start - 1)
-            end = min(len(lines), node.lineno_end)
-            if start < end:
-                self.view.display_code("\n".join(lines[start:end]))
+            self.view.display_code(block.content, block.language)
+        else:
+            self.view.display_code("")

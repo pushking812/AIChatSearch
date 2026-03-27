@@ -37,6 +37,7 @@ class ModuleResolver:
 
             if module:
                 logger.info(f"  -> НАЙДЕН ПО {strategy.__class__.__name__}: {module}")
+                block_info.assignment_strategy = strategy.__class__.__name__
                 self.auto_assign[block_info.block_id] = module
                 return True, module, None
 

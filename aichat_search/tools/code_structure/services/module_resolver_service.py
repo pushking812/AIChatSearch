@@ -43,7 +43,7 @@ class ModuleResolverService:
         self.full_texts_by_pair = full_texts_by_pair
 
         valid_blocks, error_blocks = self._separate_error_blocks(blocks)
-        print(f"Блоков с ошибками: {len(error_blocks)}")
+        logger.info(f"Блоков с ошибками: {len(error_blocks)}")
 
         # 1. Блоки с явным module_hint из комментариев
         self._add_blocks_with_hint(valid_blocks)
@@ -81,6 +81,7 @@ class ModuleResolverService:
                 hint = extract_module_hint(b)
                 if hint:
                     b.module_hint = hint
+                    b.assignment_strategy = "CommentHint"  # комментарий
             if b.module_hint and b.tree and not b.syntax_error:
                 self.module_identifier.collect_from_tree(b.tree, b.module_hint, block_info=b)
 
@@ -94,7 +95,6 @@ class ModuleResolverService:
         Анализирует комментарии-подсказки и импорты для назначения module_hint блокам,
         содержащим классы или функции.
         """
-        # Сбор информации: для каждого имени класса/функции собираем модули-источники
         module_for_def = defaultdict(lambda: defaultdict(set))  # {name: {type: set(modules)}}
         
         # 1. Сбор из комментариев-подсказок
@@ -126,14 +126,10 @@ class ModuleResolverService:
                 if len(modules) == 1:
                     resolved_def[name][def_type] = next(iter(modules))
                 else:
-                    # Несколько возможных модулей – конфликт, помечаем None
                     resolved_def[name][def_type] = None
 
         # 4. Назначение module_hint для блоков, содержащих классы или функции
-        already_assigned = set()
         for block in blocks:
-            if block.module_hint and block not in already_assigned:
-                print(f"Блоку {block.block_id} назначен модуль {block.module_hint} из комментариев/импортов")
             if block.module_hint or block.syntax_error or not block.tree:
                 continue
             if not self._block_has_classes_or_functions(block.tree):
@@ -154,13 +150,14 @@ class ModuleResolverService:
             if len(possible_modules) == 1:
                 module = next(iter(possible_modules))
                 block.module_hint = module
+                # Упрощённо: если модуль найден, то стратегия "CommentHint" (мог быть и импорт, но не различаем)
+                block.assignment_strategy = "CommentHint"
                 self.module_identifier.collect_from_tree(block.tree, module, block_info=block)
-                print(f"[COMMENTS/IMPORTS] Блоку {block.block_id} назначен модуль {module}")
+                logger.info(f"[COMMENTS/IMPORTS] Блоку {block.block_id} назначен модуль {module}")
             elif len(possible_modules) > 1:
                 logger.warning(f"[COMMENTS/IMPORTS] Блок {block.block_id} содержит определения из разных модулей: {possible_modules}")
 
     def _collect_definitions_from_block(self, block: MessageBlockInfo, module_name: str, module_for_def: dict):
-        """Собирает имена классов и функций из дерева блока."""
         if not block.tree:
             return
         for child in block.tree.children:
@@ -187,7 +184,6 @@ class ModuleResolverService:
                 self._collect_definitions_from_node(child, module_name, module_for_def)
 
     def _block_has_classes_or_functions(self, node) -> bool:
-        """Проверяет, содержит ли дерево узлов класс или функцию (не метод)."""
         for child in node.children:
             if child.node_type in ("class", "function"):
                 return True
@@ -244,9 +240,11 @@ class ModuleResolverService:
             if not module:
                 module = self.module_identifier.find_imported_class(class_name)
             if module:
-                print(f"Текстовая подсказка: класс {class_name} -> модуль {module} для блока {block.block_id}")
+                logger.info(f"Текстовая подсказка: класс {class_name} -> модуль {module} для блока {block.block_id}")
                 if block.tree:
                     self.module_identifier.collect_from_tree(block.tree, module, class_hint=class_name, block_info=block)
+                block.module_hint = module
+                block.assignment_strategy = "TextHint"
                 if block.metadata is None:
                     block.metadata = {}
                 block.metadata['class_hint'] = class_name
@@ -262,7 +260,7 @@ class ModuleResolverService:
 
         module_resolver = ModuleResolver(self.module_identifier)
 
-        # 3. Формируем группы (учитывая все hint, включая полученные из текста)
+        # 3. Формируем группы с учётом всех hint (включая полученные из текста)
         group_classes_with_hint = []
         group_imports_with_hint = []
         group_classes_only = []
@@ -292,12 +290,12 @@ class ModuleResolverService:
                 newly = []
                 still = []
                 for block in unknown:
-                    # Если у блока уже есть hint (из предыдущих этапов), пропускаем
                     if block.module_hint:
                         continue
                     resolved, module, _ = module_resolver.resolve_block(block)
                     if resolved:
                         block.module_hint = module
+                        # assignment_strategy уже установлен внутри resolve_block
                         self.module_identifier.collect_from_tree(block.tree, module, block_info=block)
                         newly.append(block)
                     else:
@@ -316,7 +314,7 @@ class ModuleResolverService:
         final_unknown = unknown2 + unknown4 + unknown5
         logger.info(f"Неопределено: {len(final_unknown)}")
         return final_unknown
-        
+
     def _block_has_classes(self, block):
         if not block.tree:
             return False
@@ -365,6 +363,8 @@ class ModuleResolverService:
                 if part not in current:
                     if is_last:
                         container = ModuleContainer(part)
+                        # Устанавливаем флаг is_imported для модуля
+                        container.is_imported = module_info.is_imported
                     else:
                         container = PackageContainer(part)
                     current[part] = container

@@ -39,6 +39,9 @@ class MessageBlockInfo:
         # Поле для будущих версий
         self.cleaned_blocks: List[Tuple[int, int, str]] = []
 
+        # Стратегия, использованная для назначения модуля
+        self.assignment_strategy: Optional[str] = None
+
     def set_tree(self, tree: Node):
         self.tree = tree
 
