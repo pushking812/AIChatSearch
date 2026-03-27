@@ -77,6 +77,7 @@ class TreeBuilder:
                 '_container': container
             }
 
+            # Узлы, которые могут иметь версии
             if container.node_type in ('function', 'method', 'code_block', 'import'):
                 max_version = len(container.versions)
                 node['version'] = f"v{max_version}" if max_version > 0 else ''
@@ -85,10 +86,12 @@ class TreeBuilder:
                 for i, version in enumerate(container.versions):
                     version_node = self._version_to_node(version, i + 1)
                     node['children'].append(version_node)
-                # Добавляем информацию в плоский список
-                self._add_flat_item(container, node, flat_items, parent_path)
+                # Добавляем информацию в плоский список, если есть версии
+                if max_version > 0:
+                    self._add_flat_item(container, node, flat_items, parent_path)
 
-            elif container.node_type in ('module', 'class', 'package'):
+            # Рекурсивная обработка детей для составных узлов
+            if container.node_type in ('module', 'class', 'package'):
                 current_path = f"{parent_path}.{container.name}" if parent_path else container.name
                 for child in container.children:
                     child_node = self._container_to_node(child, local_only, flat_items, current_path)
@@ -108,16 +111,17 @@ class TreeBuilder:
             block_id, start, end, _ = latest.sources[0]
             item = {
                 'block_id': block_id,
-                'block_name': block_id,  # пока используем block_id как имя
+                'block_name': block_id,
                 'node_path': node_data['text'],
+                'node_type': container.node_type,
                 'parent_path': parent_path,
                 'lines': f"{start}-{end}",
-                'node_type': container.node_type,
-                'module': None,  # будет заполнено позже в контроллере
-                'class': None,
+                'module': None,
+                'class': '-',
                 'strategy': None
             }
             flat_items.append(item)
+            logger.debug(f"[TreeBuilder] flat_item добавлен: {item}")
 
     def _version_to_node(self, version: Version, index: int) -> Dict[str, Any]:
         last_source = version.get_last_source()

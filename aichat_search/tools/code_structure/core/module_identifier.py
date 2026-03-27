@@ -35,18 +35,10 @@ class ModuleIdentifier:
             versions.append(new_version)
 
     def _add_or_update_class(self, module: ModuleInfo, class_name: str, class_node: Node, block_info=None):
-        version = self._create_version(class_node, block_info)
-        if version is None:
-            return
-
-        if class_name in module.classes:
-            existing_class = module.classes[class_name]
-            self._add_version_to_object(existing_class.versions, version)
-        else:
+        # Не создаём версию для класса (убираем добавление version)
+        if class_name not in module.classes:
             class_info = ClassInfo(name=class_name)
-            class_info.versions.append(version)
             module.classes[class_name] = class_info
-
         # Обрабатываем методы внутри класса
         for method_node in class_node.children:
             if method_node.node_type == "method":

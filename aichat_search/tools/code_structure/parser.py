@@ -8,6 +8,7 @@ from .models.node import ModuleNode, ClassNode, FunctionNode, MethodNode, CodeBl
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
 
+
 class CodeParser(ABC):
     @abstractmethod
     def parse(self, code: str) -> ModuleNode:
@@ -20,18 +21,16 @@ class PythonParser(CodeParser):
             tree = ast.parse(code)
             last_line = code.count('\n') + 1
             module_node = ModuleNode(lineno_start=1, lineno_end=last_line)
-            self._process_body(tree.body, module_node, is_class_body=False)
+            self._process_body(tree.body, module_node, is_method_body=False)
             return module_node
         except SyntaxError as e:
-            # Синтаксическая ошибка в коде блока - это ожидаемая ситуация
             logger.debug(f"Синтаксическая ошибка в блоке: {e}")
-            raise  # Пробрасываем дальше для обработки в block_manager
+            raise
         except Exception as e:
-            # Ошибка в самой программе - логируем с traceback
             logger.error(f"КРИТИЧЕСКАЯ ОШИБКА В ПАРСЕРЕ: {e}", exc_info=True)
             raise
 
-    def _process_body(self, body, parent_node, is_class_body=False):
+    def _process_body(self, body, parent_node, is_method_body=False):
         i = 0
         n = len(body)
         while i < n:
@@ -40,32 +39,34 @@ class PythonParser(CodeParser):
             if isinstance(node, ast.ClassDef):
                 bases = ", ".join(self._format_base(b) for b in node.bases)
                 class_node = ClassNode(node.name, bases, node.lineno, node.end_lineno)
-                self._process_body(node.body, class_node, is_class_body=True)
+                self._process_body(node.body, class_node, is_method_body=False)
                 parent_node.add_child(class_node)
                 i += 1
 
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 args_str = self._format_args(node.args, node.returns)
-                if is_class_body:
+                if isinstance(parent_node, ClassNode):
                     func_node = MethodNode(node.name, args_str, node.lineno, node.end_lineno)
                 else:
                     func_node = FunctionNode(node.name, args_str, node.lineno, node.end_lineno)
-                self._process_body(node.body, func_node, is_class_body=False)
+                self._process_body(node.body, func_node, is_method_body=True)
                 parent_node.add_child(func_node)
                 i += 1
 
             else:
-                start = i
-                while i < n and not isinstance(body[i], (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                if not is_method_body:
+                    start = i
+                    while i < n and not isinstance(body[i], (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                        i += 1
+                    if i > start:
+                        first_node = body[start]
+                        last_node = body[i-1]
+                        end_line = last_node.end_lineno if hasattr(last_node, 'end_lineno') else last_node.lineno
+                        line_range = f"строки {first_node.lineno}-{end_line}"
+                        block_node = CodeBlockNode("Блок кода", line_range, first_node.lineno, end_line)
+                        parent_node.add_child(block_node)
+                else:
                     i += 1
-                if i > start:
-                    first_node = body[start]
-                    last_node = body[i-1]
-                    end_line = last_node.end_lineno if hasattr(last_node, 'end_lineno') else last_node.lineno
-                    line_range = f"строки {first_node.lineno}-{end_line}"
-                    block_node = CodeBlockNode("Блок кода", line_range, first_node.lineno, end_line)
-                    parent_node.add_child(block_node)
-
         return
 
     def _format_base(self, base_node):

@@ -12,9 +12,9 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
 
 class ModuleAssignmentPresenter:
-    def __init__(self, view: ModuleAssignmentView, controller):
+    def __init__(self, view: ModuleAssignmentView):
         self.view = view
-        self.controller = controller
+        # self.controller = controller  # больше не нужно
         
         # Данные
         self.unknown_blocks: List[Dict[str, Any]] = []
@@ -54,8 +54,8 @@ class ModuleAssignmentPresenter:
         self.view.set_modules(self.module_info, self.module_code_map)
         
         if self.module_containers:
-            tree_data = self.tree_builder.build_display_tree(self.module_containers)
-            self.view.set_tree_data(tree_data)
+            root_node, _ = self.tree_builder.build_display_tree(self.module_containers)
+            self.view.set_tree_data(root_node)
         
         self._update_current_block_display()
     
@@ -113,57 +113,56 @@ class ModuleAssignmentPresenter:
     def on_apply(self):
         if not self.current_block_id:
             return
-        
+
         action = self.view.get_action_mode()
-        
+
         if action == "create_new":
             new_name = self.view.get_new_module_name().strip()
             if not new_name:
                 return
             if not re.match(r'^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)*$', new_name):
                 return
-            
+
             # Проверяем, существует ли уже такой модуль
             if new_name in self.known_modules:
-                # Предлагаем использовать существующий
                 self.view.show_error(f"Модуль {new_name} уже существует. Пожалуйста, выберите его из списка.")
                 return
-            
+
             # Создаём новый модуль-плейсхолдер в контейнерах
             self._add_new_module_to_containers(new_name)
-            
+
             # Обновляем локальные списки
             self.known_modules.append(new_name)
             self.known_modules.sort()
-            
+
             current_block = self.unknown_blocks[self.current_block_index]
             source_text = f"{current_block['id']} – {current_block['display_name'].split(' – ')[-1] if ' – ' in current_block['display_name'] else current_block['display_name']}"
             self.module_info.append({'name': new_name, 'source': source_text})
             self.module_code_map[new_name] = current_block['content']
-            
+
             self.assignments[self.current_block_id] = new_name
             self.changed = True
-            
+
             # Обновляем дерево и списки в представлении
             self.view.set_modules(self.module_info, self.module_code_map)
             if self.module_containers:
-                tree_data = self.tree_builder.build_display_tree(self.module_containers)
-                self.view.set_tree_data(tree_data)
-            
+                root_node, _ = self.tree_builder.build_display_tree(self.module_containers)
+                self.view.set_tree_data(root_node)
+
         else:  # assign_existing
             selected = self.view.get_selected_module()
             if not selected:
                 return
             selected_module = selected.split(' (из ')[0] if ' (из ' in selected else selected
-            
+
             self.assignments[self.current_block_id] = selected_module
             self.changed = True
-        
+
         self.current_applied = self.assignments[self.current_block_id]
         self.view.enable_apply_button(False)
         self.view.enable_ok_button(True)
         self.view.update_assignment_label(self.current_applied)
-        
+
         # Переход к следующему блоку
         if self.current_block_index + 1 < len(self.unknown_blocks):
             self.current_block_index += 1
