@@ -252,17 +252,17 @@ class ModuleResolverService:
                 block.metadata['class_hint'] = class_name
 
     def _resolve_modules_iteratively(self, blocks):
-        # 1. Обрабатываем уже назначенные (из комментариев/импортов)
+        # 1. Обрабатываем блоки с уже установленным module_hint (из комментариев/импортов)
         for b in blocks:
             if b.module_hint and b.tree and not b.syntax_error:
                 self.module_identifier.collect_from_tree(b.tree, b.module_hint, block_info=b)
 
-        # 2. Применяем текстовые подсказки, чтобы получить hint для оставшихся
+        # 2. Применяем текстовые подсказки для оставшихся
         self._apply_text_hints(blocks)
 
         module_resolver = ModuleResolver(self.module_identifier)
 
-        # 3. Формируем группы с учётом всех hint (включая полученные из текста)
+        # 3. Формируем группы (учитывая все hint, включая полученные из текста)
         group_classes_with_hint = []
         group_imports_with_hint = []
         group_classes_only = []
@@ -292,7 +292,7 @@ class ModuleResolverService:
                 newly = []
                 still = []
                 for block in unknown:
-                    # Если у блока уже есть hint, пропускаем (хотя он не должен сюда попадать)
+                    # Если у блока уже есть hint (из предыдущих этапов), пропускаем
                     if block.module_hint:
                         continue
                     resolved, module, _ = module_resolver.resolve_block(block)
@@ -316,7 +316,7 @@ class ModuleResolverService:
         final_unknown = unknown2 + unknown4 + unknown5
         logger.info(f"Неопределено: {len(final_unknown)}")
         return final_unknown
-
+        
     def _block_has_classes(self, block):
         if not block.tree:
             return False

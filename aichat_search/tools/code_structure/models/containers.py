@@ -12,6 +12,7 @@ class Version:
     def __init__(self, node, block_id: str, global_index: int, block_content: str, timestamp: float = None, block_idx: int = 0):
         self.node = node
         self.sources = [(block_id, node.lineno_start, node.lineno_end, global_index)]
+        self.source_set = {(block_id, node.lineno_start, node.lineno_end, global_index)}
         self.min_global_index = global_index
         self.max_global_index = global_index
         self.max_timestamp = timestamp if timestamp is not None else global_index
@@ -46,7 +47,11 @@ class Version:
             logger.warning(f"Узел {node.name} (блок {block_id}) не имеет номеров строк")
 
     def add_source(self, block_id: str, start: int, end: int, global_index: int, timestamp: float = None, block_idx: int = 0):
-        self.sources.append((block_id, start, end, global_index))
+        key = (block_id, start, end, global_index)
+        if key in self.source_set:
+            return  # уже есть
+        self.sources.append(key)
+        self.source_set.add(key)
         if global_index < self.min_global_index:
             self.min_global_index = global_index
         if global_index > self.max_global_index:
