@@ -133,7 +133,6 @@ class CodeStructureController:
             module_code_map,
             self.module_service.module_containers
         )
-        dialog.controller = self
         self.view.wait_window(dialog)
         if dialog.result:
             self._apply_dialog_result(dialog.result)

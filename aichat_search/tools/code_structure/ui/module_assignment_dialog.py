@@ -24,7 +24,7 @@ class ModuleAssignmentDialog(tk.Toplevel, ModuleAssignmentView):
         self.transient(parent)
         self.grab_set()
 
-        self.presenter = ModuleAssignmentPresenter(self, None)
+        self.presenter = ModuleAssignmentPresenter(self)
         self._tree_item_data = {}
         self._create_widgets()
         
@@ -33,12 +33,7 @@ class ModuleAssignmentDialog(tk.Toplevel, ModuleAssignmentView):
         )
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
-        self.controller = None
         self.result = None
-
-    def set_controller(self, controller):
-        self.controller = controller
-        self.presenter.controller = controller
 
     def _create_widgets(self):
         # Создаём canvas для прокрутки
