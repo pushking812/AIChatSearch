@@ -12,7 +12,6 @@ from aichat_search.tools.code_structure.view import CodeStructureWindow
 from aichat_search.tools.code_structure.services.block_service import BlockService
 from aichat_search.tools.code_structure.services.module_service import ModuleService
 from aichat_search.tools.code_structure.core.tree_builder import TreeBuilder
-from aichat_search.tools.code_structure.services.dialog_service import DialogService
 from aichat_search.tools.code_structure.services.import_service import ImportService
 from aichat_search.tools.code_structure.models.block_info import MessageBlockInfo
 
@@ -28,7 +27,6 @@ class CodeStructureController:
         self.block_service = BlockService()
         self.module_service = ModuleService()
         self.tree_builder = TreeBuilder()
-        self.dialog_service = DialogService(parent)
         self.import_service = ImportService()
 
         self.view = CodeStructureWindow(parent)
@@ -49,7 +47,6 @@ class CodeStructureController:
         text_blocks_by_pair = self.block_service.get_text_blocks_by_pair()
         full_texts_by_pair = self.block_service.get_full_texts_by_pair()
 
-        # Единый вызов сервиса разрешения модулей
         containers, unknown_blocks = self.module_service.process_blocks(
             all_blocks,
             text_blocks_by_pair=text_blocks_by_pair,
@@ -155,6 +152,22 @@ class CodeStructureController:
         
         self.module_service.remove_temp_modules()
         self._build_and_display_tree()
+
+    def _reset_module_assignments(self):
+        """Сброс назначений модулей и повторный анализ."""
+        all_blocks = self.block_service.get_all_blocks()
+        self.module_service.reset_assignments(all_blocks)
+        text_blocks_by_pair = self.block_service.get_text_blocks_by_pair()
+        full_texts_by_pair = self.block_service.get_full_texts_by_pair()
+        containers, unknown_blocks = self.module_service.process_blocks(
+            all_blocks,
+            text_blocks_by_pair=text_blocks_by_pair,
+            full_texts_by_pair=full_texts_by_pair
+        )
+        self.module_service.module_containers = containers
+        self._build_and_display_tree()
+        if unknown_blocks:
+            self._show_module_dialog(unknown_blocks)
 
     def _save_structure(self):
         try:
@@ -296,19 +309,3 @@ class CodeStructureController:
             end = min(len(lines), node.lineno_end)
             if start < end:
                 self.view.display_code("\n".join(lines[start:end]))
-                
-    def _reset_module_assignments(self):
-        """Сброс назначений модулей и повторный анализ."""
-        all_blocks = self.block_service.get_all_blocks()
-        self.module_service.reset_assignments(all_blocks)
-        text_blocks_by_pair = self.block_service.get_text_blocks_by_pair()
-        full_texts_by_pair = self.block_service.get_full_texts_by_pair()
-        containers, unknown_blocks = self.module_service.process_blocks(
-            all_blocks,
-            text_blocks_by_pair=text_blocks_by_pair,
-            full_texts_by_pair=full_texts_by_pair
-        )
-        self.module_service.module_containers = containers
-        self._build_and_display_tree()
-        if unknown_blocks:
-            self._show_module_dialog(unknown_blocks)
