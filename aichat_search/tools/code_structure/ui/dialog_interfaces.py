@@ -1,26 +1,38 @@
-# aichat_search/tools/code_structure/ui/dialog_interfaces.py
+"""
+Интерфейсы для представлений (View) в архитектуре MVP.
+
+Каждый диалог и главное окно реализуют свой интерфейс, описывающий методы,
+которые презентер может вызывать для обновления UI. Это позволяет тестировать
+презентеры без реального GUI (с использованием моков).
+"""
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Any, Optional
-from aichat_search.tools.code_structure.ui.dto import UnknownBlockInfo, KnownModuleInfo, TreeDisplayNode, ErrorBlockInput, FlatListItem
+from typing import List, Dict, Any, Optional
 
+from .dto import (
+    ErrorBlockInput, UnknownBlockInfo, KnownModuleInfo, TreeDisplayNode,
+    FlatListItem, ModuleAssignmentInput, ModuleAssignmentOutput
+)
 
+# ----------------------------------------------------------------------
+# Интерфейс для ErrorBlockDialog
+# ----------------------------------------------------------------------
 class ErrorBlockView(ABC):
-    """Интерфейс для представления диалога исправления ошибок."""
+    """Интерфейс диалога исправления синтаксической ошибки."""
 
     @abstractmethod
     def show_code(self, code: str):
-        """Показывает код для редактирования."""
+        """Отображает код для редактирования."""
         pass
 
     @abstractmethod
     def get_modified_code(self) -> str:
-        """Возвращает изменённый код."""
+        """Возвращает изменённый пользователем код."""
         pass
 
     @abstractmethod
     def enable_apply_button(self, enabled: bool):
-        """Включает/отключает кнопку Apply."""
+        """Включает/отключает кнопку «Применить» в зависимости от наличия изменений."""
         pass
 
     @abstractmethod
@@ -28,33 +40,35 @@ class ErrorBlockView(ABC):
         """Закрывает диалог."""
         pass
 
-
+# ----------------------------------------------------------------------
+# Интерфейс для ModuleAssignmentDialog
+# ----------------------------------------------------------------------
 class ModuleAssignmentView(ABC):
-    """Интерфейс для представления диалога назначения модулей."""
+    """Интерфейс диалога назначения модулей."""
 
     @abstractmethod
     def set_blocks(self, blocks: List[UnknownBlockInfo]):
-        """Устанавливает список неопределённых блоков."""
+        """Устанавливает список неопределённых блоков в комбобокс."""
         pass
 
     @abstractmethod
     def set_modules(self, modules: List[KnownModuleInfo]):
-        """Устанавливает список известных модулей."""
+        """Устанавливает список известных модулей в комбобокс."""
         pass
 
     @abstractmethod
     def set_tree_data(self, tree_data: TreeDisplayNode):
-        """Устанавливает данные для дерева модулей."""
+        """Отображает дерево модулей."""
         pass
 
     @abstractmethod
     def show_block_code(self, code: str):
-        """Показывает код текущего блока."""
+        """Показывает код выбранного блока."""
         pass
 
     @abstractmethod
     def show_module_code(self, code: str):
-        """Показывает код выбранного модуля."""
+        """Показывает пример кода выбранного модуля."""
         pass
 
     @abstractmethod
@@ -64,17 +78,17 @@ class ModuleAssignmentView(ABC):
 
     @abstractmethod
     def enable_apply_button(self, enabled: bool):
-        """Включает/отключает кнопку Apply."""
+        """Включает/отключает кнопку «Применить»."""
         pass
 
     @abstractmethod
     def enable_ok_button(self, enabled: bool):
-        """Включает/отключает кнопку OK."""
+        """Включает/отключает кнопку «OK»."""
         pass
 
     @abstractmethod
     def set_action_mode(self, mode: str):
-        """Устанавливает режим действия (create_new/assign_existing)."""
+        """Устанавливает режим действия ('create_new' или 'assign_existing')."""
         pass
 
     @abstractmethod
@@ -89,7 +103,7 @@ class ModuleAssignmentView(ABC):
 
     @abstractmethod
     def get_new_module_name(self) -> str:
-        """Возвращает имя нового модуля."""
+        """Возвращает имя нового модуля, введённое пользователем."""
         pass
 
     @abstractmethod
@@ -106,10 +120,12 @@ class ModuleAssignmentView(ABC):
     def show_error(self, message: str):
         """Показывает сообщение об ошибке."""
         pass
-        
 
+# ----------------------------------------------------------------------
+# Интерфейс для главного окна
+# ----------------------------------------------------------------------
 class CodeStructureView(ABC):
-    """Интерфейс для представления основного окна структуры кода."""
+    """Интерфейс главного окна структуры кода."""
 
     @abstractmethod
     def display_merged_tree(self, root_node: TreeDisplayNode):
@@ -123,22 +139,22 @@ class CodeStructureView(ABC):
 
     @abstractmethod
     def display_merged_code(self, code: str, language: str = "python"):
-        """Отображает код в правом окне."""
+        """Отображает код в правой панели (дерево)."""
         pass
 
     @abstractmethod
     def set_module_button_state(self, enabled: bool):
-        """Включает/отключает кнопку 'Назначить модули'."""
+        """Включает/отключает кнопку «Назначить модули»."""
         pass
 
     @abstractmethod
     def set_type_combo_values(self, values: List[str]):
-        """Устанавливает значения в комбобокс языков."""
+        """Устанавливает значения в комбобокс выбора языка."""
         pass
 
     @abstractmethod
     def set_type_combo_state(self, enabled: bool):
-        """Включает/отключает комбобокс языков."""
+        """Включает/отключает комбобокс выбора языка."""
         pass
 
     @abstractmethod
@@ -148,25 +164,25 @@ class CodeStructureView(ABC):
 
     @abstractmethod
     def display_code(self, code: str, language: str = "python"):
-        """Отображает код в левом окне."""
+        """Отображает код в левой панели (плоский список)."""
         pass
 
     @abstractmethod
     def get_local_only(self) -> bool:
-        """Возвращает значение флага 'Только локальные импорты'."""
+        """Возвращает текущее состояние чекбокса «Только локальные импорты»."""
         pass
 
     @abstractmethod
     def set_presenter(self, presenter):
-        """Устанавливает презентер."""
+        """Устанавливает презентер для обработки событий."""
         pass
 
     @abstractmethod
     def wait_window(self, window):
-        """Ожидает закрытия окна (для диалогов)."""
+        """Ожидает закрытия переданного дочернего окна (для диалогов)."""
         pass
 
     @abstractmethod
     def destroy(self):
-        """Закрывает окно."""
+        """Закрывает главное окно."""
         pass

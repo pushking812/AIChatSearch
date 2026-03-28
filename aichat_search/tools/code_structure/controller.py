@@ -20,7 +20,7 @@ class CodeStructureController:
         persistence_manager = PersistenceManager(
             data_provider.block_service,
             data_provider.module_service,
-            data_provider.import_service  # нужно будет добавить импорт в StructureDataProvider
+            data_provider.import_service
         )
 
         # Создаём View и Presenter
