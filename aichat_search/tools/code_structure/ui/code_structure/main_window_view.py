@@ -1,10 +1,13 @@
+# aichat_search/tools/code_structure/ui/code_structure/main_window_view.py
+
 import tkinter as tk
 from tkinter import ttk, messagebox
 from chlorophyll import CodeView
 import pygments.lexers
-from typing import Dict, Any, Optional, List
+from typing import List, Dict, Any, Optional
 
 from aichat_search.tools.code_structure.ui.dialog_interfaces import CodeStructureView
+from aichat_search.tools.code_structure.ui.dto import TreeDisplayNode, FlatListItem
 
 
 class CodeStructureView(tk.Toplevel, CodeStructureView):
@@ -127,7 +130,7 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
 
         self.merged_tree = ttk.Treeview(
             right_tree_frame,
-            columns=("type", "signature", "version", "sources"),
+            columns=("type", "signature", "version", "sources", "full_name"),
             show="tree headings"
         )
         self.merged_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -137,12 +140,14 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
         self.merged_tree.heading("signature", text="Сигнатура")
         self.merged_tree.heading("version", text="Версия")
         self.merged_tree.heading("sources", text="Последнее упоминание")
+        self.merged_tree.heading("full_name", text="Полное имя")
 
         self.merged_tree.column("#0", width=250, minwidth=150, stretch=True)
         self.merged_tree.column("type", width=80, minwidth=60, stretch=False)
         self.merged_tree.column("signature", width=200, minwidth=120, stretch=True)
         self.merged_tree.column("version", width=80, minwidth=60, stretch=False)
         self.merged_tree.column("sources", width=200, minwidth=120, stretch=True)
+        self.merged_tree.column("full_name", width=0, stretch=False)
 
         merged_tree_scroll = ttk.Scrollbar(right_tree_frame, orient=tk.VERTICAL, command=self.merged_tree.yview)
         merged_tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
@@ -201,6 +206,53 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
             self.merged_tree.item(child, open=True)
             self._expand_to_level_right(child, current_level + 1, target_level)
 
+    def clear_merged_tree(self):
+        for item in self.merged_tree.get_children():
+            self.merged_tree.delete(item)
+
+    def display_merged_tree(self, root_node: TreeDisplayNode):
+        self.clear_merged_tree()
+        self._add_merged_node("", root_node)
+        if self.merged_tree.get_children():
+            first_item = self.merged_tree.get_children()[0]
+            self.merged_tree.selection_set(first_item)
+            self.merged_tree.focus(first_item)
+
+    def _add_merged_node(self, parent: str, node: TreeDisplayNode):
+        item = self.merged_tree.insert(
+            parent, tk.END,
+            text=node.text,
+            values=(
+                node.type,
+                node.signature,
+                node.version,
+                node.sources,
+                node.full_name
+            )
+        )
+        for child in node.children:
+            self._add_merged_node(item, child)
+
+    # ---- Методы для плоского списка ----
+    def set_flat_list(self, items: List[FlatListItem]):
+        for item in self.flat_tree.get_children():
+            self.flat_tree.delete(item)
+        for i, data in enumerate(items):
+            self.flat_tree.insert(
+                "", tk.END,
+                text=str(i),
+                values=(
+                    data.block_name,
+                    data.node_path,
+                    data.parent_path,
+                    data.lines,
+                    data.module,
+                    data.class_name,
+                    data.strategy
+                ),
+                tags=(data.block_id,)
+            )
+
     # ---- Методы для работы с комбобоксами ----
     def set_type_combo_values(self, values):
         self.type_combo['values'] = values
@@ -217,111 +269,16 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
     def set_presenter(self, presenter):
         self.presenter = presenter
 
-    # ---- Обработчики событий ----
-    def _on_type_selected(self, event):
-        if self.presenter:
-            self.presenter.on_type_selected(event)
-
-    def _on_module_button(self):
-        if self.presenter:
-            self.presenter.on_reset_module_assignments()
-
-    def _on_save_structure(self):
-        if self.presenter:
-            self.presenter.on_save_structure()
-
-    def _on_load_structure(self):
-        if self.presenter:
-            self.presenter.on_load_structure()
-
-    def _on_create_project(self):
-        if self.presenter:
-            self.presenter.on_create_project()
-
-    def _on_local_only_toggled(self):
-        if self.presenter:
-            self.presenter.on_local_only_toggled(self.local_only_var.get())
-
-    # ---- Методы для плоского списка ----
-    def set_flat_list(self, items: List[Dict[str, Any]]):
-        for item in self.flat_tree.get_children():
-            self.flat_tree.delete(item)
-        for i, data in enumerate(items):
-            self.flat_tree.insert(
-                "", tk.END,
-                text=str(i),
-                values=(
-                    data.get('block_name', ''),
-                    data.get('node_path', ''),
-                    data.get('parent_path', ''),
-                    data.get('lines', ''),
-                    data.get('module', ''),
-                    data.get('class', ''),
-                    data.get('strategy', '')
-                ),
-                tags=(data.get('block_id', ''),)
-            )
+    def set_controller(self, controller):
+        self.set_presenter(controller)
 
     def set_module_button_state(self, enabled: bool):
         state = tk.NORMAL if enabled else tk.DISABLED
         self.module_button.config(state=state)
 
-    def _on_flat_tree_select(self, event):
-        selected = self.flat_tree.selection()
-        if not selected:
-            return
-        item = selected[0]
-        tags = self.flat_tree.item(item, 'tags')
-        if tags:
-            block_id = tags[0]
-            values = self.flat_tree.item(item, 'values')
-            lines = values[3]  # колонка "Строки"
-            if self.presenter:
-                self.presenter.on_flat_node_selected(block_id, lines)
+    def show_error(self, message: str):
+        messagebox.showerror("Ошибка", message, parent=self)
 
-    # ---- Методы для правого дерева ----
-    def clear_merged_tree(self):
-        for item in self.merged_tree.get_children():
-            self.merged_tree.delete(item)
-        self._right_item_to_data.clear()
-
-    def display_merged_tree(self, root_node: Dict[str, Any]):
-        self.clear_merged_tree()
-        self._add_merged_node("", root_node)
-        if self.merged_tree.get_children():
-            first_item = self.merged_tree.get_children()[0]
-            self.merged_tree.selection_set(first_item)
-            self.merged_tree.focus(first_item)
-
-    def _add_merged_node(self, parent: str, node_data: Dict[str, Any]):
-        text = node_data['text']
-        item = self.merged_tree.insert(
-            parent, tk.END,
-            text=text,
-            values=(
-                node_data.get('type', ''),
-                node_data.get('signature', ''),
-                node_data.get('version', ''),
-                node_data.get('sources', '')
-            )
-        )
-        self._right_item_to_data[item] = node_data
-        for child in node_data.get('children', []):
-            self._add_merged_node(item, child)
-
-    def get_merged_data_by_item(self, item) -> Optional[Dict[str, Any]]:
-        return self._right_item_to_data.get(item)
-
-    def _on_right_tree_select(self, event):
-        selected = self.merged_tree.selection()
-        if not selected:
-            return
-        item = selected[0]
-        data = self.get_merged_data_by_item(item)
-        if data and self.presenter:
-            self.presenter.on_merged_node_selected(data)
-
-    # ---- Методы для отображения кода ----
     def display_code(self, code: str, language: str = "python"):
         self.code_text.delete(1.0, tk.END)
         if not code.strip():
@@ -348,9 +305,48 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
                 pass
         self.merged_code.insert(1.0, code)
 
-    def show_error(self, message):
-        messagebox.showerror("Ошибка", message, parent=self)
-        
-    def set_controller(self, controller):
-        """Сохраняет контроллер (устаревший метод, используйте set_presenter)."""
-        self.set_presenter(controller)
+    # ---- Обработчики событий ----
+    def _on_type_selected(self, event):
+        if self.presenter:
+            self.presenter.on_type_selected(event)
+
+    def _on_module_button(self):
+        if self.presenter:
+            self.presenter.on_reset_module_assignments()
+
+    def _on_save_structure(self):
+        if self.presenter:
+            self.presenter.on_save_structure()
+
+    def _on_load_structure(self):
+        if self.presenter:
+            self.presenter.on_load_structure()
+
+    def _on_create_project(self):
+        if self.presenter:
+            self.presenter.on_create_project()
+
+    def _on_local_only_toggled(self):
+        if self.presenter:
+            self.presenter.on_local_only_toggled(self.local_only_var.get())
+
+    def _on_flat_tree_select(self, event):
+        selected = self.flat_tree.selection()
+        if not selected:
+            return
+        item = selected[0]
+        tags = self.flat_tree.item(item, 'tags')
+        if tags:
+            block_id = tags[0]
+            if self.presenter:
+                self.presenter.on_flat_node_selected(block_id)
+
+    def _on_right_tree_select(self, event):
+        selected = self.merged_tree.selection()
+        if not selected:
+            return
+        item = selected[0]
+        # Получаем полное имя из столбца full_name
+        full_name = self.merged_tree.set(item, "full_name")
+        if self.presenter:
+            self.presenter.on_merged_node_selected(item, full_name)

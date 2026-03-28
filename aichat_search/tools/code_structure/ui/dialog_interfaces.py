@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from typing import Dict, List, Any, Optional
-from .dto import UnknownBlockInfo, KnownModuleInfo, TreeDisplayNode, ErrorBlockInput
+from .dto import UnknownBlockInfo, KnownModuleInfo, TreeDisplayNode, ErrorBlockInput, FlatListItem
 
 
 class ErrorBlockView(ABC):
@@ -107,22 +107,23 @@ class ModuleAssignmentView(ABC):
         """Показывает сообщение об ошибке."""
         pass
         
+
 class CodeStructureView(ABC):
     """Интерфейс для представления основного окна структуры кода."""
 
     @abstractmethod
-    def display_merged_tree(self, root_node: Dict[str, Any]):
+    def display_merged_tree(self, root_node: TreeDisplayNode):
         """Отображает дерево модулей."""
+        pass
+
+    @abstractmethod
+    def set_flat_list(self, items: List[FlatListItem]):
+        """Устанавливает плоский список элементов."""
         pass
 
     @abstractmethod
     def display_merged_code(self, code: str, language: str = "python"):
         """Отображает код в правом окне."""
-        pass
-
-    @abstractmethod
-    def set_flat_list(self, items: List[Dict[str, Any]]):
-        """Устанавливает плоский список элементов."""
         pass
 
     @abstractmethod
@@ -151,11 +152,21 @@ class CodeStructureView(ABC):
         pass
 
     @abstractmethod
-    def set_controller(self, controller):  # для обратной совместимости, но будем заменять на presenter
-        """Устанавливает контроллер (временно, потом уберём)."""
+    def get_local_only(self) -> bool:
+        """Возвращает значение флага 'Только локальные импорты'."""
         pass
 
     @abstractmethod
-    def get_local_only(self) -> bool:
-        """Возвращает значение флага 'Только локальные импорты'."""
+    def set_presenter(self, presenter):
+        """Устанавливает презентер."""
+        pass
+
+    @abstractmethod
+    def wait_window(self, window):
+        """Ожидает закрытия окна (для диалогов)."""
+        pass
+
+    @abstractmethod
+    def destroy(self):
+        """Закрывает окно."""
         pass

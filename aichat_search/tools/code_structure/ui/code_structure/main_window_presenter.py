@@ -14,7 +14,8 @@ from aichat_search.tools.code_structure.services.module_service import ModuleSer
 from aichat_search.tools.code_structure.core.tree_builder import TreeBuilder
 from aichat_search.tools.code_structure.services.import_service import ImportService
 from aichat_search.tools.code_structure.models.block_info import MessageBlockInfo
-from aichat_search.tools.code_structure.ui.dto import ModuleAssignmentInput, UnknownBlockInfo, KnownModuleInfo
+from aichat_search.tools.code_structure.models.containers import Container, Version
+from aichat_search.tools.code_structure.ui.dto import ModuleAssignmentInput, UnknownBlockInfo, KnownModuleInfo, TreeDisplayNode, FlatListItem
 from aichat_search.tools.code_structure.ui.dto_builder import DtoBuilder
 from aichat_search.tools.code_structure.utils.logger import get_logger
 
@@ -33,6 +34,7 @@ class CodeStructurePresenter:
 
         self.current_lang: Optional[str] = None
         self._flat_items: List[Dict[str, Any]] = []
+        self._full_name_to_container: Dict[str, Container] = {}  # для быстрого поиска кода по полному имени
 
         # Запуск анализа
         self._run_analysis()
@@ -89,9 +91,23 @@ class CodeStructurePresenter:
             local_only=local_only
         )
         if root:
-            self.view.display_merged_tree(root)
+            # Сохраняем отображение полного имени -> контейнер
+            self._full_name_to_container.clear()
+            self._collect_containers_by_full_name(root)
+
+            # Преобразуем в DTO
+            root_dto = DtoBuilder.tree_dict_to_dto(root)
+            self.view.display_merged_tree(root_dto)
             logger.info("Дерево с пакетами отображено")
         self._flat_items = flat_items
+
+    def _collect_containers_by_full_name(self, node_dict: Dict[str, Any]):
+        """Рекурсивно собирает контейнеры из словаря, возвращаемого TreeBuilder."""
+        container = node_dict.get('_container')
+        if container and hasattr(container, 'full_path'):
+            self._full_name_to_container[container.full_path] = container
+        for child in node_dict.get('children', []):
+            self._collect_containers_by_full_name(child)
 
     def _update_flat_list(self):
         if not self._flat_items:
@@ -115,7 +131,8 @@ class CodeStructurePresenter:
                 enriched.append(enriched_item)
             else:
                 enriched.append(item)
-        self.view.set_flat_list(enriched)
+        flat_dto = DtoBuilder.flat_items_to_dto(enriched)
+        self.view.set_flat_list(flat_dto)
 
     def _update_module_button_state(self):
         enabled = len(self.module_service.unknown_blocks) > 0
@@ -267,12 +284,44 @@ class CodeStructurePresenter:
         messagebox.showinfo("Создание проекта", "Функция создания проекта будет реализована в следующей версии.")
 
     # ---------- Обработка выбора узлов ----------
-    def on_merged_node_selected(self, node_data: Dict[str, Any]):
-        code = self._render_code_from_node(node_data)
-        if code:
-            self.view.display_merged_code(code, "python")
-        else:
-            self.view.display_merged_code("")
+    def on_merged_node_selected(self, item_id: str, full_name: str):
+        container = self._full_name_to_container.get(full_name)
+        if container:
+            code = self._render_code_from_container(container)
+            if code:
+                self.view.display_merged_code(code, "python")
+                return
+        self.view.display_merged_code("")
+
+    def _render_code_from_container(self, container: Container) -> str:
+        """Возвращает код для контейнера (модуль, класс, метод, функция, блок)."""
+        if container.node_type in ('method', 'function', 'code_block', 'import'):
+            latest = container.get_latest_version()
+            if latest and latest.sources:
+                block_id, start, end, _ = latest.sources[0]
+                block = next((b for b in self.block_service.get_all_blocks() if b.block_id == block_id), None)
+                if block:
+                    lines = block.content.splitlines()
+                    fragment = '\n'.join(lines[start-1:end]) if start and end else block.content
+                    return textwrap.dedent(fragment)
+        elif container.node_type == 'class':
+            class_lines = [f"class {container.name}:"]
+            # Рекурсивно получаем код методов
+            for child in container.children:
+                child_code = self._render_code_from_container(child)
+                if child_code:
+                    class_lines.extend("    " + line for line in child_code.splitlines())
+            return '\n'.join(class_lines)
+        elif container.node_type == 'module':
+            lines = []
+            for child in container.children:
+                child_code = self._render_code_from_container(child)
+                if child_code:
+                    lines.append(child_code)
+            return '\n\n'.join(lines)
+        elif container.node_type == 'package':
+            return "# Пакет (не содержит кода)"
+        return ""
 
     def on_type_selected(self, event):
         idx = self.view.type_combo.current()
@@ -286,49 +335,9 @@ class CodeStructurePresenter:
         self._build_and_display_tree(local_only)
         self._update_flat_list()
 
-    def on_flat_node_selected(self, block_id: str, lines: str):
+    def on_flat_node_selected(self, block_id: str):
         block = next((b for b in self.block_service.get_all_blocks() if b.block_id == block_id), None)
         if block:
             self.view.display_code(block.content, block.language)
         else:
             self.view.display_code("")
-
-    # ---------- Вспомогательные методы ----------
-    def _render_code_from_node(self, node_data: Dict[str, Any]) -> str:
-        if node_data.get('type') == 'version':
-            version = node_data.get('_version_data')
-            if version and version.sources:
-                block_id, start, end, _ = version.sources[0]
-                for block in self.block_service.get_all_blocks():
-                    if block.block_id == block_id:
-                        lines = block.content.splitlines()
-                        fragment = '\n'.join(lines[start-1:end]) if start and end else block.content
-                        return textwrap.dedent(fragment)
-        elif '_container' in node_data:
-            container = node_data['_container']
-            if container.node_type in ('method', 'function', 'code_block', 'import'):
-                latest = container.get_latest_version()
-                if latest and latest.sources:
-                    block_id, start, end, _ = latest.sources[0]
-                    for block in self.block_service.get_all_blocks():
-                        if block.block_id == block_id:
-                            lines = block.content.splitlines()
-                            fragment = '\n'.join(lines[start-1:end]) if start and end else block.content
-                            return textwrap.dedent(fragment)
-            elif container.node_type == 'class':
-                class_lines = [f"class {container.name}:"]
-                for child_node in node_data.get('children', []):
-                    child_code = self._render_code_from_node(child_node)
-                    if child_code:
-                        class_lines.extend("    " + line for line in child_code.splitlines())
-                return '\n'.join(class_lines)
-            elif container.node_type == 'module':
-                lines = []
-                for child_node in node_data.get('children', []):
-                    child_code = self._render_code_from_node(child_node)
-                    if child_code:
-                        lines.append(child_code)
-                return '\n\n'.join(lines)
-            elif container.node_type == 'package':
-                return "# Пакет (не содержит кода)"
-        return ""

@@ -47,3 +47,17 @@ class ModuleAssignmentInput:
 class ModuleAssignmentOutput:
     assignments: Dict[str, str]          # block_id -> module_name
     updated_module_tree: TreeDisplayNode
+
+
+# --- DTO для Main Window ---
+@dataclass
+class FlatListItem:
+    """Элемент плоского списка для главного окна."""
+    block_id: str
+    block_name: str
+    node_path: str
+    parent_path: str
+    lines: str
+    module: str
+    class_name: str 
+    strategy: str
