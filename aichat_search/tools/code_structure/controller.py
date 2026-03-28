@@ -11,9 +11,11 @@ from aichat_search.model import Chat, MessagePair
 from aichat_search.tools.code_structure.view import CodeStructureWindow
 from aichat_search.tools.code_structure.services.block_service import BlockService
 from aichat_search.tools.code_structure.services.module_service import ModuleService
-from aichat_search.tools.code_structure.core.tree_builder import TreeBuilder
 from aichat_search.tools.code_structure.services.import_service import ImportService
+from aichat_search.tools.code_structure.core.tree_builder import TreeBuilder
 from aichat_search.tools.code_structure.models.block_info import MessageBlockInfo
+from aichat_search.tools.code_structure.ui.dto import TreeDisplayNode
+from aichat_search.tools.code_structure.ui.dto_builder import DtoBuilder
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -315,3 +317,4 @@ class CodeStructureController:
             elif container.node_type == 'package':
                 return "# Пакет (не содержит кода)"
         return ""
+        
