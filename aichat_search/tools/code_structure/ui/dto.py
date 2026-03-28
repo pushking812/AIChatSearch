@@ -61,3 +61,17 @@ class FlatListItem:
     module: str
     class_name: str 
     strategy: str
+    
+@dataclass
+class CodeStructureInitDTO:
+    """Начальные данные для главного окна."""
+    languages: List[str]
+    tree: 'TreeDisplayNode'
+    flat_items: List['FlatListItem']
+    has_unknown_blocks: bool
+
+@dataclass
+class CodeStructureRefreshDTO:
+    """Обновлённые данные после смены фильтра."""
+    tree: 'TreeDisplayNode'
+    flat_items: List['FlatListItem']
