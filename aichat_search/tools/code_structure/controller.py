@@ -10,4 +10,4 @@ class CodeStructureController:
     def __init__(self, parent, items: List[Tuple[Chat, MessagePair]]):
         self.view = CodeStructureView(parent)
         self.presenter = CodeStructurePresenter(self.view, items)
-        self.view.set_presenter(self.presenter)  
+        self.view.set_presenter(self.presenter)
