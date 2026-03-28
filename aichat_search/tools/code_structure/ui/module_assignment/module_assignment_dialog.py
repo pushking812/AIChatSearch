@@ -1,36 +1,30 @@
-# aichat_search/tools/code_structure/ui/module_assignment_dialog.py
+# aichat_search/tools/code_structure/ui/module_assignment/module_assignment_dialog.py
 
 import tkinter as tk
 from tkinter import ttk, messagebox
 from typing import List, Dict, Optional, Any
 
 from aichat_search.tools.code_structure.ui.dialog_interfaces import ModuleAssignmentView
-from aichat_search.tools.code_structure.ui.module_assignment_presenter import ModuleAssignmentPresenter
+from aichat_search.tools.code_structure.ui.module_assignment.module_assignment_presenter import ModuleAssignmentPresenter
+from aichat_search.tools.code_structure.ui.dto import (
+    UnknownBlockInfo, KnownModuleInfo, TreeDisplayNode, ModuleAssignmentInput
+)
 
 
 class ModuleAssignmentDialog(tk.Toplevel, ModuleAssignmentView):
-    def __init__(
-        self,
-        parent,
-        unknown_blocks: List[Dict[str, Any]],
-        module_info: List[Dict[str, Any]],
-        module_code_map: Optional[Dict[str, str]] = None,
-        module_containers: Optional[Dict[str, Any]] = None
-    ):
+    def __init__(self, parent, input_data: ModuleAssignmentInput):
         super().__init__(parent)
         self.title("Назначение модулей")
         self.geometry("1200x800")
         self.minsize(1200, 800)
         self.transient(parent)
         self.grab_set()
+        
+        self._tree_item_data = {}
 
         self.presenter = ModuleAssignmentPresenter(self)
-        self._tree_item_data = {}
         self._create_widgets()
-        
-        self.presenter.initialize(
-            unknown_blocks, module_info, module_code_map or {}, module_containers or {}
-        )
+        self.presenter.initialize(input_data)
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.result = None
@@ -189,43 +183,42 @@ class ModuleAssignmentDialog(tk.Toplevel, ModuleAssignmentView):
     def show_error(self, message: str):
         messagebox.showerror("Ошибка", message, parent=self)
 
-    def set_blocks(self, blocks: List[Dict[str, Any]]):
-        self.block_combo['values'] = [b['display_name'] for b in blocks]
+    def set_blocks(self, blocks: List[UnknownBlockInfo]):
+        self.block_combo['values'] = [b.display_name for b in blocks]
         if blocks:
             self.block_combo.current(0)
 
-    def set_modules(self, modules: List[Dict[str, Any]], module_code_map: Dict[str, str]):
+    def set_modules(self, modules: List[KnownModuleInfo]):
         module_display_names = []
         for info in modules:
-            if info['source']:
-                module_display_names.append(f"{info['name']} (из {info['source']})")
+            if info.source:
+                module_display_names.append(f"{info.name} (из {info.source})")
             else:
-                module_display_names.append(info['name'])
+                module_display_names.append(info.name)
         self.module_combo['values'] = module_display_names
         if module_display_names:
             self.module_combo.current(0)
 
-    def set_tree_data(self, tree_data: Dict[str, Any]):
+    def set_tree_data(self, tree_data: TreeDisplayNode):
         for item in self.module_tree.get_children():
             self.module_tree.delete(item)
         self._tree_item_data.clear()
         self._add_tree_node("", tree_data)
 
-    def _add_tree_node(self, parent: str, node_data: Dict[str, Any]):
-        text = node_data['text']
-        if node_data.get('_container') and node_data['_container'].is_placeholder:
-            text += " *"
+    def _add_tree_node(self, parent: str, node: TreeDisplayNode):
+        text = node.text
         item = self.module_tree.insert(
             parent, tk.END,
             text=text,
             values=(
-                node_data.get('type', ''),
-                node_data.get('signature', ''),
-                node_data.get('version', '')
+                node.type,
+                node.signature,
+                node.version,
+                node.sources
             )
         )
-        self._tree_item_data[item] = node_data
-        for child in node_data.get('children', []):
+        self._tree_item_data[item] = node
+        for child in node.children:
             self._add_tree_node(item, child)
 
     def show_block_code(self, code: str):
@@ -258,9 +251,12 @@ class ModuleAssignmentDialog(tk.Toplevel, ModuleAssignmentView):
             self.new_module_entry.config(state="disabled")
 
     def get_selected_block_id(self) -> Optional[str]:
+        """Возвращает ID выбранного блока."""
+        if not self.presenter.input:
+            return None
         selected_idx = self.block_combo.current()
-        if 0 <= selected_idx < len(self.presenter.unknown_blocks):
-            return self.presenter.unknown_blocks[selected_idx]['id']
+        if 0 <= selected_idx < len(self.presenter.input.unknown_blocks):
+            return self.presenter.input.unknown_blocks[selected_idx].id
         return None
 
     def get_selected_module(self) -> str:
@@ -286,14 +282,13 @@ class ModuleAssignmentDialog(tk.Toplevel, ModuleAssignmentView):
             return
         item = selected[0]
         node_data = self._tree_item_data.get(item)
-        if node_data and node_data.get('type') == 'version':
-            version = node_data.get('_version_data')
-            if version and version.sources:
-                block_id, start, end, _ = version.sources[0]
-                for module, code in self.presenter.module_code_map.items():
-                    if module in block_id:
-                        self.show_module_code(code)
-                        return
+        if node_data and node_data.type in ('module', 'class', 'function', 'method'):
+            full_name = node_data.full_name
+            # Ищем модуль по полному имени
+            for mod in self.presenter.input.known_modules:
+                if mod.name == full_name:
+                    self.show_module_code(mod.code)
+                    break
 
     def _on_action_change(self):
         self.presenter.on_action_changed(self.get_action_mode())

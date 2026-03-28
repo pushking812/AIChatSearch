@@ -14,16 +14,28 @@ from aichat_search.tools.code_structure.services.block_service import BlockServi
 from aichat_search.tools.code_structure.services.module_service import ModuleService
 from aichat_search.tools.code_structure.services.import_service import ImportService
 
+
 from aichat_search.tools.code_structure.core.tree_builder import TreeBuilder
 
 from aichat_search.tools.code_structure.models.block_info import MessageBlockInfo
 
-from aichat_search.tools.code_structure.ui import ErrorBlockDialog
-from aichat_search.tools.code_structure.ui.dto import TreeDisplayNode, ErrorBlockInput
-from aichat_search.tools.code_structure.ui.dto_builder import DtoBuilder
+from aichat_search.tools.code_structure.ui import ModuleAssignmentDialog
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+from aichat_search.tools.code_structure.ui import ErrorBlockDialog
+from aichat_search.tools.code_structure.ui.dto_builder import DtoBuilder
+from aichat_search.tools.code_structure.ui.dto import (
+    ModuleAssignmentInput, UnknownBlockInfo, KnownModuleInfo, TreeDisplayNode, ErrorBlockInput
+)
+
+from aichat_search.tools.code_structure.utils.logger import get_logger
+logger = get_logger(__name__)
+
+if not logger.handlers:
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
 
 
 class CodeStructureController:
@@ -143,60 +155,39 @@ class CodeStructureController:
 
     # ---------- Диалоги ----------
     def _show_module_dialog(self, unknown_blocks: List[MessageBlockInfo]):
+        # Подготавливаем DTO
+        input_dto = self._prepare_module_assignment_input()
+        # Создаём диалог с DTO
         from aichat_search.tools.code_structure.ui import ModuleAssignmentDialog
-        all_blocks = self.block_service.get_all_blocks()
-        known_modules = self.module_service.get_known_modules()
-        block_descriptions = {
-            b.block_id: self.block_service.get_block_description(b)
-            for b in all_blocks
-        }
-        module_sources = {}
-        module_code_map = {}
-        for module in known_modules:
-            module_sources[module] = self.module_service.get_module_source(module, all_blocks)
-            code = self.module_service.get_module_code(module, all_blocks)
-            if code:
-                module_code_map[module] = code
-        dialog_data = []
-        for block in unknown_blocks:
-            display_name = f"{block.block_id} – {block_descriptions.get(block.block_id, 'блок_кода')}"
-            dialog_data.append({
-                'id': block.block_id,
-                'display_name': display_name,
-                'content': block.content
-            })
-        module_info = []
-        for module in sorted(known_modules):
-            module_info.append({'name': module, 'source': module_sources.get(module)})
-        dialog = ModuleAssignmentDialog(
-            self.view,
-            dialog_data,
-            module_info,
-            module_code_map,
-            self.module_service.module_containers
-        )
+        dialog = ModuleAssignmentDialog(self.view, input_dto)
         self.view.wait_window(dialog)
         if dialog.result:
             self._apply_dialog_result(dialog.result)
 
-    def _apply_dialog_result(self, dialog_result):
-        assignments = dialog_result.get('assignments', {})
-        new_containers = dialog_result.get('module_containers')
-        
+    def _apply_dialog_result(self, result):
+        # result — это ModuleAssignmentOutput
+        assignments = result.assignments
         all_blocks = self.block_service.get_all_blocks()
-        
+
         for block in all_blocks:
             if block.block_id in assignments:
                 block.module_hint = assignments[block.block_id]
                 if block.tree and not block.syntax_error:
-                    self.module_service.identifier.collect_from_tree(block.tree, block.module_hint, block_info=block)
-        
-        if new_containers is not None:
-            self.module_service.module_containers = new_containers
-        else:
-            self.module_service.module_containers = self.module_service.rebuild_full_containers(all_blocks)
-        
-        self.module_service.remove_temp_modules()
+                    self.module_service.identifier.collect_from_tree(
+                        block.tree, block.module_hint, block_info=block
+                    )
+
+        # Перестраиваем контейнеры (можно пересобрать заново)
+        text_blocks_by_pair = self.block_service.get_text_blocks_by_pair()
+        full_texts_by_pair = self.block_service.get_full_texts_by_pair()
+        containers, unknown_blocks = self.module_service.process_blocks(
+            all_blocks,
+            text_blocks_by_pair=text_blocks_by_pair,
+            full_texts_by_pair=full_texts_by_pair
+        )
+        self.module_service.module_containers = containers
+        self.module_service.unknown_blocks = unknown_blocks
+
         self._build_and_display_tree()
         self._update_flat_list()
         self._update_module_button_state()
@@ -327,3 +318,47 @@ class CodeStructureController:
                 return "# Пакет (не содержит кода)"
         return ""
         
+    def _prepare_module_assignment_input(self) -> ModuleAssignmentInput:
+        """
+        Подготавливает DTO для диалога назначения модулей.
+        Преобразует внутренние данные в DTO без ссылок на реальные объекты.
+        """
+        # Получаем неопределённые блоки (MessageBlockInfo)
+        unknown_blocks_info = []
+        for block in self.module_service.unknown_blocks:
+            display_name = f"{block.block_id} – {self.block_service.get_block_description(block)}"
+            unknown_blocks_info.append(UnknownBlockInfo(
+                id=block.block_id,
+                display_name=display_name,
+                content=block.content
+            ))
+
+        # Получаем известные модули
+        known_modules_info = []
+        for module_name in sorted(self.module_service.get_known_modules()):
+            source = self.module_service.get_module_source(
+                module_name,
+                self.block_service.get_all_blocks()
+            )
+            code = self.module_service.get_module_code(
+                module_name,
+                self.block_service.get_all_blocks()
+            ) or ""
+            known_modules_info.append(KnownModuleInfo(
+                name=module_name,
+                source=source,
+                code=code
+            ))
+
+        # Строим дерево для отображения
+        root_dict, _ = self.tree_builder.build_display_tree(
+            self.module_service.module_containers,
+            local_only=self.view.local_only_var.get()
+        )
+        module_tree = DtoBuilder.tree_dict_to_dto(root_dict)
+
+        return ModuleAssignmentInput(
+            unknown_blocks=unknown_blocks_info,
+            known_modules=known_modules_info,
+            module_tree=module_tree
+        )

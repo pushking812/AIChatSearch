@@ -1,6 +1,6 @@
 # aichat_search/tools/code_structure/ui/__init__.py
 
-from aichat_search.tools.code_structure.ui.module_assignment_dialog import ModuleAssignmentDialog
-from aichat_search.tools.code_structure.ui.error_block_dialog import ErrorBlockDialog
+from .error_block import ErrorBlockDialog
+from .module_assignment import ModuleAssignmentDialog
 
-__all__ = ['ModuleAssignmentDialog', 'ErrorBlockDialog']
+__all__ = ['ErrorBlockDialog', 'ModuleAssignmentDialog']

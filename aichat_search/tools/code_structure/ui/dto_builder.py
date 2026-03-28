@@ -9,13 +9,11 @@ class DtoBuilder:
 
     @staticmethod
     def container_to_dto_node(container) -> TreeDisplayNode:
-        """Рекурсивно преобразует контейнер (Container) в TreeDisplayNode."""
+        full_name = container.full_path if hasattr(container, 'full_path') else container.name
         node = TreeDisplayNode(
             text=container.name,
             type=container.node_type,
-            signature="",
-            version="",
-            sources=""
+            full_name=full_name
         )
         if hasattr(container, 'versions') and container.versions:
             max_version = len(container.versions)
@@ -26,14 +24,19 @@ class DtoBuilder:
 
     @staticmethod
     def tree_dict_to_dto(root_dict: Dict[str, Any]) -> TreeDisplayNode:
-        """Преобразует словарь от TreeBuilder.build_display_tree в TreeDisplayNode."""
         def convert(node_dict):
+            # Получаем полное имя из текста (упрощённо)
+            # В реальном дереве полное имя может быть в _container.full_path
+            # Но так как в словаре нет _container, используем текст
+            # Для улучшения можно сохранять полное имя в словаре
+            full_name = node_dict.get('text', '')
             node = TreeDisplayNode(
                 text=node_dict.get('text', ''),
                 type=node_dict.get('type', ''),
                 signature=node_dict.get('signature', ''),
                 version=node_dict.get('version', ''),
-                sources=node_dict.get('sources', '')
+                sources=node_dict.get('sources', ''),
+                full_name=full_name
             )
             for child in node_dict.get('children', []):
                 node.children.append(convert(child))

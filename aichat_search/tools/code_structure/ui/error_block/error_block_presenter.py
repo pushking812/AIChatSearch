@@ -1,4 +1,4 @@
-# aichat_search/tools/code_structure/ui/error_block_presenter.py
+# aichat_search/tools/code_structure/ui/error_block/error_block_presenter.py
 
 import logging
 from typing import Optional
@@ -6,8 +6,8 @@ from typing import Optional
 from aichat_search.tools.code_structure.ui.dialog_interfaces import ErrorBlockView
 from aichat_search.tools.code_structure.ui.dto import ErrorBlockInput
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
+from aichat_search.tools.code_structure.utils.logger import get_logger
+logger = get_logger(__name__)
 
 class ErrorBlockPresenter:
     def __init__(self, view: ErrorBlockView):

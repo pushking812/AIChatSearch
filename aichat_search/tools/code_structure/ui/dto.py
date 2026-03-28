@@ -34,6 +34,7 @@ class TreeDisplayNode:
     signature: str = ""
     version: str = ""
     sources: str = ""
+    full_name: str = ""      # полное имя (для модулей)
     children: List['TreeDisplayNode'] = field(default_factory=list)
 
 @dataclass
