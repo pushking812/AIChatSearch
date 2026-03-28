@@ -212,7 +212,6 @@ class Application(tk.Tk):
                     items.append((chat, pair))
 
         if items:
-            from ..tools.code_structure.controller import CodeStructureController
             CodeStructureController(self, items)
         else:
             messagebox.showwarning(

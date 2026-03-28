@@ -8,7 +8,7 @@ from tkinter import messagebox
 from typing import List, Dict, Optional, Any, Tuple
 
 from aichat_search.model import Chat, MessagePair
-from aichat_search.tools.code_structure.view import CodeStructureWindow
+from aichat_search.tools.code_structure.ui.code_structure import CodeStructureView as CodeStructureWindow
 
 from aichat_search.tools.code_structure.services.block_service import BlockService
 from aichat_search.tools.code_structure.services.module_service import ModuleService

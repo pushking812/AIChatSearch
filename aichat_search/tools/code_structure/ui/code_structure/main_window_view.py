@@ -1,4 +1,4 @@
-# aichat_search/tools/code_structure/view.py
+# aichat_search/tools/code_structure/ui/code_structure/main_window_view.py
 
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -7,7 +7,7 @@ import pygments.lexers
 from typing import Dict, Any, Optional, List
 
 
-class CodeStructureWindow(tk.Toplevel):
+class CodeStructureView(tk.Toplevel):
     def __init__(self, parent):
         super().__init__(parent)
         self.title("Структура кода")
