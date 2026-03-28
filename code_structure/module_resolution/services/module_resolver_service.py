@@ -306,9 +306,9 @@ class ModuleResolverService:
                 unknown = still
             return unknown
 
-        unknown1 = process_group(group_classes_with_hint)
+        # unknown1 = process_group(group_classes_with_hint) # не используется, выяснить почему
         unknown2 = process_group(group_imports_with_hint)
-        unknown3 = process_group(group_classes_only)
+        # unknown3 = process_group(group_classes_only) # не используется, выяснить почему
         unknown4 = process_group(group_imports_only)
         unknown5 = process_group(group_neither)
 

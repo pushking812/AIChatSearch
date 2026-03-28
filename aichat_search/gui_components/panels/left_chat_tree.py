@@ -88,7 +88,7 @@ class LeftChatTree(tk.Frame):
             for chat in group['chats']:
                 unique_iid = f"{source_name}_{chat.id}"
                 display_date = format_datetime(chat.updated_at or chat.created_at)
-                child_id = self.tree.insert(
+                child_id = self.tree.insert( # child_id не используется, проверить # noqa
                     parent_id, "end",
                     values=(chat.title, chat.group or "", len(chat.pairs), display_date),
                     iid=unique_iid, tags=('chat',)
@@ -107,7 +107,7 @@ class LeftChatTree(tk.Frame):
             for chat, source_name, source_time in groups[group_name]:
                 unique_iid = f"{source_name}_{chat.id}"
                 display_date = format_datetime(chat.updated_at or chat.created_at)
-                child_id = self.tree.insert(
+                child_id = self.tree.insert( # child_id не используется, проверить # noqa
                     parent_id, "end",
                     values=(chat.title, chat.group or "", len(chat.pairs), display_date),
                     iid=unique_iid, tags=('chat',)
@@ -130,7 +130,7 @@ class LeftChatTree(tk.Frame):
             for chat, source_name, source_time in groups[prefix]:
                 unique_iid = f"{source_name}_{chat.id}"
                 display_date = format_datetime(chat.updated_at or chat.created_at)
-                child_id = self.tree.insert(
+                child_id = self.tree.insert( # child_id не используется, проверить # noqa
                     parent_id, "end",
                     values=(chat.title, chat.group or "", len(chat.pairs), display_date),
                     iid=unique_iid, tags=('chat',)

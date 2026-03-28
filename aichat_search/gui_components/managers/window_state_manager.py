@@ -114,7 +114,7 @@ class WindowStateManager:
             if available <= 0:
                 return 0.25 if orient == 'horizontal' else 0.5
             return pos / available
-        except:
+        except Exception:
             return 0.25 if orient == 'horizontal' else 0.5
 
     def _apply_proportions(self, props):

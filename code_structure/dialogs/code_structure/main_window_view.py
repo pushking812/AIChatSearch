@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from chlorophyll import CodeView
 import pygments.lexers
+from pygments.util import ClassNotFound
 from typing import List
 
 from code_structure.dialogs.dialog_interfaces import CodeStructureView
@@ -288,9 +289,9 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
             self.code_text.lexer = pygments.lexers.PythonLexer
         else:
             try:
-                self.code_text.lexer = pygments.lexers.get_lexer_by_name(language.lower())
-            except:
-                pass
+                self.merged_code.lexer = pygments.lexers.get_lexer_by_name(language.lower())
+            except ClassNotFound:
+                pass 
         self.code_text.insert(1.0, code)
 
     def display_merged_code(self, code: str, language: str = "python"):
@@ -302,7 +303,7 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
         else:
             try:
                 self.merged_code.lexer = pygments.lexers.get_lexer_by_name(language.lower())
-            except:
+            except ClassNotFound:
                 pass
         self.merged_code.insert(1.0, code)
 
