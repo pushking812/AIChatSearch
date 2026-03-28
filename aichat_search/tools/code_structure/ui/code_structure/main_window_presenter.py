@@ -9,14 +9,15 @@ from typing import List, Dict, Optional, Any, Tuple
 
 from aichat_search.model import Chat, MessagePair
 from aichat_search.tools.code_structure.ui.dialog_interfaces import CodeStructureView
-from aichat_search.tools.code_structure.services.block_service import BlockService
-from aichat_search.tools.code_structure.services.module_service import ModuleService
-from aichat_search.tools.code_structure.core.tree_builder import TreeBuilder
-from aichat_search.tools.code_structure.services.import_service import ImportService
-from aichat_search.tools.code_structure.models.block_info import MessageBlockInfo
-from aichat_search.tools.code_structure.models.containers import Container, Version
+from aichat_search.tools.code_structure.block_processing.services.block_service import BlockService
+from aichat_search.tools.code_structure.module_resolution.services.module_service import ModuleService
+from aichat_search.tools.code_structure.parsing.core.tree_builder import TreeBuilder
+from aichat_search.tools.code_structure.imports.services.import_service import ImportService
+from aichat_search.tools.code_structure.module_resolution.models.block_info import MessageBlockInfo
+from aichat_search.tools.code_structure.module_resolution.models.containers import Container, Version
 from aichat_search.tools.code_structure.ui.dto import ModuleAssignmentInput, UnknownBlockInfo, KnownModuleInfo, TreeDisplayNode, FlatListItem
 from aichat_search.tools.code_structure.ui.dto_builder import DtoBuilder
+from aichat_search.tools.code_structure.utils.logger import get_logger
 
 from aichat_search.tools.code_structure.utils.logger import get_logger
 logger = get_logger(__name__, level = logging.WARNING)

@@ -14,7 +14,7 @@ from aichat_search.tools.code_structure.core.project_tree_builder import Project
 from aichat_search.tools.code_structure.core.module_orchestrator import ModuleOrchestrator
 from aichat_search.tools.code_structure.core.import_analyzer import extract_imports_from_block
 from aichat_search.tools.code_structure.parser import PythonParser
-from aichat_search.services.block_parser import MessageBlock
+from aichat_search.tools.code_structure.services.block_parser import MessageBlock
 
 
 class TestManualIntegration(unittest.TestCase):

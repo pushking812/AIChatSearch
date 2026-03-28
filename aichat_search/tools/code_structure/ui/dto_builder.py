@@ -3,7 +3,6 @@
 from typing import Dict, Any, List
 from aichat_search.tools.code_structure.ui.dto import TreeDisplayNode, FlatListItem
 
-
 class DtoBuilder:
     """Построитель DTO из внутренних моделей приложения."""
 

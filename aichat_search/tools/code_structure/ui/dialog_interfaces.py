@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from typing import Dict, List, Any, Optional
-from .dto import UnknownBlockInfo, KnownModuleInfo, TreeDisplayNode, ErrorBlockInput, FlatListItem
+from aichat_search.tools.code_structure.ui.dto import UnknownBlockInfo, KnownModuleInfo, TreeDisplayNode, ErrorBlockInput, FlatListItem
 
 
 class ErrorBlockView(ABC):
