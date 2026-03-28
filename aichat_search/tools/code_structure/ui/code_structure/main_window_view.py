@@ -19,6 +19,8 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
         self.grab_set()
 
         self.presenter = None
+        
+        self._right_item_to_data = {} 
 
         # Верхняя панель с элементами управления
         top_frame = ttk.Frame(self)
@@ -228,6 +230,7 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
                 node.full_name
             )
         )
+        self._right_item_to_data[item] = node
         for child in node.children:
             self._add_merged_node(item, child)
 
@@ -344,6 +347,6 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
         if not selected:
             return
         item = selected[0]
-        full_name = self.merged_tree.set(item, "full_name")
-        if self.presenter:
-            self.presenter.on_merged_node_selected(item, full_name)
+        node_data = self._right_item_to_data.get(item)
+        if node_data and self.presenter:
+            self.presenter.on_merged_node_selected(node_data)

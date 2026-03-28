@@ -1,73 +1,58 @@
 # aichat_search/tools/code_structure/ui/code_structure/main_window_presenter.py
 
+from typing import List, Tuple, Optional, Any
 import logging
-import textwrap
-import pickle
-import os
-from tkinter import messagebox
-from typing import List, Dict, Optional, Any, Tuple
 
 from aichat_search.model import Chat, MessagePair
-
 from aichat_search.tools.code_structure.ui.dialog_interfaces import CodeStructureView
-from aichat_search.tools.code_structure.block_processing.services.block_service import BlockService
-from aichat_search.tools.code_structure.module_resolution.services.module_service import ModuleService
-from aichat_search.tools.code_structure.parsing.core.tree_builder import TreeBuilder
-from aichat_search.tools.code_structure.imports.services.import_service import ImportService
-from aichat_search.tools.code_structure.module_resolution.models.block_info import MessageBlockInfo
-from aichat_search.tools.code_structure.module_resolution.models.containers import Container, Version
-from aichat_search.tools.code_structure.ui.dto import ModuleAssignmentInput, UnknownBlockInfo, KnownModuleInfo, TreeDisplayNode, FlatListItem
-from aichat_search.tools.code_structure.ui.dto_builder import DtoBuilder
+from aichat_search.tools.code_structure.facades import (
+    StructureDataProvider, ModuleAssignmentManager, PersistenceManager
+)
+from aichat_search.tools.code_structure.ui.dto import (
+    CodeStructureInitDTO, CodeStructureRefreshDTO, TreeDisplayNode
+)
+
 from aichat_search.tools.code_structure.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
 
 class CodeStructurePresenter:
-    def __init__(self, view: CodeStructureView, items: List[Tuple[Chat, MessagePair]]):
+    def __init__(
+        self,
+        view: CodeStructureView,
+        data_provider: StructureDataProvider,
+        module_manager: ModuleAssignmentManager,
+        persistence_manager: PersistenceManager
+    ):
         self.view = view
-        self.items = items
+        self.data_provider = data_provider
+        self.module_manager = module_manager
+        self.persistence_manager = persistence_manager
 
-        self.block_service = BlockService()
-        self.module_service = ModuleService()
-        self.tree_builder = TreeBuilder()
-        self.import_service = ImportService()
+        # Загрузка блоков и инициализация
+        self.data_provider.load_blocks()
+        # Обработка ошибок (диалоги исправления)
+        self._handle_error_blocks()
+        # Обновление интерфейса после загрузки
+        self._update_view(self.data_provider.get_initial_data())
+        # Автоматическое открытие диалога назначения модулей, если есть неопределённые блоки
+        self._maybe_show_module_dialog()
 
-        self.current_lang: Optional[str] = None
-        self._flat_items: List[Dict[str, Any]] = []
-        self._full_name_to_container: Dict[str, Container] = {}
+    # ---------- Обновление UI ----------
+    def _update_view(self, data: CodeStructureInitDTO):
+        self.view.display_merged_tree(data.tree)
+        self.view.set_flat_list(data.flat_items)
+        self.view.set_type_combo_values(data.languages)
+        self.view.set_type_combo_state(len(data.languages) > 1)
+        self.view.set_module_button_state(data.has_unknown_blocks)
 
-        self._run_analysis()
+    # ---------- Обработка синтаксических ошибок ----------
+    def _handle_error_blocks(self):
+        error_blocks = self.data_provider.get_error_blocks()
+        if not error_blocks:
+            return
 
-    # ---------- Основной анализ ----------
-    def _run_analysis(self):
-        self.block_service.load_from_items(self.items)
-
-        error_blocks = self.block_service.get_error_blocks()
-        if error_blocks:
-            self._handle_error_blocks(error_blocks)
-
-        all_blocks = self.block_service.get_all_blocks()
-        text_blocks_by_pair = self.block_service.get_text_blocks_by_pair()
-        full_texts_by_pair = self.block_service.get_full_texts_by_pair()
-
-        containers, unknown_blocks = self.module_service.process_blocks(
-            all_blocks,
-            text_blocks_by_pair=text_blocks_by_pair,
-            full_texts_by_pair=full_texts_by_pair
-        )
-        self.module_service.module_containers = containers
-        self.module_service.unknown_blocks = unknown_blocks
-
-        self._build_and_display_tree()
-        self._update_flat_list()
-        self._update_module_button_state()
-        self._setup_interface()
-
-        if unknown_blocks:
-            self._show_module_dialog(unknown_blocks)
-
-    def _handle_error_blocks(self, error_blocks: List[MessageBlockInfo]):
         from aichat_search.tools.code_structure.ui import ErrorBlockDialog
         from aichat_search.tools.code_structure.ui.dto import ErrorBlockInput
 
@@ -80,257 +65,71 @@ class CodeStructurePresenter:
             dialog = ErrorBlockDialog(self.view, input_data)
             self.view.wait_window(dialog)
             if dialog.result is not None:
-                self.block_service.fix_error_block(block, dialog.result)
+                self.data_provider.fix_error_block(block.block_id, dialog.result)
 
-    # ---------- Построение деревьев ----------
-    def _build_and_display_tree(self, local_only: bool = None):
-        if local_only is None:
-            local_only = self.view.get_local_only()
-        root, flat_items = self.tree_builder.build_display_tree(
-            self.module_service.module_containers,
-            local_only=local_only
-        )
-        if root:
-            self._full_name_to_container.clear()
-            self._collect_containers_by_full_name(root)
-            root_dto = DtoBuilder.tree_dict_to_dto(root)
-            self.view.display_merged_tree(root_dto)
-            logger.info("Дерево с пакетами отображено")
-        self._flat_items = flat_items
+        # После исправления всех ошибок перестраиваем структуру и обновляем отображение
+        self.data_provider.rebuild_structure()
+        self._update_view(self.data_provider.get_initial_data())
 
-    def _collect_containers_by_full_name(self, node_dict: Dict[str, Any]):
-        container = node_dict.get('_container')
-        if container and hasattr(container, 'full_path'):
-            self._full_name_to_container[container.full_path] = container
-        for child in node_dict.get('children', []):
-            self._collect_containers_by_full_name(child)
+    # ---------- Автоматическое открытие диалога назначения модулей ----------
+    def _maybe_show_module_dialog(self):
+        if self.data_provider.has_unknown_blocks():
+            self._show_module_dialog()
 
-    def _update_flat_list(self):
-        if not self._flat_items:
-            return
-        all_blocks = self.block_service.get_all_blocks()
-        block_map = {b.block_id: b for b in all_blocks}
-        enriched = []
-        for item in self._flat_items:
-            block_id = item['block_id']
-            block = block_map.get(block_id)
-            if block:
-                module = block.module_hint or ''
-                strategy = block.assignment_strategy or ''
-                enriched_item = item.copy()
-                enriched_item['module'] = module
-                enriched_item['strategy'] = strategy
-                if item['node_type'] == 'method' and item['parent_path']:
-                    enriched_item['class'] = item['parent_path'].split('.')[-1]
-                else:
-                    enriched_item['class'] = '-'
-                enriched.append(enriched_item)
-            else:
-                enriched.append(item)
-        flat_dto = DtoBuilder.flat_items_to_dto(enriched)
-        self.view.set_flat_list(flat_dto)
+    # ---------- Обработка выбора узлов ----------
+    def on_merged_node_selected(self, node_data: TreeDisplayNode):
+        code = self.data_provider.get_code_for_node(node_data)
+        self.view.display_merged_code(code or "")
 
-    def _update_module_button_state(self):
-        enabled = len(self.module_service.unknown_blocks) > 0
-        self.view.set_module_button_state(enabled)
+    def on_flat_node_selected(self, block_id: str):
+        code = self.data_provider.get_code_for_block(block_id)
+        self.view.display_code(code or "")
 
-    # ---------- Интерфейс ----------
-    def _setup_interface(self):
-        languages = self.block_service.get_languages()
-        if not languages:
-            self.view.show_error("Нет блоков с поддерживаемыми языками")
-            self.view.destroy()
-            return
-        self.view.set_type_combo_values([lang.capitalize() for lang in languages])
-        self.view.set_type_combo_state(len(languages) > 1)
-        self.current_lang = languages[0]
-        self._switch_language(self.current_lang)
+    # ---------- Фильтр "Только локальные импорты" ----------
+    def on_local_only_toggled(self, local_only: bool):
+        refresh_data = self.data_provider.refresh(local_only)
+        self.view.display_merged_tree(refresh_data.tree)
+        self.view.set_flat_list(refresh_data.flat_items)
 
-    def _switch_language(self, lang: str):
-        self.current_lang = lang
+    # ---------- Выбор языка ----------
+    def on_type_selected(self, event):
+        # Язык пока не влияет на отображение, просто сбрасываем код
         self.view.display_code("")
 
-    # ---------- Диалог назначения модулей ----------
-    def _show_module_dialog(self, unknown_blocks: List[MessageBlockInfo]):
+    # ---------- Управление модулями ----------
+    def on_reset_module_assignments(self):
+        self.module_manager.reset_assignments()
+        refresh_data = self.data_provider.refresh(self.view.get_local_only())
+        self.view.display_merged_tree(refresh_data.tree)
+        self.view.set_flat_list(refresh_data.flat_items)
+        # После сброса могут появиться неопределённые блоки, показываем диалог
+        if self.data_provider.has_unknown_blocks():
+            self._show_module_dialog()
+
+    def _show_module_dialog(self):
         from aichat_search.tools.code_structure.ui import ModuleAssignmentDialog
 
-        input_dto = self._prepare_module_assignment_input()
+        input_dto = self.module_manager.get_module_assignment_input(self.view.get_local_only())
         dialog = ModuleAssignmentDialog(self.view, input_dto)
         self.view.wait_window(dialog)
         if dialog.result:
-            self._apply_dialog_result(dialog.result)
+            self.module_manager.apply_assignments(dialog.result.assignments)
+            refresh_data = self.data_provider.refresh(self.view.get_local_only())
+            self.view.display_merged_tree(refresh_data.tree)
+            self.view.set_flat_list(refresh_data.flat_items)
 
-    def _prepare_module_assignment_input(self) -> ModuleAssignmentInput:
-        unknown_blocks_info = []
-        for block in self.module_service.unknown_blocks:
-            display_name = f"{block.block_id} – {self.block_service.get_block_description(block)}"
-            unknown_blocks_info.append(UnknownBlockInfo(
-                id=block.block_id,
-                display_name=display_name,
-                content=block.content
-            ))
-
-        known_modules_info = []
-        for module_name in sorted(self.module_service.get_known_modules()):
-            source = self.module_service.get_module_source(module_name, self.block_service.get_all_blocks())
-            code = self.module_service.get_module_code(module_name, self.block_service.get_all_blocks()) or ""
-            known_modules_info.append(KnownModuleInfo(
-                name=module_name,
-                source=source,
-                code=code
-            ))
-
-        root_dict, _ = self.tree_builder.build_display_tree(
-            self.module_service.module_containers,
-            local_only=self.view.get_local_only()
-        )
-        module_tree = DtoBuilder.tree_dict_to_dto(root_dict)
-
-        return ModuleAssignmentInput(
-            unknown_blocks=unknown_blocks_info,
-            known_modules=known_modules_info,
-            module_tree=module_tree
-        )
-
-    def _apply_dialog_result(self, result):
-        assignments = result.assignments
-        all_blocks = self.block_service.get_all_blocks()
-
-        for block in all_blocks:
-            if block.block_id in assignments:
-                block.module_hint = assignments[block.block_id]
-                if block.tree and not block.syntax_error:
-                    self.module_service.identifier.collect_from_tree(
-                        block.tree, block.module_hint, block_info=block
-                    )
-
-        text_blocks_by_pair = self.block_service.get_text_blocks_by_pair()
-        full_texts_by_pair = self.block_service.get_full_texts_by_pair()
-        containers, unknown_blocks = self.module_service.process_blocks(
-            all_blocks,
-            text_blocks_by_pair=text_blocks_by_pair,
-            full_texts_by_pair=full_texts_by_pair
-        )
-        self.module_service.module_containers = containers
-        self.module_service.unknown_blocks = unknown_blocks
-
-        self._build_and_display_tree()
-        self._update_flat_list()
-        self._update_module_button_state()
-
-    # ---------- Сброс назначений (кнопка) ----------
-    def on_reset_module_assignments(self):
-        all_blocks = self.block_service.get_all_blocks()
-        self.module_service.reset_assignments(all_blocks)
-        text_blocks_by_pair = self.block_service.get_text_blocks_by_pair()
-        full_texts_by_pair = self.block_service.get_full_texts_by_pair()
-        containers, unknown_blocks = self.module_service.process_blocks(
-            all_blocks,
-            text_blocks_by_pair=text_blocks_by_pair,
-            full_texts_by_pair=full_texts_by_pair
-        )
-        self.module_service.module_containers = containers
-        self.module_service.unknown_blocks = unknown_blocks
-        self._build_and_display_tree()
-        self._update_flat_list()
-        self._update_module_button_state()
-        if unknown_blocks:
-            self._show_module_dialog(unknown_blocks)
-
-    # ---------- Сохранение/загрузка ----------
+    # ---------- Сохранение / загрузка ----------
     def on_save_structure(self):
-        try:
-            config_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', '..', '.config')
-            config_dir = os.path.abspath(config_dir)
-            os.makedirs(config_dir, exist_ok=True)
-            file_path = os.path.join(config_dir, 'project_structure.pkl')
-            data = {
-                'module_containers': self.module_service.module_containers,
-                'imported_items': self.import_service.get_imported_items(self.block_service.get_all_blocks())
-            }
-            with open(file_path, 'wb') as f:
-                pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
-            logger.info(f"Структура сохранена в {file_path}")
-            messagebox.showinfo("Сохранение структуры", f"Структура сохранена в {file_path}")
-        except Exception as e:
-            logger.error(f"Ошибка при сохранении структуры: {e}", exc_info=True)
-            self.view.show_error(f"Не удалось сохранить структуру: {e}")
+        self.persistence_manager.save_structure(parent=self.view)
 
     def on_load_structure(self):
-        try:
-            config_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', '..', '.config')
-            config_dir = os.path.abspath(config_dir)
-            file_path = os.path.join(config_dir, 'project_structure.pkl')
-            if not os.path.exists(file_path):
-                messagebox.showinfo("Загрузка структуры", "Файл сохранённой структуры не найден.")
-                return
-            with open(file_path, 'rb') as f:
-                data = pickle.load(f)
-            self.module_service.module_containers = data['module_containers']
-            self._build_and_display_tree()
-            self._update_flat_list()
-            logger.info(f"Структура загружена из {file_path}")
-            messagebox.showinfo("Загрузка структуры", f"Структура загружена из {file_path}")
-        except Exception as e:
-            logger.error(f"Ошибка при загрузке структуры: {e}", exc_info=True)
-            self.view.show_error(f"Не удалось загрузить структуру: {e}")
+        self.persistence_manager.load_structure(parent=self.view)
+        # После загрузки обновить отображение
+        refresh_data = self.data_provider.refresh(self.view.get_local_only())
+        self.view.display_merged_tree(refresh_data.tree)
+        self.view.set_flat_list(refresh_data.flat_items)
 
+    # ---------- Создание проекта (заглушка) ----------
     def on_create_project(self):
+        from tkinter import messagebox
         messagebox.showinfo("Создание проекта", "Функция создания проекта будет реализована в следующей версии.")
-
-    # ---------- Обработка выбора узлов ----------
-    def on_merged_node_selected(self, item_id: str, full_name: str):
-        container = self._full_name_to_container.get(full_name)
-        if container:
-            code = self._render_code_from_container(container)
-            if code:
-                self.view.display_merged_code(code, "python")
-                return
-        self.view.display_merged_code("")
-
-    def _render_code_from_container(self, container: Container) -> str:
-        if container.node_type in ('method', 'function', 'code_block', 'import'):
-            latest = container.get_latest_version()
-            if latest and latest.sources:
-                block_id, start, end, _ = latest.sources[0]
-                block = next((b for b in self.block_service.get_all_blocks() if b.block_id == block_id), None)
-                if block:
-                    lines = block.content.splitlines()
-                    fragment = '\n'.join(lines[start-1:end]) if start and end else block.content
-                    return textwrap.dedent(fragment)
-        elif container.node_type == 'class':
-            class_lines = [f"class {container.name}:"]
-            for child in container.children:
-                child_code = self._render_code_from_container(child)
-                if child_code:
-                    class_lines.extend("    " + line for line in child_code.splitlines())
-            return '\n'.join(class_lines)
-        elif container.node_type == 'module':
-            lines = []
-            for child in container.children:
-                child_code = self._render_code_from_container(child)
-                if child_code:
-                    lines.append(child_code)
-            return '\n\n'.join(lines)
-        elif container.node_type == 'package':
-            return "# Пакет (не содержит кода)"
-        return ""
-
-    def on_type_selected(self, event):
-        idx = self.view.type_combo.current()
-        langs = self.block_service.get_languages()
-        if 0 <= idx < len(langs):
-            lang = langs[idx]
-            if lang != self.current_lang:
-                self._switch_language(lang)
-
-    def on_local_only_toggled(self, local_only: bool):
-        self._build_and_display_tree(local_only)
-        self._update_flat_list()
-
-    def on_flat_node_selected(self, block_id: str):
-        block = next((b for b in self.block_service.get_all_blocks() if b.block_id == block_id), None)
-        if block:
-            self.view.display_code(block.content, block.language)
-        else:
-            self.view.display_code("")

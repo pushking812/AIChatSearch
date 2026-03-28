@@ -1,28 +1,20 @@
 # aichat_search/tools/code_structure/facades/module_assignment_manager.py
 
-import logging
 from typing import Dict, List
-
-from aichat_search.tools.code_structure.block_processing.services.block_service import BlockService
 from aichat_search.tools.code_structure.module_resolution.services.module_service import ModuleService
-from aichat_search.tools.code_structure.parsing.core.tree_builder import TreeBuilder
-from aichat_search.tools.code_structure.ui.dto import (
-    ModuleAssignmentInput, UnknownBlockInfo, KnownModuleInfo, ModuleAssignmentOutput
-)
+from aichat_search.tools.code_structure.block_processing.services.block_service import BlockService
+from aichat_search.tools.code_structure.ui.dto import ModuleAssignmentInput, UnknownBlockInfo, KnownModuleInfo, TreeDisplayNode
 from aichat_search.tools.code_structure.ui.dto_builder import DtoBuilder
-from aichat_search.tools.code_structure.utils.logger import get_logger
-
-logger = get_logger(__name__)
+from aichat_search.tools.code_structure.parsing.core.tree_builder import TreeBuilder
 
 
 class ModuleAssignmentManager:
-    def __init__(self, block_service: BlockService, module_service: ModuleService, tree_builder: TreeBuilder):
+    def __init__(self, block_service: BlockService, module_service: ModuleService):
         self.block_service = block_service
         self.module_service = module_service
-        self.tree_builder = tree_builder
+        self.tree_builder = TreeBuilder()
 
     def get_module_assignment_input(self, local_only: bool) -> ModuleAssignmentInput:
-        """Подготавливает DTO для диалога назначения модулей."""
         unknown_blocks_info = []
         for block in self.module_service.unknown_blocks:
             display_name = f"{block.block_id} – {self.block_service.get_block_description(block)}"
@@ -46,7 +38,7 @@ class ModuleAssignmentManager:
             self.module_service.module_containers,
             local_only=local_only
         )
-        module_tree = DtoBuilder.tree_dict_to_dto(root_dict)
+        module_tree = DtoBuilder.tree_dict_to_dto(root_dict) if root_dict else TreeDisplayNode(text="", type="root")
 
         return ModuleAssignmentInput(
             unknown_blocks=unknown_blocks_info,
@@ -54,8 +46,7 @@ class ModuleAssignmentManager:
             module_tree=module_tree
         )
 
-    def apply_assignments(self, assignments: Dict[str, str]) -> None:
-        """Применяет назначения модулей к блокам и перестраивает структуру."""
+    def apply_assignments(self, assignments: Dict[str, str]):
         all_blocks = self.block_service.get_all_blocks()
         for block in all_blocks:
             if block.block_id in assignments:
@@ -76,11 +67,9 @@ class ModuleAssignmentManager:
         self.module_service.module_containers = containers
         self.module_service.unknown_blocks = unknown_blocks
 
-    def reset_assignments(self) -> None:
-        """Сбрасывает все назначения модулей (без перестроения структуры)."""
+    def reset_assignments(self):
         all_blocks = self.block_service.get_all_blocks()
         self.module_service.reset_assignments(all_blocks)
-        # Перестраиваем контейнеры заново
         text_blocks_by_pair = self.block_service.get_text_blocks_by_pair()
         full_texts_by_pair = self.block_service.get_full_texts_by_pair()
         containers, unknown_blocks = self.module_service.process_blocks(

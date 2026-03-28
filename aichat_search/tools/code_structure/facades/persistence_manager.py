@@ -4,11 +4,10 @@ import pickle
 import os
 import logging
 from tkinter import messagebox
-from typing import Optional
-
 from aichat_search.tools.code_structure.module_resolution.services.module_service import ModuleService
 from aichat_search.tools.code_structure.imports.services.import_service import ImportService
 from aichat_search.tools.code_structure.block_processing.services.block_service import BlockService
+
 from aichat_search.tools.code_structure.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -20,8 +19,7 @@ class PersistenceManager:
         self.module_service = module_service
         self.import_service = import_service
 
-    def save_structure(self) -> None:
-        """Сохраняет структуру в файл .config/project_structure.pkl."""
+    def save_structure(self, parent=None):
         try:
             config_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', '..', '.config')
             config_dir = os.path.abspath(config_dir)
@@ -37,10 +35,11 @@ class PersistenceManager:
             messagebox.showinfo("Сохранение структуры", f"Структура сохранена в {file_path}")
         except Exception as e:
             logger.error(f"Ошибка при сохранении структуры: {e}", exc_info=True)
-            messagebox.showerror("Ошибка", f"Не удалось сохранить структуру: {e}")
+            if parent:
+                from tkinter import messagebox
+                messagebox.showerror("Ошибка", f"Не удалось сохранить структуру: {e}")
 
-    def load_structure(self) -> None:
-        """Загружает структуру из файла .config/project_structure.pkl."""
+    def load_structure(self, parent=None):
         try:
             config_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', '..', '.config')
             config_dir = os.path.abspath(config_dir)
@@ -55,4 +54,6 @@ class PersistenceManager:
             messagebox.showinfo("Загрузка структуры", f"Структура загружена из {file_path}")
         except Exception as e:
             logger.error(f"Ошибка при загрузке структуры: {e}", exc_info=True)
-            messagebox.showerror("Ошибка", f"Не удалось загрузить структуру: {e}")
+            if parent:
+                from tkinter import messagebox
+                messagebox.showerror("Ошибка", f"Не удалось загрузить структуру: {e}")

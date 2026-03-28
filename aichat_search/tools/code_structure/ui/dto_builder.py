@@ -63,19 +63,29 @@ class DtoBuilder:
         
     @staticmethod
     def tree_dict_to_dto(root_dict: Dict[str, Any]) -> TreeDisplayNode:
-        def convert(node_dict):
+        def convert(node_dict, parent_path: str = ""):
+            node_name = node_dict.get('text', '')
+            current_path = f"{parent_path}.{node_name}" if parent_path else node_name
+            container = node_dict.get('_container')
+            full_name = container.full_path if (container and hasattr(container, 'full_path')) else current_path
+
             node = TreeDisplayNode(
-                text=node_dict.get('text', ''),
+                text=node_name,
                 type=node_dict.get('type', ''),
                 signature=node_dict.get('signature', ''),
                 version=node_dict.get('version', ''),
                 sources=node_dict.get('sources', ''),
-                full_name=node_dict.get('text', '')
+                full_name=full_name
             )
-            # Если узел имеет версии, можно взять данные из первой версии
-            # Но это сложно без доступа к контейнеру. Пока оставим пустым.
+            if node.type == 'version':
+                version_data = node_dict.get('_version_data')
+                if version_data and version_data.sources:
+                    block_id, start, end, _ = version_data.sources[0]
+                    node.block_id = block_id
+                    node.start_line = start
+                    node.end_line = end
             for child in node_dict.get('children', []):
-                node.children.append(convert(child))
+                node.children.append(convert(child, current_path))
             return node
         return convert(root_dict)
         
