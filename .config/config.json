@@ -1,15 +1,15 @@
 {
   "window_size": {
-    "width": 1924,
-    "height": 1041
+    "width": 1920,
+    "height": 989
   },
   "window_position": {
-    "x": -422,
-    "y": 75
+    "x": -8,
+    "y": -8
   },
   "proportions": {
-    "main_horizontal": 0.1762252346193952,
-    "right_vertical": 0.2245885769603098
+    "main_horizontal": 0.17659352142110762,
+    "right_vertical": 0.23649337410805302
   },
   "column_widths": {
     "name": 315,

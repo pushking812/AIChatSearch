@@ -9,12 +9,17 @@ from typing import List, Dict, Optional, Any, Tuple
 
 from aichat_search.model import Chat, MessagePair
 from aichat_search.tools.code_structure.view import CodeStructureWindow
+
 from aichat_search.tools.code_structure.services.block_service import BlockService
 from aichat_search.tools.code_structure.services.module_service import ModuleService
 from aichat_search.tools.code_structure.services.import_service import ImportService
+
 from aichat_search.tools.code_structure.core.tree_builder import TreeBuilder
+
 from aichat_search.tools.code_structure.models.block_info import MessageBlockInfo
-from aichat_search.tools.code_structure.ui.dto import TreeDisplayNode
+
+from aichat_search.tools.code_structure.ui import ErrorBlockDialog
+from aichat_search.tools.code_structure.ui.dto import TreeDisplayNode, ErrorBlockInput
 from aichat_search.tools.code_structure.ui.dto_builder import DtoBuilder
 
 logger = logging.getLogger(__name__)
@@ -68,9 +73,13 @@ class CodeStructureController:
             self._show_module_dialog(unknown_blocks)
 
     def _handle_error_blocks(self, error_blocks: List[MessageBlockInfo]):
-        from aichat_search.tools.code_structure.ui import ErrorBlockDialog
         for block in error_blocks:
-            dialog = ErrorBlockDialog(self.view, block)
+            input_data = ErrorBlockInput(
+                block_id=block.block_id,
+                original_code=block.content,
+                language=block.language
+            )
+            dialog = ErrorBlockDialog(self.view, input_data)
             self.view.wait_window(dialog)
             if dialog.result is not None:
                 self.block_service.fix_error_block(block, dialog.result)
