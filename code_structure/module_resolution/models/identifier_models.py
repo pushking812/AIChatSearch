@@ -12,21 +12,21 @@ class MethodInfo:
     name: str
     signature: Signature
     class_name: str
-    versions: List['Version'] = field(default_factory=list)
+    versions: List['Version'] = field(default_factory=list) # noqa: F821
 
 
 @dataclass
 class FunctionInfo:
     name: str
     signature: Signature
-    versions: List['Version'] = field(default_factory=list)
+    versions: List['Version'] = field(default_factory=list) # noqa: F821
 
 
 @dataclass
 class ClassInfo:
     name: str
     methods: Dict[str, MethodInfo] = field(default_factory=dict)
-    versions: List['Version'] = field(default_factory=list)
+    versions: List['Version'] = field(default_factory=list) # noqa: F821
 
 
 @dataclass
@@ -42,5 +42,5 @@ class ModuleInfo:
     classes: Dict[str, ClassInfo] = field(default_factory=dict)
     functions: Dict[str, FunctionInfo] = field(default_factory=dict)
     imports: Dict[str, ImportedInfo] = field(default_factory=dict)
-    versions: List['Version'] = field(default_factory=list)
+    versions: List['Version'] = field(default_factory=list) # noqa: F821
     is_imported: bool = False

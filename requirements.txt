@@ -1,5 +1,6 @@
 # Runtime dependencies
-# (only standard library is used — no external packages required)
+chlorophyll>=0.2.0
+pygments>=2.15.0
 
 # Development / testing
 pytest>=7.0

@@ -25,7 +25,7 @@ class StructureBuilder:
 
     def __init__(self):
         self._block_order = {}
-        self._operation_logger = StructureBuilderLogger("StructureBuilder")
+        self._operation_logger = StructureBuilderLogger("StructureBuilder") # noqa: F821
         self.initial_processor = InitialBuildProcessor(self)
         self.merge_processor = MergeProcessor(self)
 
