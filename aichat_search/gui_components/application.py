@@ -6,18 +6,18 @@ from tkinter import ttk
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
-from . import constants
-from .panels.layout_builder import LayoutBuilder
-from .managers.navigation_manager import NavigationManager
-from .managers.archive_session_manager import ArchiveSessionManager
-from .managers.search_bar_manager import SearchBarManager
-from .managers.menu_manager import MenuManager
-from .managers.window_state_manager import WindowStateManager
-from .controllers.search_controller import SearchController
-from .group_management.group_handler import GroupHandler
-from ..controller import ChatController
-from ..services.export_manager import ExportManager
-from ..tools.code_structure.controller import CodeStructureController
+from aichat_search.gui_components import constants
+from aichat_search.gui_components.panels.layout_builder import LayoutBuilder
+from aichat_search.gui_components.managers.navigation_manager import NavigationManager
+from aichat_search.gui_components.managers.archive_session_manager import ArchiveSessionManager
+from aichat_search.gui_components.managers.search_bar_manager import SearchBarManager
+from aichat_search.gui_components.managers.menu_manager import MenuManager
+from aichat_search.gui_components.managers.window_state_manager import WindowStateManager
+from aichat_search.gui_components.controllers.search_controller import SearchController
+from aichat_search.gui_components.group_management.group_handler import GroupHandler
+from aichat_search.controller import ChatController
+from aichat_search.services.export_manager import ExportManager
+from code_structure.controller import CodeStructureController
 
 class Application(tk.Tk):
     def __init__(self):
