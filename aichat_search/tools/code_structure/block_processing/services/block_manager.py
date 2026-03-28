@@ -5,23 +5,22 @@ import textwrap
 import re
 from typing import List, Dict, Optional, Tuple, Any
 
-from aichat_search.model import Chat, MessagePair
 from aichat_search.services.block_parser import BlockParser, MessageBlock
+from aichat_search.model import Chat, MessagePair
 
 from aichat_search.tools.code_structure.parsing.core.parser import PARSERS
 from aichat_search.tools.code_structure.parsing.models.node import Node
 from aichat_search.tools.code_structure.module_resolution.models.block_info import MessageBlockInfo
 from aichat_search.tools.code_structure.utils.helpers import extract_module_hint
 
-from aichat_search.tools.code_structure.utils.logger import get_logger
-logger = get_logger(__name__, level = logging.WARNING)
+logger = logging.getLogger(__name__)
 
 
 class BlockManager:
     def __init__(self):
         self.blocks_info: List[MessageBlockInfo] = []
         self.blocks_by_lang: Dict[str, List[MessageBlockInfo]] = {}
-        self.text_blocks_by_pair: Dict[str, Dict[int, str]] = {}   # key = pair.index, value = {block_idx: content}
+        self.text_blocks_by_pair: Dict[str, Dict[int, str]] = {}
         self.full_texts_by_pair: Dict[str, str] = {}
 
     def load_from_items(self, items: List[Tuple[Chat, MessagePair]]) -> None:

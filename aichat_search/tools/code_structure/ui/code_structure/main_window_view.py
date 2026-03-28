@@ -19,7 +19,6 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
         self.grab_set()
 
         self.presenter = None
-        self._right_item_to_data = {}
 
         # Верхняя панель с элементами управления
         top_frame = ttk.Frame(self)
@@ -173,7 +172,6 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
         self.merged_code.grid(row=0, column=0, sticky="nsew")
 
         self.update_idletasks()
-        # Вычисляем минимальную ширину
         min_width = (self.type_combo.winfo_reqwidth() +
                      self.local_only_check.winfo_reqwidth() +
                      self.module_button.winfo_reqwidth() +
@@ -346,7 +344,6 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
         if not selected:
             return
         item = selected[0]
-        # Получаем полное имя из столбца full_name
         full_name = self.merged_tree.set(item, "full_name")
         if self.presenter:
             self.presenter.on_merged_node_selected(item, full_name)

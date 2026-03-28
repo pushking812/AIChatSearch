@@ -8,6 +8,7 @@ from tkinter import messagebox
 from typing import List, Dict, Optional, Any, Tuple
 
 from aichat_search.model import Chat, MessagePair
+
 from aichat_search.tools.code_structure.ui.dialog_interfaces import CodeStructureView
 from aichat_search.tools.code_structure.block_processing.services.block_service import BlockService
 from aichat_search.tools.code_structure.module_resolution.services.module_service import ModuleService
@@ -19,8 +20,7 @@ from aichat_search.tools.code_structure.ui.dto import ModuleAssignmentInput, Unk
 from aichat_search.tools.code_structure.ui.dto_builder import DtoBuilder
 from aichat_search.tools.code_structure.utils.logger import get_logger
 
-from aichat_search.tools.code_structure.utils.logger import get_logger
-logger = get_logger(__name__, level = logging.WARNING)
+logger = get_logger(__name__)
 
 
 class CodeStructurePresenter:
@@ -35,9 +35,8 @@ class CodeStructurePresenter:
 
         self.current_lang: Optional[str] = None
         self._flat_items: List[Dict[str, Any]] = []
-        self._full_name_to_container: Dict[str, Container] = {}  # для быстрого поиска кода по полному имени
+        self._full_name_to_container: Dict[str, Container] = {}
 
-        # Запуск анализа
         self._run_analysis()
 
     # ---------- Основной анализ ----------
@@ -92,18 +91,14 @@ class CodeStructurePresenter:
             local_only=local_only
         )
         if root:
-            # Сохраняем отображение полного имени -> контейнер
             self._full_name_to_container.clear()
             self._collect_containers_by_full_name(root)
-
-            # Преобразуем в DTO
             root_dto = DtoBuilder.tree_dict_to_dto(root)
             self.view.display_merged_tree(root_dto)
             logger.info("Дерево с пакетами отображено")
         self._flat_items = flat_items
 
     def _collect_containers_by_full_name(self, node_dict: Dict[str, Any]):
-        """Рекурсивно собирает контейнеры из словаря, возвращаемого TreeBuilder."""
         container = node_dict.get('_container')
         if container and hasattr(container, 'full_path'):
             self._full_name_to_container[container.full_path] = container
@@ -209,7 +204,6 @@ class CodeStructurePresenter:
                         block.tree, block.module_hint, block_info=block
                     )
 
-        # Перестраиваем контейнеры
         text_blocks_by_pair = self.block_service.get_text_blocks_by_pair()
         full_texts_by_pair = self.block_service.get_full_texts_by_pair()
         containers, unknown_blocks = self.module_service.process_blocks(
@@ -224,7 +218,7 @@ class CodeStructurePresenter:
         self._update_flat_list()
         self._update_module_button_state()
 
-    # ---------- Сброс назначений (вызывается из кнопки) ----------
+    # ---------- Сброс назначений (кнопка) ----------
     def on_reset_module_assignments(self):
         all_blocks = self.block_service.get_all_blocks()
         self.module_service.reset_assignments(all_blocks)
@@ -243,7 +237,7 @@ class CodeStructurePresenter:
         if unknown_blocks:
             self._show_module_dialog(unknown_blocks)
 
-    # ---------- Сохранение/загрузка структуры ----------
+    # ---------- Сохранение/загрузка ----------
     def on_save_structure(self):
         try:
             config_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', '..', '.config')
@@ -295,7 +289,6 @@ class CodeStructurePresenter:
         self.view.display_merged_code("")
 
     def _render_code_from_container(self, container: Container) -> str:
-        """Возвращает код для контейнера (модуль, класс, метод, функция, блок)."""
         if container.node_type in ('method', 'function', 'code_block', 'import'):
             latest = container.get_latest_version()
             if latest and latest.sources:
@@ -307,7 +300,6 @@ class CodeStructurePresenter:
                     return textwrap.dedent(fragment)
         elif container.node_type == 'class':
             class_lines = [f"class {container.name}:"]
-            # Рекурсивно получаем код методов
             for child in container.children:
                 child_code = self._render_code_from_container(child)
                 if child_code:

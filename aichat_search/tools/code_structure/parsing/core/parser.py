@@ -1,4 +1,4 @@
-# aichat_search/tools/code_structure/parser.py
+# aichat_search/tools/code_structure/parsing/core/parser.py
 
 import ast
 import logging
@@ -8,9 +8,7 @@ from aichat_search.tools.code_structure.parsing.models.node import (
     ModuleNode, ClassNode, FunctionNode, MethodNode, CodeBlockNode
 )
 
-
-from aichat_search.tools.code_structure.utils.logger import get_logger
-logger = get_logger(__name__, level = logging.WARNING)
+logger = logging.getLogger(__name__)
 
 
 class CodeParser(ABC):
