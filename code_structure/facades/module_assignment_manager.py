@@ -1,6 +1,6 @@
 # code_structure/facades/module_assignment_manager.py
 
-from typing import Dict, List
+from typing import Dict
 from code_structure.module_resolution.services.module_service import ModuleService
 from code_structure.block_processing.services.block_service import BlockService
 from code_structure.dialogs.dto import ModuleAssignmentInput, UnknownBlockInfo, KnownModuleInfo, TreeDisplayNode

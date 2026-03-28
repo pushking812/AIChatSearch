@@ -2,7 +2,6 @@
 
 from typing import List, Dict, Optional, Tuple
 import logging
-import sys
 
 from code_structure.module_resolution.models.block_info import MessageBlockInfo
 from code_structure.module_resolution.models.containers import (

@@ -13,7 +13,6 @@ from code_structure.parsing.core.node_processor import (
 )
 from code_structure.utils.logger import get_logger
 
-from code_structure.utils.logger import get_logger
 logger = get_logger(__name__, level = logging.WARNING)
 
 

@@ -2,7 +2,7 @@
 
 import logging
 import re
-from typing import List, Dict, Optional, Tuple, Set
+from typing import List, Dict, Tuple, Set
 from collections import defaultdict
 
 from code_structure.module_resolution.models.block_info import MessageBlockInfo

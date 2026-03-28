@@ -1,7 +1,7 @@
 # code_structure/module_resolution/core/module_resolver.py
 
 import logging
-from typing import List, Optional, Tuple, Dict
+from typing import Optional, Tuple
 
 from code_structure.module_resolution.models.block_info import MessageBlockInfo
 from code_structure.module_resolution.core.module_identifier import ModuleIdentifier
@@ -27,7 +27,7 @@ class ModuleResolver:
         logger.info(f"=== resolve_block для {block_info.block_id} ===")
 
         if block_info.tree is None or block_info.syntax_error:
-            logger.info(f"  Блок имеет ошибку или пустое дерево")
+            logger.info("  Блок имеет ошибку или пустое дерево")
             return False, None, None
 
         for strategy in self.strategies:
@@ -38,5 +38,5 @@ class ModuleResolver:
                 block_info.assignment_strategy = strategy.__class__.__name__
                 return True, module, None
 
-        logger.info(f"  -> НЕ ОПРЕДЕЛЕН")
+        logger.info("  -> НЕ ОПРЕДЕЛЕН")
         return False, None, None

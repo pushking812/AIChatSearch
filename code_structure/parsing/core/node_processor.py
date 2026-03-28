@@ -2,7 +2,7 @@
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Optional, Union, List, Tuple
+from typing import Optional, Union, List
 
 from code_structure.parsing.models.node import (
     Node, ClassNode, FunctionNode, MethodNode, CodeBlockNode

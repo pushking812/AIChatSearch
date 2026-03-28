@@ -1,7 +1,7 @@
 # aichat_search/gui_components/group_management/group_dialog.py
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import messagebox
 
 class GroupDialog(tk.Toplevel):
     def __init__(self, parent, controller, on_update_callback):

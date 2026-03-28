@@ -2,7 +2,7 @@
 
 import tkinter as tk
 from tkinter import ttk, messagebox
-from typing import List, Dict, Optional, Any
+from typing import List, Optional
 
 from code_structure.dialogs.dialog_interfaces import ModuleAssignmentView
 from code_structure.dialogs.module_assignment.module_assignment_presenter import ModuleAssignmentPresenter

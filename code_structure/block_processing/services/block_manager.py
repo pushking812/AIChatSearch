@@ -3,13 +3,12 @@
 import logging
 import textwrap
 import re
-from typing import List, Dict, Optional, Tuple, Any
+from typing import List, Dict, Tuple
 
-from aichat_search.services.block_parser import BlockParser, MessageBlock
+from aichat_search.services.block_parser import BlockParser
 from aichat_search.model import Chat, MessagePair
 
 from code_structure.parsing.core.parser import PARSERS
-from code_structure.parsing.models.node import Node
 from code_structure.module_resolution.models.block_info import MessageBlockInfo
 from code_structure.utils.helpers import extract_module_hint
 

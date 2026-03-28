@@ -1,10 +1,7 @@
 # aichat_search/gui_components/application.py
 
-import os
-from datetime import datetime
-from tkinter import ttk
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import messagebox
 
 from aichat_search.gui_components import constants
 from aichat_search.gui_components.panels.layout_builder import LayoutBuilder

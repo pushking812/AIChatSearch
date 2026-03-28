@@ -2,7 +2,6 @@
 
 import pickle
 import os
-import logging
 from tkinter import messagebox
 from code_structure.module_resolution.services.module_service import ModuleService
 from code_structure.imports.services.import_service import ImportService
@@ -36,7 +35,6 @@ class PersistenceManager:
         except Exception as e:
             logger.error(f"Ошибка при сохранении структуры: {e}", exc_info=True)
             if parent:
-                from tkinter import messagebox
                 messagebox.showerror("Ошибка", f"Не удалось сохранить структуру: {e}")
 
     def load_structure(self, parent=None):
@@ -55,5 +53,4 @@ class PersistenceManager:
         except Exception as e:
             logger.error(f"Ошибка при загрузке структуры: {e}", exc_info=True)
             if parent:
-                from tkinter import messagebox
                 messagebox.showerror("Ошибка", f"Не удалось загрузить структуру: {e}")

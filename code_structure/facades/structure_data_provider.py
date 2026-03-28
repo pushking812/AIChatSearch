@@ -1,6 +1,5 @@
 # code_structure/facades/structure_data_provider.py
 
-import logging
 import textwrap
 from typing import List, Tuple, Optional, Dict, Any
 
@@ -9,7 +8,7 @@ from code_structure.block_processing.services.block_service import BlockService
 from code_structure.module_resolution.services.module_service import ModuleService
 from code_structure.parsing.core.tree_builder import TreeBuilder
 from code_structure.module_resolution.models.block_info import MessageBlockInfo
-from code_structure.module_resolution.models.containers import Container, Version
+from code_structure.module_resolution.models.containers import Container
 from code_structure.imports.services.import_service import ImportService
 from code_structure.dialogs.dto import (
     TreeDisplayNode, FlatListItem, CodeStructureInitDTO, CodeStructureRefreshDTO
@@ -81,21 +80,6 @@ class StructureDataProvider:
             tree=self._build_tree_dto(),
             flat_items=self._build_flat_dto()
         )
-
-    def get_code_for_node(self, full_name: str) -> Optional[str]:
-        logger.debug(f"get_code_for_node called with full_name='{full_name}'")
-        container = self._full_name_to_container.get(full_name)
-        if container:
-            logger.debug(f"Found container: type={container.node_type}, name={container.name}, versions count={len(container.versions)}")
-            code = self._render_code_from_container(container)
-            logger.debug(f"Code length: {len(code) if code else 0}")
-            return code
-        else:
-            logger.debug(f"Container NOT found for full_name='{full_name}'")
-            # выведем несколько первых ключей для диагностики
-            keys = list(self._full_name_to_container.keys())[:10]
-            logger.debug(f"First 10 keys: {keys}")
-            return None
 
     def get_code_for_block(self, block_id: str) -> Optional[str]:
         """Возвращает код для блока по его ID."""

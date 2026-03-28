@@ -22,28 +22,6 @@ class DtoBuilder:
         return node
 
     @staticmethod
-    def tree_dict_to_dto(root_dict: Dict[str, Any]) -> TreeDisplayNode:
-        def convert(node_dict):
-            # Получаем полное имя из текста (упрощённо)
-            # В реальном дереве полное имя может быть в _container.full_path
-            # Но так как в словаре нет _container, используем текст
-            # Для улучшения можно сохранять полное имя в словаре
-            full_name = node_dict.get('text', '')
-            node = TreeDisplayNode(
-                text=node_dict.get('text', ''),
-                type=node_dict.get('type', ''),
-                signature=node_dict.get('signature', ''),
-                version=node_dict.get('version', ''),
-                sources=node_dict.get('sources', ''),
-                full_name=full_name
-            )
-            for child in node_dict.get('children', []):
-                node.children.append(convert(child))
-            return node
-        return convert(root_dict)
-
-
-    @staticmethod
     def flat_items_to_dto(items: List[Dict[str, Any]]) -> List[FlatListItem]:
         """Преобразует список словарей плоского списка в список DTO."""
         result = []
@@ -88,5 +66,3 @@ class DtoBuilder:
                 node.children.append(convert(child, current_path))
             return node
         return convert(root_dict)
-        
-        

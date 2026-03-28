@@ -7,11 +7,11 @@
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
 
 from .dto import (
-    ErrorBlockInput, UnknownBlockInfo, KnownModuleInfo, TreeDisplayNode,
-    FlatListItem, ModuleAssignmentInput, ModuleAssignmentOutput
+    UnknownBlockInfo, KnownModuleInfo, TreeDisplayNode,
+    FlatListItem
 )
 
 # ----------------------------------------------------------------------

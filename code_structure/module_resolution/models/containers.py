@@ -2,7 +2,7 @@
 
 import logging
 import textwrap
-from typing import List, Optional, Tuple, Dict
+from typing import List, Optional, Dict
 
 from code_structure.utils.helpers import clean_code
 

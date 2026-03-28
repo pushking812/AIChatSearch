@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from chlorophyll import CodeView
 import pygments.lexers
-from typing import List, Dict, Any, Optional
+from typing import List
 
 from code_structure.dialogs.dialog_interfaces import CodeStructureView
 from code_structure.dialogs.dto import TreeDisplayNode, FlatListItem
@@ -207,8 +207,12 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
             self._expand_to_level_right(child, current_level + 1, target_level)
 
     def clear_merged_tree(self):
+        # Проверяем, существует ли виджет и не был ли он уничтожен
+        if not self.merged_tree.winfo_exists():
+            return
         for item in self.merged_tree.get_children():
             self.merged_tree.delete(item)
+        self._right_item_to_data.clear()
 
     def display_merged_tree(self, root_node: TreeDisplayNode):
         self.clear_merged_tree()

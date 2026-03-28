@@ -2,7 +2,7 @@
 
 import tkinter as tk
 from tkinter import ttk
-from typing import List, Dict, Optional
+from typing import List, Dict
 from datetime import datetime
 
 from ..utils import format_datetime

@@ -1,12 +1,12 @@
 # code_structure/module_resolution/core/module_identifier.py
 
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set
 import logging
 
 from code_structure.parsing.models.node import Node
 from code_structure.parsing.core.signature_utils import extract_function_signature
 from code_structure.module_resolution.models.identifier_models import (
-    ModuleInfo, ClassInfo, MethodInfo, FunctionInfo, Signature
+    ModuleInfo, ClassInfo, MethodInfo, FunctionInfo
 )
 from code_structure.imports.models.import_models import ImportInfo
 from code_structure.module_resolution.models.containers import Version

@@ -1,7 +1,7 @@
 # code_structure/imports/core/import_analyzer.py
 import re
 import logging
-from typing import List, Optional, Set, Dict
+from typing import List, Optional, Dict
 
 from code_structure.imports.models.import_models import ImportInfo
 from code_structure.module_resolution.models.block_info import MessageBlockInfo

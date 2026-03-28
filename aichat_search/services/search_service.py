@@ -1,7 +1,7 @@
 # aichat_search/services/search_service.py
 
 import re
-from typing import List, Tuple, Any
+from typing import List, Tuple
 
 from ..model import Chat, MessagePair
 

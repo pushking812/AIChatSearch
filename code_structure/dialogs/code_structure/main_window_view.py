@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from chlorophyll import CodeView
 import pygments.lexers
-from typing import List, Dict, Any, Optional
+from typing import List
 
 from code_structure.dialogs.dialog_interfaces import CodeStructureView
 from code_structure.dialogs.dto import TreeDisplayNode, FlatListItem

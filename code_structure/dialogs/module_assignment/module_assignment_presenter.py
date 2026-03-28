@@ -2,11 +2,11 @@
 
 import re
 import logging
-from typing import List, Dict, Any, Optional
+from typing import Dict, Optional
 
 from code_structure.dialogs.dialog_interfaces import ModuleAssignmentView
 from code_structure.dialogs.dto import (
-    UnknownBlockInfo, KnownModuleInfo, TreeDisplayNode,
+    KnownModuleInfo, TreeDisplayNode,
     ModuleAssignmentInput, ModuleAssignmentOutput
 )
 

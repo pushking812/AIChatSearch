@@ -1,15 +1,12 @@
 # code_structure/ui/code_structure/main_window_presenter.py
 
-from typing import List, Tuple, Optional, Any
-import logging
 
-from aichat_search.model import Chat, MessagePair
 from code_structure.dialogs.dialog_interfaces import CodeStructureView
 from code_structure.facades import (
     StructureDataProvider, ModuleAssignmentManager, PersistenceManager
 )
 from code_structure.dialogs.dto import (
-    CodeStructureInitDTO, CodeStructureRefreshDTO, TreeDisplayNode
+    CodeStructureInitDTO, TreeDisplayNode
 )
 
 from code_structure.utils.logger import get_logger
