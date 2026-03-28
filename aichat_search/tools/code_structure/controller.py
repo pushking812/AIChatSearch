@@ -87,7 +87,6 @@ class CodeStructureController:
         self._flat_items = flat_items
 
     def _update_flat_list(self):
-        logger.info(f"Обновление плоского списка: получено {len(self._flat_items)} элементов")
         if not self._flat_items:
             return
         all_blocks = self.block_service.get_all_blocks()
@@ -108,9 +107,7 @@ class CodeStructureController:
                     enriched_item['class'] = '-'
                 enriched.append(enriched_item)
             else:
-                logger.warning(f"Блок {block_id} не найден в block_service")
                 enriched.append(item)
-        logger.info(f"После обогащения: {len(enriched)} элементов")
         self.view.set_flat_list(enriched)
 
     def _update_module_button_state(self):
@@ -131,7 +128,6 @@ class CodeStructureController:
 
     def _switch_language(self, lang: str):
         self.current_lang = lang
-        # Здесь можно было бы обновить фильтрацию плоского списка, но пока не требуется
         self.view.display_code("")
 
     # ---------- Диалоги ----------
@@ -177,12 +173,17 @@ class CodeStructureController:
         new_containers = dialog_result.get('module_containers')
         
         all_blocks = self.block_service.get_all_blocks()
+        
         for block in all_blocks:
             if block.block_id in assignments:
-                self.module_service.assign_module_to_block(block, assignments[block.block_id])
+                block.module_hint = assignments[block.block_id]
+                if block.tree and not block.syntax_error:
+                    self.module_service.identifier.collect_from_tree(block.tree, block.module_hint, block_info=block)
         
         if new_containers is not None:
             self.module_service.module_containers = new_containers
+        else:
+            self.module_service.module_containers = self.module_service.rebuild_full_containers(all_blocks)
         
         self.module_service.remove_temp_modules()
         self._build_and_display_tree()
@@ -274,16 +275,6 @@ class CodeStructureController:
             self.view.display_code(block.content, block.language)
         else:
             self.view.display_code("")
-
-    # ---------- Устаревшие методы (оставлены для совместимости, но не используются) ----------
-    def on_block_selected(self, event=None):
-        pass
-
-    def on_show_structure(self):
-        pass
-
-    def on_node_selected(self):
-        pass
 
     # ---------- Вспомогательные методы ----------
     def _render_code_from_node(self, node_data: Dict[str, Any]) -> str:

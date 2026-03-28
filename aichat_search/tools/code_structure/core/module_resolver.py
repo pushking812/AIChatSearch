@@ -22,8 +22,6 @@ class ModuleResolver:
             FunctionStrategy(),
             ImportStrategy()
         ]
-        self.auto_assign: Dict[str, str] = {}
-        self.need_dialog: List[MessageBlockInfo] = []
 
     def resolve_block(self, block_info: MessageBlockInfo) -> Tuple[bool, Optional[str], None]:
         logger.info(f"=== resolve_block для {block_info.block_id} ===")
@@ -38,19 +36,7 @@ class ModuleResolver:
             if module:
                 logger.info(f"  -> НАЙДЕН ПО {strategy.__class__.__name__}: {module}")
                 block_info.assignment_strategy = strategy.__class__.__name__
-                self.auto_assign[block_info.block_id] = module
                 return True, module, None
 
         logger.info(f"  -> НЕ ОПРЕДЕЛЕН")
-        self.need_dialog.append(block_info)
         return False, None, None
-
-    def get_auto_assignments(self):
-        return self.auto_assign.copy()
-
-    def get_need_dialog(self):
-        return self.need_dialog.copy()
-
-    def clear_temp_data(self):
-        self.auto_assign.clear()
-        self.need_dialog.clear()

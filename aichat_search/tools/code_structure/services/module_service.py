@@ -40,13 +40,13 @@ class ModuleService:
         text_blocks_by_pair: Optional[Dict[str, Dict[int, str]]] = None,
         full_texts_by_pair: Optional[Dict[str, str]] = None
     ) -> Tuple[Dict[str, Container], List[MessageBlockInfo]]:
-        # 1. Разрешаем модули (получаем базовые контейнеры с классами/функциями и иерархией)
+        # 1. Разрешаем модули (получаем базовые контейнеры с иерархией)
         containers, unknown = self.resolver_service.resolve_blocks(
             blocks,
             text_blocks_by_pair or {},
             full_texts_by_pair or {}
         )
-        # 2. Добавляем блоки кода и импорты в контейнеры
+        # 2. Добавляем блоки кода и импорты
         self._add_code_blocks_from_blocks(blocks, containers)
         self.module_containers = containers
         self.unknown_blocks = unknown
@@ -54,17 +54,12 @@ class ModuleService:
         return containers, unknown
 
     def _find_container_by_path(self, root_containers: Dict[str, Container], path_parts: List[str]) -> Optional[Container]:
-        """
-        Находит контейнер по списку частей пути, начиная с корневых контейнеров.
-        path_parts: например, ['deepseek', 'gui_components', 'application']
-        """
         current = root_containers
         for i, part in enumerate(path_parts):
             if part in current:
                 container = current[part]
                 if i == len(path_parts) - 1:
                     return container
-                # Переходим в children_dict
                 if hasattr(container, 'children_dict'):
                     current = container.children_dict
                 else:
@@ -74,27 +69,19 @@ class ModuleService:
         return None
 
     def _add_code_blocks_from_blocks(self, blocks: List[MessageBlockInfo], containers: Dict[str, Container]):
-        """
-        Обходит AST блоков, находит CodeBlockNode и добавляет их как CodeBlockContainer или ImportContainer
-        в соответствующий контейнер модуля или класса.
-        """
         for block in blocks:
             if not block.module_hint or not block.tree or block.syntax_error:
                 continue
 
-            # Разбиваем module_hint на части (например, "deepseek.gui_components.application")
             path_parts = block.module_hint.split('.')
             module_container = self._find_container_by_path(containers, path_parts)
             if not module_container:
                 logger.warning(f"Модуль {block.module_hint} не найден в контейнерах для блока {block.block_id}")
                 continue
 
-            logger.info(f"Обработка блока {block.block_id} для модуля {block.module_hint}")
-
             def process_node(node, parent_container):
                 for child in node.children:
                     if isinstance(child, CodeBlockNode):
-                        # Определяем, является ли блок импортом
                         content_lines = block.content.splitlines()
                         start = max(0, child.lineno_start - 1)
                         end = min(len(content_lines), child.lineno_end)
@@ -108,24 +95,19 @@ class ModuleService:
                             container_type = CodeBlockContainer
                             container_name = f"code_block_{child.lineno_start}_{child.lineno_end}"
 
-                        # Создаём контейнер и версию
                         block_container = container_type(container_name)
                         version = Version(child, block.block_id, block.global_index, block.content,
                                           block.timestamp, block.block_idx)
                         block_container.add_version(version)
 
-                        # Добавляем в текущий родительский контейнер (модуль или класс)
                         existing = parent_container.find_child_container(container_name, block_container.node_type)
                         if existing:
                             for v in block_container.versions:
                                 existing.add_version(v)
-                            logger.debug(f"Объединена версия для {container_name} в {parent_container.node_type} {parent_container.name}")
                         else:
                             parent_container.add_child(block_container)
-                            logger.info(f"Добавлен {container_name} в {parent_container.node_type} {parent_container.name} модуля {block.module_hint}")
 
                     elif child.node_type == 'class':
-                        # Ищем контейнер класса в родительском контейнере
                         class_container = parent_container.find_child_container(child.name, 'class')
                         if class_container:
                             process_node(child, class_container)
@@ -166,7 +148,3 @@ class ModuleService:
     def remove_temp_modules(self):
         self.identifier.remove_temp_modules()
         self.module_containers = {}
-
-    def rebuild_after_dialog(self, blocks: List[MessageBlockInfo]):
-        self.module_containers = self.resolver_service._build_unified_containers()
-        logger.info(f"Контейнеры перестроены, модулей: {len(self.module_containers)}")

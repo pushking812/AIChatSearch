@@ -35,10 +35,18 @@ class ModuleIdentifier:
             versions.append(new_version)
 
     def _add_or_update_class(self, module: ModuleInfo, class_name: str, class_node: Node, block_info=None):
-        # Не создаём версию для класса (убираем добавление version)
-        if class_name not in module.classes:
+        version = self._create_version(class_node, block_info)
+        if version is None:
+            return
+
+        if class_name in module.classes:
+            existing_class = module.classes[class_name]
+            self._add_version_to_object(existing_class.versions, version)
+        else:
             class_info = ClassInfo(name=class_name)
+            class_info.versions.append(version)
             module.classes[class_name] = class_info
+
         # Обрабатываем методы внутри класса
         for method_node in class_node.children:
             if method_node.node_type == "method":
@@ -79,7 +87,6 @@ class ModuleIdentifier:
     def collect_from_tree(self, node: Node, module_name: str, class_hint: Optional[str] = None, block_info=None):
         module = self._modules.setdefault(module_name, ModuleInfo(name=module_name))
         self._collect_node(node, module, class_hint, block_info)
-        # Устанавливаем module_hint блоку, если он ещё не задан
         if block_info and not block_info.module_hint:
             block_info.module_hint = module_name
             logger.debug(f"[IDENTIFIER] Блоку {block_info.block_id} назначен модуль {module_name}")
@@ -177,14 +184,6 @@ class ModuleIdentifier:
         logger.info(f"Удаление временных модулей: {to_remove}")
         for name in to_remove:
             del self._modules[name]
-
-    def add_class_placeholder(self, module_name: str, class_name: str):
-        if module_name not in self._modules:
-            self._modules[module_name] = ModuleInfo(name=module_name)
-        module = self._modules[module_name]
-        if class_name not in module.classes:
-            module.classes[class_name] = ClassInfo(name=class_name)
-            logger.debug(f"Добавлен плейсхолдер класса {class_name} в модуль {module_name}")
 
     def get_known_modules(self) -> Set[str]:
         return self.get_all_module_names()
