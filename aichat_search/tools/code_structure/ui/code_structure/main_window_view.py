@@ -1,13 +1,13 @@
-# aichat_search/tools/code_structure/ui/code_structure/main_window_view.py
-
 import tkinter as tk
 from tkinter import ttk, messagebox
 from chlorophyll import CodeView
 import pygments.lexers
 from typing import Dict, Any, Optional, List
 
+from aichat_search.tools.code_structure.ui.dialog_interfaces import CodeStructureView
 
-class CodeStructureView(tk.Toplevel):
+
+class CodeStructureView(tk.Toplevel, CodeStructureView):
     def __init__(self, parent):
         super().__init__(parent)
         self.title("Структура кода")
@@ -15,7 +15,7 @@ class CodeStructureView(tk.Toplevel):
         self.transient(parent)
         self.grab_set()
 
-        self.controller = None
+        self.presenter = None
         self._right_item_to_data = {}
 
         # Верхняя панель с элементами управления
@@ -211,32 +211,36 @@ class CodeStructureView(tk.Toplevel):
         state = 'readonly' if enabled else 'disabled'
         self.type_combo.config(state=state)
 
-    def set_controller(self, controller):
-        self.controller = controller
+    def get_local_only(self) -> bool:
+        return self.local_only_var.get()
 
+    def set_presenter(self, presenter):
+        self.presenter = presenter
+
+    # ---- Обработчики событий ----
     def _on_type_selected(self, event):
-        if self.controller:
-            self.controller.on_type_selected(event)
+        if self.presenter:
+            self.presenter.on_type_selected(event)
 
     def _on_module_button(self):
-        if self.controller:
-            self.controller._reset_module_assignments()
+        if self.presenter:
+            self.presenter.on_reset_module_assignments()
 
     def _on_save_structure(self):
-        if self.controller:
-            self.controller._save_structure()
+        if self.presenter:
+            self.presenter.on_save_structure()
 
     def _on_load_structure(self):
-        if self.controller:
-            self.controller._load_structure()
+        if self.presenter:
+            self.presenter.on_load_structure()
 
     def _on_create_project(self):
-        if self.controller:
-            self.controller._create_project()
+        if self.presenter:
+            self.presenter.on_create_project()
 
     def _on_local_only_toggled(self):
-        if self.controller:
-            self.controller.on_local_only_toggled(self.local_only_var.get())
+        if self.presenter:
+            self.presenter.on_local_only_toggled(self.local_only_var.get())
 
     # ---- Методы для плоского списка ----
     def set_flat_list(self, items: List[Dict[str, Any]]):
@@ -272,8 +276,8 @@ class CodeStructureView(tk.Toplevel):
             block_id = tags[0]
             values = self.flat_tree.item(item, 'values')
             lines = values[3]  # колонка "Строки"
-            if self.controller:
-                self.controller.on_flat_node_selected(block_id, lines)
+            if self.presenter:
+                self.presenter.on_flat_node_selected(block_id, lines)
 
     # ---- Методы для правого дерева ----
     def clear_merged_tree(self):
@@ -314,8 +318,8 @@ class CodeStructureView(tk.Toplevel):
             return
         item = selected[0]
         data = self.get_merged_data_by_item(item)
-        if data and self.controller:
-            self.controller.on_merged_node_selected(data)
+        if data and self.presenter:
+            self.presenter.on_merged_node_selected(data)
 
     # ---- Методы для отображения кода ----
     def display_code(self, code: str, language: str = "python"):
@@ -346,3 +350,7 @@ class CodeStructureView(tk.Toplevel):
 
     def show_error(self, message):
         messagebox.showerror("Ошибка", message, parent=self)
+        
+    def set_controller(self, controller):
+        """Сохраняет контроллер (устаревший метод, используйте set_presenter)."""
+        self.set_presenter(controller)

@@ -106,3 +106,56 @@ class ModuleAssignmentView(ABC):
     def show_error(self, message: str):
         """Показывает сообщение об ошибке."""
         pass
+        
+class CodeStructureView(ABC):
+    """Интерфейс для представления основного окна структуры кода."""
+
+    @abstractmethod
+    def display_merged_tree(self, root_node: Dict[str, Any]):
+        """Отображает дерево модулей."""
+        pass
+
+    @abstractmethod
+    def display_merged_code(self, code: str, language: str = "python"):
+        """Отображает код в правом окне."""
+        pass
+
+    @abstractmethod
+    def set_flat_list(self, items: List[Dict[str, Any]]):
+        """Устанавливает плоский список элементов."""
+        pass
+
+    @abstractmethod
+    def set_module_button_state(self, enabled: bool):
+        """Включает/отключает кнопку 'Назначить модули'."""
+        pass
+
+    @abstractmethod
+    def set_type_combo_values(self, values: List[str]):
+        """Устанавливает значения в комбобокс языков."""
+        pass
+
+    @abstractmethod
+    def set_type_combo_state(self, enabled: bool):
+        """Включает/отключает комбобокс языков."""
+        pass
+
+    @abstractmethod
+    def show_error(self, message: str):
+        """Показывает сообщение об ошибке."""
+        pass
+
+    @abstractmethod
+    def display_code(self, code: str, language: str = "python"):
+        """Отображает код в левом окне."""
+        pass
+
+    @abstractmethod
+    def set_controller(self, controller):  # для обратной совместимости, но будем заменять на presenter
+        """Устанавливает контроллер (временно, потом уберём)."""
+        pass
+
+    @abstractmethod
+    def get_local_only(self) -> bool:
+        """Возвращает значение флага 'Только локальные импорты'."""
+        pass
