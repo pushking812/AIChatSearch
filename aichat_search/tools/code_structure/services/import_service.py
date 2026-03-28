@@ -10,8 +10,8 @@ from aichat_search.tools.code_structure.core.import_analyzer import (
     build_imported_items_by_module
 )
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
+from aichat_search.tools.code_structure.utils.logger import get_logger
+logger = get_logger(__name__, level = logging.WARNING)
 
 
 class ImportService:

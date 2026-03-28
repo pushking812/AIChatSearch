@@ -9,8 +9,8 @@ from aichat_search.tools.code_structure.core.resolution_strategy import (
     ClassStrategy, MethodStrategy, FunctionStrategy, ImportStrategy
 )
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
+from aichat_search.tools.code_structure.utils.logger import get_logger
+logger = get_logger(__name__, level = logging.WARNING)
 
 
 class ModuleResolver:

@@ -5,9 +5,8 @@ from typing import List, Optional, Set, Dict
 from aichat_search.tools.code_structure.models.block_info import MessageBlockInfo
 from aichat_search.tools.code_structure.models.import_models import ImportInfo
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
-
+from aichat_search.tools.code_structure.utils.logger import get_logger
+logger = get_logger(__name__, level = logging.WARNING)
 
 def extract_imports_from_block(content: str, current_module: Optional[str] = None) -> List[ImportInfo]:
     imports = []

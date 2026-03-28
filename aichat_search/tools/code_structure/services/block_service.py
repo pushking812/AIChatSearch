@@ -9,7 +9,8 @@ from aichat_search.tools.code_structure.services.block_manager import BlockManag
 from aichat_search.tools.code_structure.models.block_info import MessageBlockInfo
 from aichat_search.tools.code_structure.parser import PythonParser
 
-logger = logging.getLogger(__name__)
+from aichat_search.tools.code_structure.utils.logger import get_logger
+logger = get_logger(__name__, level = logging.WARNING)
 
 
 class BlockService:

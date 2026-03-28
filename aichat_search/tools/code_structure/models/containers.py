@@ -4,8 +4,8 @@ import logging
 import textwrap
 from typing import List, Optional, Tuple, Dict
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
+from aichat_search.tools.code_structure.utils.logger import get_logger
+logger = get_logger(__name__, level = logging.WARNING)
 
 
 class Version:

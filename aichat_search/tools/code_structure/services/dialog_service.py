@@ -7,8 +7,9 @@ from aichat_search.tools.code_structure.ui import ErrorBlockDialog, ModuleAssign
 from aichat_search.tools.code_structure.models.block_info import MessageBlockInfo
 from aichat_search.tools.code_structure.models.containers import Container
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
+from aichat_search.tools.code_structure.utils.logger import get_logger
+logger = get_logger(__name__, level = logging.WARNING)
+
 
 class DialogService:
     """Сервис для управления диалогами."""

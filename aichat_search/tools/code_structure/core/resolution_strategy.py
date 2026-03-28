@@ -10,8 +10,8 @@ from aichat_search.tools.code_structure.core.module_identifier import ModuleIden
 from aichat_search.tools.code_structure.core.signature_utils import extract_function_signature
 from aichat_search.tools.code_structure.core.import_analyzer import extract_imports_from_block
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
+from aichat_search.tools.code_structure.utils.logger import get_logger
+logger = get_logger(__name__, level = logging.WARNING)
 
 
 class ResolutionStrategy(ABC):

@@ -11,8 +11,8 @@ from aichat_search.tools.code_structure.models.import_models import ImportInfo
 from aichat_search.tools.code_structure.models.containers import Version
 from aichat_search.tools.code_structure.core.version_comparator import VersionComparator
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+from aichat_search.tools.code_structure.utils.logger import get_logger
+logger = get_logger(__name__, level = logging.WARNING)
 
 
 class ModuleIdentifier:

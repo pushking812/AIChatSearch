@@ -17,9 +17,9 @@ from aichat_search.tools.code_structure.models.block_info import MessageBlockInf
 from aichat_search.tools.code_structure.models.containers import Container, Version
 from aichat_search.tools.code_structure.ui.dto import ModuleAssignmentInput, UnknownBlockInfo, KnownModuleInfo, TreeDisplayNode, FlatListItem
 from aichat_search.tools.code_structure.ui.dto_builder import DtoBuilder
-from aichat_search.tools.code_structure.utils.logger import get_logger
 
-logger = get_logger(__name__)
+from aichat_search.tools.code_structure.utils.logger import get_logger
+logger = get_logger(__name__, level = logging.WARNING)
 
 
 class CodeStructurePresenter:

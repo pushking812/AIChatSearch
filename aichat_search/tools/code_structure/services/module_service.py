@@ -12,14 +12,8 @@ from aichat_search.tools.code_structure.core.module_identifier import ModuleIden
 from aichat_search.tools.code_structure.models.import_models import ImportInfo
 from aichat_search.tools.code_structure.models.node import CodeBlockNode
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-if not logger.handlers:
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setLevel(logging.DEBUG)
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
+from aichat_search.tools.code_structure.utils.logger import get_logger
+logger = get_logger(__name__, level = logging.WARNING)
 
 
 class ModuleService:

@@ -6,8 +6,8 @@ import logging
 import re
 from typing import Optional
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
+from aichat_search.tools.code_structure.utils.logger import get_logger
+logger = get_logger(__name__, level = logging.WARNING)
 
 class DocstringRemover(ast.NodeTransformer):
     @staticmethod

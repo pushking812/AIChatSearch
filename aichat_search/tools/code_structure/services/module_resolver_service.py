@@ -17,7 +17,8 @@ from aichat_search.tools.code_structure.core.signature_utils import extract_func
 from aichat_search.tools.code_structure.core.version_comparator import VersionComparator
 from aichat_search.tools.code_structure.utils.helpers import extract_module_hint
 
-logger = logging.getLogger(__name__)
+from aichat_search.tools.code_structure.utils.logger import get_logger
+logger = get_logger(__name__, level = logging.WARNING)
 
 
 class ModuleResolverService:

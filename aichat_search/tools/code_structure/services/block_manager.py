@@ -11,7 +11,8 @@ from ..models.node import Node
 from ..models.block_info import MessageBlockInfo
 from ..utils.helpers import extract_module_hint
 
-logger = logging.getLogger(__name__)
+from aichat_search.tools.code_structure.utils.logger import get_logger
+logger = get_logger(__name__, level = logging.WARNING)
 
 
 class BlockManager:

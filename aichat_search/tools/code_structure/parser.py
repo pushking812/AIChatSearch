@@ -5,8 +5,8 @@ import logging
 from abc import ABC, abstractmethod
 from .models.node import ModuleNode, ClassNode, FunctionNode, MethodNode, CodeBlockNode
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
+from aichat_search.tools.code_structure.utils.logger import get_logger
+logger = get_logger(__name__, level = logging.WARNING)
 
 
 class CodeParser(ABC):

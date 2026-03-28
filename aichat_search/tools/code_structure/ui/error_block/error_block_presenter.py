@@ -7,7 +7,7 @@ from aichat_search.tools.code_structure.ui.dialog_interfaces import ErrorBlockVi
 from aichat_search.tools.code_structure.ui.dto import ErrorBlockInput
 
 from aichat_search.tools.code_structure.utils.logger import get_logger
-logger = get_logger(__name__)
+logger = get_logger(__name__, level = logging.WARNING)
 
 class ErrorBlockPresenter:
     def __init__(self, view: ErrorBlockView):

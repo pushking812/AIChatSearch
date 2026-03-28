@@ -5,8 +5,8 @@ from typing import Dict, Any, Optional, List, Tuple
 
 from aichat_search.tools.code_structure.models.containers import Container, Version
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+from aichat_search.tools.code_structure.utils.logger import get_logger
+logger = get_logger(__name__, level = logging.WARNING)
 
 
 class TreeBuilder:

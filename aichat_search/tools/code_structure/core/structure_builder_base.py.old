@@ -6,12 +6,12 @@ import json
 from datetime import datetime
 from typing import Dict, Any, List
 
+logger = get_logger(__name__, level = logging.WARNING)
 
 class StructureBuilderLogger:
     """Логирование состояния StructureBuilder"""
     
     def __init__(self, name: str = "StructureBuilder"):
-        self.logger = logging.getLogger(f"structure_builder.{name}")
         self.operation_stack: List[Dict[str, Any]] = []
         self.decisions: List[Dict[str, Any]] = []
         self._enabled = True
