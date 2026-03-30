@@ -48,3 +48,11 @@ class MessageBlockInfo:
 
     def set_error(self, error: Exception):
         self.syntax_error = error
+        
+    @property
+    def display_name(self) -> str:
+        """Возвращает название чата для отображения (из метаданных)."""
+        return self.metadata.get('chat_title', self.block_id)
+
+    def __repr__(self) -> str:
+        return f"<MessageBlockInfo {self.display_name}>"

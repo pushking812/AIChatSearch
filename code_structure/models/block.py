@@ -1,11 +1,7 @@
 # code_structure/models/block.py
 
-"""
-Модели уровня блоков (Block).
-"""
-
-from __future__ import annotations
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
 from typing import Optional, TYPE_CHECKING
 
 from aichat_search.model import Chat, MessagePair
@@ -16,18 +12,22 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class Block:
-    """
-    Блок кода, извлечённый из сообщения.
-    """
-    id: str                     # уникальный идентификатор
-    chat: Chat                  # ссылка на чат
-    message_pair: MessagePair   # ссылка на пару сообщений
-    language: str               # язык программирования
-    content: str                # исходный код блока
-    block_idx: int              # порядковый номер в сообщении
-    global_index: int           # сквозной индекс при загрузке
-    code_tree: Optional['ModuleNode'] = None   # дерево парсинга
-    module_hint: Optional[str] = None          # имя определённого модуля
+    chat: Chat
+    message_pair: MessagePair
+    language: str
+    content: str
+    block_idx: int
+    global_index: int
+    code_tree: Optional['ModuleNode'] = None
+    module_hint: Optional[str] = None
+    id: str = field(init=False)   # вычисляется автоматически
+
+    def __post_init__(self):
+        """Вычисляет служебный идентификатор блока."""
+        object.__setattr__(
+            self, 'id',
+            f"chat_{self.chat_display_name}_msg_{self.message_pair.index}_block{self.block_idx}"
+        )
 
     @property
     def timestamp(self) -> float:
@@ -42,5 +42,16 @@ class Block:
     def chat_id(self) -> str:
         return self.chat.id
 
+    @property
+    def chat_display_name(self) -> str:
+        """Очищенное название чата для использования в именах."""
+        title = self.chat.title or "unknown"
+        return re.sub(r'\W+', '_', title)
+
+    @property
+    def display_name(self) -> str:
+        """Человекочитаемое имя блока, используемое в UI и логах."""
+        return f"chat_{self.chat_display_name}_msg_{self.pair_index}_block{self.block_idx}"
+
     def __repr__(self) -> str:
-        return f"<Block id={self.id} lang={self.language} lines={len(self.content.splitlines())}>"
+        return f"<Block name={self.display_name} lang={self.language} lines={len(self.content.splitlines())}>"

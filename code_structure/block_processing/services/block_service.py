@@ -25,7 +25,7 @@ class BlockService:
         self._block_registry = BlockRegistry()
 
     def load_from_items(self, items: List[Tuple[Chat, MessagePair]]):
-        # 1. Старая логика
+        # 1. Загружаем старые блоки через BlockManager (для обратной совместимости)
         self.block_manager.load_from_items(items)
         logger.info(f"Загружено старых блоков: {len(self.block_manager.get_all_blocks())}")
 
@@ -36,37 +36,41 @@ class BlockService:
             blocks = block_parser.parse(text)
             for block_idx, mb in enumerate(blocks):
                 lang = mb.language.lower() if mb.language else ""
-                block_id = f"chat_{chat.id}_msg_{pair.index}_block{block_idx}"
+
+                # Создаём блок без явного id – он будет вычислен в __post_init__
                 new_block = Block(
-                    id=block_id,
                     chat=chat,
                     message_pair=pair,
                     language=lang,
                     content=mb.content,
                     block_idx=block_idx,
                     global_index=global_index,
-                    code_tree=None
+                    code_tree=None,
+                    module_hint=None
                 )
+
                 # Парсим только кодовые блоки (язык поддерживается)
                 if lang and lang in ('python', 'py'):
                     try:
                         tree = self.parser.parse_new(new_block)
-                        # Так как Block неизменяемый, создаём новый с заполненным code_tree
+                        # Так как Block неизменяемый, создаём новый экземпляр с заполненным code_tree
                         new_block = Block(
-                            id=new_block.id,
                             chat=new_block.chat,
                             message_pair=new_block.message_pair,
                             language=new_block.language,
                             content=new_block.content,
                             block_idx=new_block.block_idx,
                             global_index=new_block.global_index,
-                            code_tree=tree
+                            code_tree=tree,
+                            module_hint=new_block.module_hint
                         )
                     except SyntaxError:
-                        logger.warning(f"Синтаксическая ошибка при парсинге блока {block_id}")
+                        logger.warning(f"Синтаксическая ошибка при парсинге блока {new_block.display_name}")
                     except Exception as e:
-                        logger.error(f"Ошибка парсинга блока {block_id}: {e}")
+                        logger.error(f"Ошибка парсинга блока {new_block.display_name}: {e}")
+
                 self._block_registry.register(new_block)
+
         logger.info(f"Зарегистрировано новых блоков: {len(self._block_registry.get_all())}")
 
     # Старые методы (работают с MessageBlockInfo) – без изменений
@@ -90,12 +94,11 @@ class BlockService:
             tree = self.parser.parse(content)
             block.set_tree(tree)
             block.syntax_error = None
-            logger.info(f"Блок {block.block_id} успешно исправлен")
-            # TODO: обновить новый блок
+            logger.info(f"Блок {block.display_name} успешно исправлен")
             return True
         except Exception as e:
             block.set_error(e)
-            logger.error(f"Не удалось исправить блок {block.block_id}: {e}")
+            logger.error(f"Не удалось исправить блок {block.display_name}: {e}")
             return False
 
     def get_block_description(self, block: MessageBlockInfo) -> str:
@@ -103,6 +106,7 @@ class BlockService:
             return block.module_hint
         if block.tree is None or block.syntax_error:
             return "ошибка" if block.syntax_error else "блок_кода"
+
         desc = self._find_first_definition(block.tree)
         return desc or "блок_кода"
 

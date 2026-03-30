@@ -17,7 +17,8 @@ class ModuleAssignmentManager:
     def get_module_assignment_input(self, local_only: bool) -> ModuleAssignmentInput:
         unknown_blocks_info = []
         for block in self.module_service.unknown_blocks:
-            display_name = f"{block.block_id} – {self.block_service.get_block_description(block)}"
+            chat_title = block.metadata.get('chat_title', block.block_id)
+            display_name = f"{chat_title} – {self.block_service.get_block_description(block)}"
             unknown_blocks_info.append(UnknownBlockInfo(
                 id=block.block_id,
                 display_name=display_name,

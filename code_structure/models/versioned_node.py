@@ -92,6 +92,20 @@ class VersionedNode:
 
     def __repr__(self) -> str:
         return f"<Versioned{self.node_type.capitalize()} name={self.name} versions={len(self.versions)}>"
+        
+
+    @property
+    def local_path(self) -> str:
+        """
+        Возвращает локальный путь узла в исходном блоке (без модуля и пакетов).
+        Например: 'MessageDetailPanel.clear' или 'update_list'.
+        """
+        parts = []
+        node = self
+        while node is not None and node.node_type not in ('module', 'package'):
+            parts.append(node.name)
+            node = node.parent
+        return '.'.join(reversed(parts))
 
 
 class VersionedModule(VersionedNode):

@@ -23,6 +23,13 @@ facades/module_assignment_manager.py
 facades/persistence_manager.py
 facades/structure_data_provider.py
 imports/__init__.py
+models/__init__.py
+models/block.py
+models/code_node.py
+models/converters.py
+models/import_info.py
+models/registry.py
+models/versioned_node.py
 module_resolution/__init__.py
 parsing/__init__.py
 tests/__init__.py

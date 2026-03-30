@@ -4,14 +4,16 @@
 Построитель DTO для UI из дерева VersionedNode.
 """
 
-import logging
+import re
 from typing import List, Dict, Any, Optional, Tuple
 
 from code_structure.models.versioned_node import (
     VersionedNode, VersionedModule, VersionedClass, VersionedFunction,
     VersionedMethod, VersionedCodeBlock, VersionedImport
 )
+from code_structure.models.registry import BlockRegistry
 from code_structure.dialogs.dto import TreeDisplayNode, FlatListItem
+
 from code_structure.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -94,7 +96,7 @@ class TreeBuilderNew:
         parent_path: str = ""
     ) -> Tuple[Optional[TreeDisplayNode], Dict[str, VersionedNode]]:
         """Рекурсивно преобразует VersionedNode в TreeDisplayNode."""
-        # Сохраняем в словарь
+        # Сохраняем в словарь для быстрого поиска
         path_map[vnode.full_path] = vnode
 
         # Базовый узел
@@ -118,18 +120,27 @@ class TreeBuilderNew:
             # Добавляем запись в плоский список для последней версии (если есть)
             if vnode.versions:
                 latest = vnode.versions[-1]
-                src = latest.sources[-1]  # последний источник (самый новый)
-                block_id = src.block_id
-                start = src.start_line
-                end = src.end_line
+                src = latest.sources[-1]
+                block = BlockRegistry().get(src.block_id)
+                if block:
+                    block_name = block.display_name
+                else:
+                    block_name = src.block_id
+
+                # Определяем имя класса (если узел метод)
+                class_name = '-'
+                if vnode.node_type == 'method':
+                    if vnode.parent and vnode.parent.node_type == 'class':
+                        class_name = vnode.parent.name
+
                 item = FlatListItem(
-                    block_id=block_id,
-                    block_name=block_id,
-                    node_path=vnode.full_path,
+                    block_id=src.block_id,
+                    block_name=block_name,
+                    node_path=vnode.local_path,
                     parent_path=parent_path,
-                    lines=f"{start}-{end}",
+                    lines=f"{src.start_line}-{src.end_line}",
                     module=vnode.full_path.rsplit('.', 1)[0] if '.' in vnode.full_path else '',
-                    class_name='-',
+                    class_name=class_name,
                     strategy=''
                 )
                 flat_items.append(item)

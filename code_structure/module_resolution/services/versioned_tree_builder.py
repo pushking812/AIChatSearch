@@ -1,12 +1,13 @@
 # code_structure/module_resolution/services/versioned_tree_builder.py
 
 import re
-import logging
-from typing import List, Dict, Optional, Tuple, Set
+from typing import List, Dict, Optional, Tuple
 from collections import defaultdict
 
 from code_structure.models.block import Block
-from code_structure.models.code_node import CodeNode, ClassNode, FunctionNode, MethodNode, CodeBlockNode, ImportNode
+from code_structure.models.code_node import (
+    CodeNode, ClassNode, FunctionNode, MethodNode, CodeBlockNode, ImportNode
+)
 from code_structure.models.versioned_node import (
     VersionedNode, VersionedModule, VersionedClass, VersionedFunction,
     VersionedMethod, VersionedCodeBlock, VersionedImport, SourceRef, VersionInfo
@@ -41,7 +42,6 @@ class VersionedTreeBuilder:
         text_blocks_by_pair: Dict[str, Dict[int, str]] = None,
         full_texts_by_pair: Dict[str, str] = None
     ) -> Tuple[Dict[str, VersionedNode], List[Block]]:
-        """Строит дерево версионированных модулей из блоков."""
         self.text_blocks_by_pair = text_blocks_by_pair or {}
         self.full_texts_by_pair = full_texts_by_pair or {}
 
@@ -54,19 +54,26 @@ class VersionedTreeBuilder:
         # 3. Итеративное разрешение
         unknown_blocks = self._resolve_iteratively(blocks)
 
-        # 4. Построение дерева VersionedNode
+        # 4. Построение дерева из разрешённых модулей
         versioned_roots = self._build_versioned_from_identifier()
+
+        # 5. Добавление неразрешённых узлов
+        unresolved_root = VersionedNode("Неразрешённые", "unresolved_root")
+        for block in unknown_blocks:
+            if block.code_tree:
+                self._add_unresolved_nodes(block.code_tree, unresolved_root, block)
+        if unresolved_root.children:
+            versioned_roots["__unresolved__"] = unresolved_root
 
         return versioned_roots, unknown_blocks
 
+    # ---------- Назначение из комментариев ----------
     def _assign_from_comments(self, blocks: List[Block]):
-        """Назначает module_hint блокам, у которых есть комментарий-подсказка."""
         for block in blocks:
             if block.module_hint is None:
                 hint = extract_module_hint(block)
                 if hint:
                     new_block = Block(
-                        id=block.id,
                         chat=block.chat,
                         message_pair=block.message_pair,
                         language=block.language,
@@ -77,16 +84,15 @@ class VersionedTreeBuilder:
                         module_hint=hint
                     )
                     BlockRegistry().register(new_block)
-                    # Заменяем в списке
                     idx = blocks.index(block)
                     blocks[idx] = new_block
                     if new_block.code_tree:
                         self._collect_from_code_node(new_block.code_tree, hint, new_block)
                         self._add_imports_from_block(new_block)
-                    logger.debug(f"Блоку {new_block.id} назначен модуль {hint} по комментарию")
+                    logger.debug(f"Блоку {new_block.display_name} назначен модуль {hint} по комментарию")
 
+    # ---------- Текстовые подсказки ----------
     def _apply_text_hints(self, blocks: List[Block]):
-        """Применяет текстовые подсказки из предыдущих текстовых блоков."""
         if not self.text_blocks_by_pair:
             return
         for block in blocks:
@@ -98,7 +104,6 @@ class VersionedTreeBuilder:
             if pair_index not in self.text_blocks_by_pair:
                 continue
             text_blocks = self.text_blocks_by_pair[pair_index]
-            # Ищем ближайший текстовый блок с меньшим индексом
             prev_text_idx = None
             for idx in text_blocks:
                 if idx < block.block_idx:
@@ -118,9 +123,8 @@ class VersionedTreeBuilder:
             if not module:
                 module = self.module_identifier.find_imported_class(class_name)
             if module:
-                logger.debug(f"Текстовая подсказка: класс {class_name} -> модуль {module} для блока {block.id}")
+                logger.debug(f"Текстовая подсказка: класс {class_name} -> модуль {module} для блока {block.display_name}")
                 new_block = Block(
-                    id=block.id,
                     chat=block.chat,
                     message_pair=block.message_pair,
                     language=block.language,
@@ -134,11 +138,11 @@ class VersionedTreeBuilder:
                 idx = blocks.index(block)
                 blocks[idx] = new_block
                 if new_block.code_tree:
-                    self._collect_from_code_node(new_block.code_tree, module, new_block)
+                    self._collect_from_code_node(new_block.code_tree, module, new_block, class_hint=class_name)
                     self._add_imports_from_block(new_block)
 
+    # ---------- Итеративное разрешение ----------
     def _resolve_iteratively(self, blocks: List[Block]) -> List[Block]:
-        """Итеративно разрешает модули для блоков, у которых ещё нет hint."""
         unknown = [b for b in blocks if b.module_hint is None]
         changed = True
         iteration = 0
@@ -153,7 +157,6 @@ class VersionedTreeBuilder:
                 module = self._resolve_block(block)
                 if module:
                     new_block = Block(
-                        id=block.id,
                         chat=block.chat,
                         message_pair=block.message_pair,
                         language=block.language,
@@ -170,7 +173,7 @@ class VersionedTreeBuilder:
                         self._collect_from_code_node(new_block.code_tree, module, new_block)
                         self._add_imports_from_block(new_block)
                     changed = True
-                    logger.debug(f"Блок {block.id} разрешён как {module} на итерации {iteration}")
+                    logger.debug(f"Блок {new_block.display_name} разрешён как {module} на итерации {iteration}")
             unknown = [b for b in unknown if b.module_hint is None]
             iteration += 1
             if iteration > 20:
@@ -178,7 +181,6 @@ class VersionedTreeBuilder:
         return unknown
 
     def _resolve_block(self, block: Block) -> Optional[str]:
-        """Применяет стратегии для определения module_hint блока."""
         if not block.code_tree:
             return None
         context = {'identifier': self.module_identifier}
@@ -188,16 +190,15 @@ class VersionedTreeBuilder:
                 return module
         return None
 
-    def _collect_from_code_node(self, code_node: CodeNode, module_name: str, block: Block):
-        """Преобразует CodeNode в старый Node и добавляет в ModuleIdentifier."""
+    # ---------- Добавление в ModuleIdentifier ----------
+    def _collect_from_code_node(self, code_node: CodeNode, module_name: str, block: Block, class_hint: Optional[str] = None):
         if code_node is None:
             return
-        old_node = code_node_to_old_node(code_node)
+        old_node = code_node_to_old_node(code_node, class_hint)
         old_block_info = block_to_old_block_info(block)
-        self.module_identifier.collect_from_tree(old_node, module_name, block_info=old_block_info)
+        self.module_identifier.collect_from_tree(old_node, module_name, class_hint=class_hint, block_info=old_block_info)
 
     def _add_imports_from_block(self, block: Block):
-        """Извлекает импорты из блока и добавляет их в ModuleIdentifier."""
         if not block.code_tree or not block.module_hint:
             return
         from code_structure.imports.core.import_analyzer import extract_imports_from_block
@@ -205,14 +206,13 @@ class VersionedTreeBuilder:
         for imp in imports:
             self.module_identifier.add_imported_item(block.module_hint, imp)
 
+    # ---------- Построение дерева VersionedNode ----------
     def _build_versioned_from_identifier(self) -> Dict[str, VersionedNode]:
         all_nodes = {}
-
         for mod_name in self.module_identifier.get_all_module_names():
             module_info = self.module_identifier.get_module_info(mod_name)
             if not module_info:
                 continue
-
             parts = mod_name.split('.')
             parent = None
             current_path_parts = []
@@ -227,21 +227,16 @@ class VersionedTreeBuilder:
                     all_nodes[current_path] = node
                     if parent:
                         parent.add_child(node)
-                        logger.debug(f"    {current_path} добавлен как ребёнок {parent.full_path}")
                 parent = all_nodes[current_path]
                 current_path_parts.append(part)
 
             module_node = all_nodes[mod_name]
-
-            # Если узел ещё не является модулем, преобразуем его в модуль
             if not isinstance(module_node, VersionedModule):
                 module_node.node_type = "module"
-                # Добавляем атрибут is_imported (для совместимости с фильтром)
                 module_node.is_imported = module_info.is_imported
-                # Убеждаемся, что он остался тем же объектом – дети и родитель сохраняются
-                logger.debug(f"    Преобразован {mod_name} в модуль (был пакетом)")
 
-            # Классы
+            # Классы и методы
+            method_names = set()
             for class_name, class_info in module_info.classes.items():
                 class_full_name = f"{mod_name}.{class_name}"
                 if class_full_name in all_nodes:
@@ -250,8 +245,8 @@ class VersionedTreeBuilder:
                     vclass = VersionedClass(class_name)
                     all_nodes[class_full_name] = vclass
                     module_node.add_child(vclass)
-
                 for method_name, method_info in class_info.methods.items():
+                    method_names.add(method_name)
                     method_full_name = f"{class_full_name}.{method_name}"
                     if method_full_name in all_nodes:
                         vmethod = all_nodes[method_full_name]
@@ -264,8 +259,10 @@ class VersionedTreeBuilder:
                         if version_info:
                             vmethod.versions.append(version_info)
 
-            # Функции
+            # Функции верхнего уровня (исключая методы)
             for func_name, func_info in module_info.functions.items():
+                if func_name in method_names:
+                    continue
                 func_full_name = f"{mod_name}.{func_name}"
                 if func_full_name in all_nodes:
                     vfunc = all_nodes[func_full_name]
@@ -278,22 +275,11 @@ class VersionedTreeBuilder:
                     if version_info:
                         vfunc.versions.append(version_info)
 
-        # Отладочный вывод
-        if 'deepseek' in all_nodes:
-            node = all_nodes['deepseek']
-            logger.debug(f"deepseek parent: {node.parent}")
-            if node.parent:
-                logger.debug(f"  родитель: {node.parent.full_path} (type={node.parent.node_type})")
-        else:
-            logger.debug("deepseek не найден в all_nodes")
-
-        logger.debug(f"Все узлы: {list(all_nodes.keys())}")
+        # Корневые узлы (без родителя)
         roots = {full_name: node for full_name, node in all_nodes.items() if node.parent is None}
-        logger.debug(f"Корневые узлы: {list(roots.keys())}")
         return roots
 
     def _old_version_to_version_info(self, old_version) -> Optional[VersionInfo]:
-        """Преобразует старый Version (из ModuleIdentifier) в VersionInfo."""
         if not old_version.sources:
             return None
         sources = []
@@ -302,4 +288,25 @@ class VersionedTreeBuilder:
             block = BlockRegistry().get(block_id)
             timestamp = block.timestamp if block else 0.0
             sources.append(SourceRef(block_id, start, end, timestamp))
+        logger.debug(f"Old version has {len(sources)} sources")
         return VersionInfo(normalized_code=old_version.cleaned_content, sources=sources)
+
+    # ---------- Добавление неразрешённых узлов ----------
+    def _add_unresolved_nodes(self, code_node: CodeNode, parent: VersionedNode, block: Block):
+        if code_node.node_type in ('function', 'method', 'code_block', 'import'):
+            vnode = VersionedNode(code_node.name, code_node.node_type)
+            version_info = self._code_node_to_version_info(code_node, block)
+            if version_info:
+                vnode.versions.append(version_info)
+            parent.add_child(vnode)
+            for child in code_node.children:
+                self._add_unresolved_nodes(child, vnode, block)
+        else:
+            # Для классов, модулей, пакетов не создаём отдельный узел, но обрабатываем детей
+            for child in code_node.children:
+                self._add_unresolved_nodes(child, parent, block)
+
+    def _code_node_to_version_info(self, code_node: CodeNode, block: Block) -> Optional[VersionInfo]:
+        norm = code_node.normalized_content()
+        src = SourceRef(block.id, code_node.start_line, code_node.end_line, block.timestamp)
+        return VersionInfo(norm, [src])
