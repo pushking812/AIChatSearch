@@ -1,0 +1,14 @@
+# models/import_info.py
+from dataclasses import dataclass
+from typing import Optional
+
+
+@dataclass
+class ImportInfo:
+    """Информация об импорте, извлечённая из блока кода."""
+    source_module: str          # модуль, из которого импортируется (если есть)
+    target_fullname: str        # полное имя импортируемого объекта
+    target_type: str            # 'module', 'class', 'function'
+    is_relative: bool
+    original_statement: str
+    alias: Optional[str] = None
