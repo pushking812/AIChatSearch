@@ -4,11 +4,14 @@
 Модели уровня блоков (Block).
 """
 
+from __future__ import annotations
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
-# Импортируем существующие классы из aichat_search (они будут использоваться)
 from aichat_search.model import Chat, MessagePair
+
+if TYPE_CHECKING:
+    from .code_node import ModuleNode
 
 
 @dataclass(frozen=True)
@@ -16,23 +19,22 @@ class Block:
     """
     Блок кода, извлечённый из сообщения.
     """
-    id: str                     # уникальный идентификатор (например, "chat_{id}_msg_{pair.index}_block{idx}")
-    chat: Chat                  # ссылка на чат, которому принадлежит сообщение
-    message_pair: MessagePair   # ссылка на пару сообщений (запрос-ответ)
+    id: str                     # уникальный идентификатор
+    chat: Chat                  # ссылка на чат
+    message_pair: MessagePair   # ссылка на пару сообщений
     language: str               # язык программирования
     content: str                # исходный код блока
-    block_idx: int              # порядковый номер блока в сообщении
-    global_index: int           # сквозной индекс при загрузке (для сортировки)
+    block_idx: int              # порядковый номер в сообщении
+    global_index: int           # сквозной индекс при загрузке
+    code_tree: Optional['ModuleNode'] = None   # дерево парсинга (заполняется позже)
 
     @property
     def timestamp(self) -> float:
-        """Возвращает временную метку блока (время ответа или запроса)."""
         ts = self.message_pair.response_time or self.message_pair.request_time
         return ts.timestamp() if ts else 0.0
 
     @property
     def pair_index(self) -> str:
-        """Удобный доступ к индексу пары сообщений."""
         return self.message_pair.index
 
     @property
