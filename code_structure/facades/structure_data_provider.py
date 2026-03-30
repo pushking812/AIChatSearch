@@ -36,12 +36,14 @@ class StructureDataProvider:
 
     # ---------- Публичные методы ----------
     def load_blocks(self) -> None:
-        """Загружает блоки из items, обрабатывает ошибки, строит начальную структуру."""
+        """
+        Загружает блоки из items, обрабатывает ошибки, строит начальную структуру.
+        """
+        # 1. Загружаем блоки (старая логика)
         self.block_service.load_from_items(self.items)
 
         error_blocks = self.block_service.get_error_blocks()
         if error_blocks:
-            # Обработка ошибок будет выполнена в презентере, здесь только логируем
             logger.warning(f"Найдены блоки с ошибками: {len(error_blocks)}")
 
         all_blocks = self.block_service.get_all_blocks()
@@ -57,11 +59,23 @@ class StructureDataProvider:
         self.module_service.unknown_blocks = unknown_blocks
         self._has_unknown_blocks = bool(unknown_blocks)
 
-        # Построение начального дерева и плоского списка
+        # Построение начального дерева и плоского списка (старое)
         self._build_tree_and_flat_items(self._current_local_only)
 
         # Получаем языки
         self._languages = self.block_service.get_languages()
+
+        # ---------------------------------------------
+        # ВРЕМЕННО: тестирование нового дерева VersionedNode
+        # ---------------------------------------------
+        from code_structure.module_resolution.services.versioned_tree_builder import VersionedTreeBuilder
+        builder = VersionedTreeBuilder()
+        new_blocks = self.block_service.get_new_blocks()
+        logger.info(f"[NEW] Получено новых блоков: {len(new_blocks)}")
+        roots, unknown = builder.build_from_blocks(new_blocks)
+        logger.info(f"[NEW] Построено модулей: {len(roots)}, неразрешённых блоков: {len(unknown)}")
+        for name, vmodule in roots.items():
+            logger.debug(f"Модуль {name} имеет {len(vmodule.children)} детей")
 
     def get_initial_data(self) -> CodeStructureInitDTO:
         """Возвращает начальные DTO для отображения."""
