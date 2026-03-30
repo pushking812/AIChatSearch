@@ -41,9 +41,12 @@ class StructureDataProvider:
         self._versioned_nodes_by_full_name: Dict[str, 'VersionedNode'] = {}
 
     # ---------- Публичные методы ----------
+
     def load_blocks(self) -> None:
-        """Загружает блоки из items, обрабатывает ошибки, строит начальную структуру."""
-        # 1. Старая логика
+        """
+        Загружает блоки из items, обрабатывает ошибки, строит начальную структуру.
+        """
+        # 1. Загружаем блоки через BlockService (старая и новая логика)
         self.block_service.load_from_items(self.items)
 
         error_blocks = self.block_service.get_error_blocks()
@@ -54,6 +57,7 @@ class StructureDataProvider:
         text_blocks_by_pair = self.block_service.get_text_blocks_by_pair()
         full_texts_by_pair = self.block_service.get_full_texts_by_pair()
 
+        # 2. Старая логика разрешения модулей (использует MessageBlockInfo)
         containers, unknown_blocks = self.module_service.process_blocks(
             all_blocks,
             text_blocks_by_pair=text_blocks_by_pair,
@@ -63,10 +67,10 @@ class StructureDataProvider:
         self.module_service.unknown_blocks = unknown_blocks
         self._has_unknown_blocks = bool(unknown_blocks)
 
-        # Построение начального дерева и плоского списка (старое)
+        # 3. Старое построение дерева и плоского списка
         self._build_tree_and_flat_items(self._current_local_only)
 
-        # Получаем языки
+        # 4. Получаем языки (из старых блоков)
         self._languages = self.block_service.get_languages()
 
         # ---------------------------------------------
@@ -75,10 +79,14 @@ class StructureDataProvider:
         from code_structure.module_resolution.services.versioned_tree_builder import VersionedTreeBuilder
         builder = VersionedTreeBuilder()
         new_blocks = self.block_service.get_new_blocks()
-        self._versioned_roots, unknown = builder.build_from_blocks(new_blocks)
+        self._versioned_roots, unknown = builder.build_from_blocks(
+            new_blocks,
+            text_blocks_by_pair=text_blocks_by_pair,
+            full_texts_by_pair=full_texts_by_pair
+        )
         logger.info(f"[NEW] Построено модулей: {len(self._versioned_roots)}, неразрешённых блоков: {len(unknown)}")
 
-        # Построение DTO и словаря для быстрого доступа
+        # 5. Построение DTO и словаря для быстрого доступа (для новых моделей)
         from code_structure.parsing.core.tree_builder_new import TreeBuilderNew
         _, _, path_map = TreeBuilderNew.build_display_tree(self._versioned_roots, self._current_local_only)
         self._versioned_nodes_by_full_name = path_map

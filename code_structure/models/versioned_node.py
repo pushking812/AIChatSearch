@@ -9,7 +9,7 @@ from typing import List, Optional
 
 from .code_node import CodeNode
 from .block import Block
-from .registry import BlockRegistry  # будет создан позже, но пока используем forward ref
+from .registry import BlockRegistry
 
 
 @dataclass
