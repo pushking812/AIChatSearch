@@ -26,7 +26,8 @@ class Block:
     content: str                # исходный код блока
     block_idx: int              # порядковый номер в сообщении
     global_index: int           # сквозной индекс при загрузке
-    code_tree: Optional['ModuleNode'] = None   # дерево парсинга (заполняется позже)
+    code_tree: Optional['ModuleNode'] = None   # дерево парсинга
+    module_hint: Optional[str] = None          # имя определённого модуля
 
     @property
     def timestamp(self) -> float:

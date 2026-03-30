@@ -1,9 +1,5 @@
 # code_structure/module_resolution/services/versioned_tree_builder.py
 
-"""
-Построитель версионированного дерева (VersionedNode) из новых блоков.
-"""
-
 import logging
 from typing import List, Dict, Optional, Tuple
 from collections import defaultdict
@@ -16,163 +12,104 @@ from code_structure.models.versioned_node import (
     VersionedNode, VersionedModule, VersionedClass, VersionedFunction,
     VersionedMethod, VersionedCodeBlock, VersionedImport
 )
-
+from code_structure.module_resolution.core.new_resolution_strategies import (
+    ClassStrategy, MethodStrategy, FunctionStrategy, ImportStrategy
+)
+from code_structure.module_resolution.core.module_identifier import ModuleIdentifier
+from code_structure.imports.services.import_service import ImportService
 from code_structure.utils.logger import get_logger
 
-logger = get_logger(__name__, level=logging.INFO)
+logger = get_logger(__name__)
 
 
 class VersionedTreeBuilder:
-    """
-    Строит дерево VersionedNode из списка блоков с заполненными code_tree.
-    """
-
     def __init__(self):
-        pass
+        self.module_identifier = ModuleIdentifier()
+        self.strategies = [
+            ClassStrategy(),
+            MethodStrategy(),
+            FunctionStrategy(),
+            ImportStrategy()
+        ]
 
     def build_from_blocks(self, blocks: List[Block]) -> Tuple[Dict[str, VersionedModule], List[Block]]:
-        """
-        Строит дерево версионированных модулей.
-
-        Args:
-            blocks: список блоков (с code_tree, если есть)
-
-        Returns:
-            tuple: (словарь {module_name: VersionedModule}, список неразрешённых блоков)
-        """
-        # 1. Собираем все CodeNode из блоков, у которых есть module_hint
-        all_code_nodes: List[CodeNode] = []
-        unknown_blocks: List[Block] = []
+        """Строит дерево версионированных модулей из блоков."""
+        # 1. Определяем module_hint для каждого блока
         for block in blocks:
-            # Определяем модуль для блока (пока используем существующий hint)
-            module_name = self._resolve_module_hint(block)
-            if module_name is None:
-                unknown_blocks.append(block)
-                continue
-            # Получаем дерево узлов блока (если есть)
-            if block.code_tree is None:
-                continue
-            # Обходим дерево и собираем все узлы, которые могут быть версионированы
-            self._collect_versionable_nodes(block.code_tree, all_code_nodes, module_name)
+            if block.module_hint is None:
+                module_hint = self._resolve_module_hint(block)
+                if module_hint:
+                    # Создаём новый блок с заполненным module_hint
+                    # (т.к. Block неизменяемый)
+                    block = Block(
+                        id=block.id,
+                        chat=block.chat,
+                        message_pair=block.message_pair,
+                        language=block.language,
+                        content=block.content,
+                        block_idx=block.block_idx,
+                        global_index=block.global_index,
+                        code_tree=block.code_tree,
+                        module_hint=module_hint
+                    )
+                    # Обновляем в реестре (нужно обновить ссылку)
+                    from code_structure.models.registry import BlockRegistry
+                    BlockRegistry().register(block)
+            # Если есть module_hint, собираем CodeNode
+            if block.module_hint and block.code_tree:
+                self._collect_nodes(block.code_tree, block.module_hint)
 
-        # 2. Группируем узлы по модулям (полный путь модуля)
-        grouped_by_module: Dict[str, List[CodeNode]] = defaultdict(list)
-        for node in all_code_nodes:
-            # Здесь module_name уже определён при сборе
-            # Для каждого узла нужно знать его полный путь (модуль + иерархия)
-            # Но в CodeNode есть full_path, который включает имя класса и т.д.
-            # Нам нужно извлечь именно модуль (первые части пути). Например, если node.full_path = "mypkg.submod.ClassName.method", то модуль = "mypkg.submod"
-            # Получаем модуль из node.module_name (передаём при сборе) или из пути.
-            # Пока будем использовать переданный module_name (для всех узлов блока один).
-            grouped_by_module[module_name].append(node)
+        # 2. Группируем узлы по модулям (уже есть в module_identifier)
+        #    Используем существующие структуры ModuleIdentifier для группировки
+        #    Но нам нужно построить VersionedNode дерево из module_identifier
+        versioned_roots = {}
+        for mod_name in self.module_identifier.get_all_module_names():
+            vmodule = VersionedModule(mod_name)
+            # Заполняем классы и методы
+            module_info = self.module_identifier.get_module_info(mod_name)
+            if module_info:
+                vmodule.is_imported = module_info.is_imported
+                # Классы
+                for class_name, class_info in module_info.classes.items():
+                    vclass = VersionedClass(class_name)
+                    # Методы класса
+                    for method_name, method_info in class_info.methods.items():
+                        vmethod = VersionedMethod(method_name)
+                        # Добавляем версии метода
+                        for version in method_info.versions:
+                            # version - это объект Version (старый). Нужно преобразовать в новую модель?
+                            # Пока пропускаем. В будущем нужно будет заменить старые версии на новые.
+                            # Временно: просто создаём VersionedMethod без версий.
+                            pass
+                        vclass.add_child(vmethod)
+                    vmodule.add_child(vclass)
+                # Функции верхнего уровня
+                for func_name, func_info in module_info.functions.items():
+                    vfunc = VersionedFunction(func_name)
+                    # Добавляем версии
+                    vmodule.add_child(vfunc)
+            versioned_roots[mod_name] = vmodule
 
-        # 3. Для каждого модуля строим VersionedModule и его детей
-        result = {}
-        for module_name, nodes in grouped_by_module.items():
-            vmodule = VersionedModule(module_name)
-            self._add_nodes_to_versioned(vmodule, nodes)
-            result[module_name] = vmodule
-
-        return result, unknown_blocks
+        # 3. Неразрешённые блоки
+        unknown_blocks = [b for b in blocks if b.module_hint is None]
+        return versioned_roots, unknown_blocks
 
     def _resolve_module_hint(self, block: Block) -> Optional[str]:
-        """
-        Определяет имя модуля для блока.
-        Пока возвращает сохранённый module_hint из метаданных.
-        Позже будет использовать стратегии разрешения.
-        """
-        # Временная заглушка: используем module_hint из метаданных (если есть)
-        # В новых блоках пока нет module_hint, поэтому возвращаем None.
-        # Позже нужно будет либо сохранять hint в блок, либо получать из контекста.
-        # Для итерации 4 просто возвращаем None, чтобы все блоки попали в unknown.
+        """Применяет стратегии для определения module_hint блока."""
+        if not block.code_tree:
+            return None
+        # Контекст для стратегий (пока пустой, но позже можно добавить ModuleIdentifier)
+        context = {'identifier': self.module_identifier}
+        for strategy in self.strategies:
+            module = strategy.resolve(block.code_tree, context)
+            if module:
+                logger.debug(f"Блок {block.id} определён как {module} по {strategy.__class__.__name__}")
+                return module
         return None
 
-    def _collect_versionable_nodes(self, node: CodeNode, result: List[CodeNode], module_name: str):
-        """
-        Рекурсивно собирает узлы, подлежащие версионированию.
-        """
-        # Добавляем текущий узел, если он должен быть версионирован
-        if isinstance(node, (FunctionNode, MethodNode, CodeBlockNode, ImportNode)):
-            # Сохраняем module_name как атрибут узла? Можно добавить временное поле.
-            # Пока просто добавляем узел, но для группировки по модулям нужна связь.
-            result.append(node)
-        # Рекурсивно обходим детей
-        for child in node.children:
-            self._collect_versionable_nodes(child, result, module_name)
-
-    def _add_nodes_to_versioned(self, vmodule: VersionedModule, nodes: List[CodeNode]):
-        """
-        Добавляет узлы в версионированное дерево.
-        """
-        # Строим иерархию: для каждого узла находим или создаём родительские контейнеры
-        for node in nodes:
-            # Получаем путь относительно модуля: node.full_path может содержать полный путь с модулем.
-            # Нам нужно отделить модуль от остальной иерархии.
-            # Для простоты предположим, что node.full_path начинается с module_name.
-            # Тогда parts = node.full_path.split('.') после module_name
-            # Например, full_path = "mypkg.submod.ClassName.method", module_name = "mypkg.submod"
-            # parts = ["ClassName", "method"]
-            path_parts = node.full_path.split('.')
-            # Находим индекс, где заканчивается модуль
-            # module_parts = module_name.split('.')
-            module_parts = vmodule.name.split('.')
-            # Сравниваем первые len(module_parts) частей пути
-            if path_parts[:len(module_parts)] != module_parts:
-                # Не совпадает – возможно, node.full_path не содержит модуль? Пропускаем
-                logger.warning(f"Путь {node.full_path} не начинается с модуля {vmodule.name}")
-                continue
-            # Оставшаяся часть пути – иерархия внутри модуля
-            remaining = path_parts[len(module_parts):]
-            if not remaining:
-                # Сам модуль (не может быть, так как node не модуль)
-                continue
-
-            # Спускаемся по дереву, создавая контейнеры
-            current = vmodule
-            for i, part in enumerate(remaining):
-                is_last = (i == len(remaining) - 1)
-                # Определяем тип узла, который нужно создать (класс, функция, метод, блок)
-                if is_last:
-                    # Создаём версионированный узел нужного типа
-                    if isinstance(node, ClassNode):
-                        # Классы не версионируются – пропускаем? Они не должны попасть в collect, но на всякий случай.
-                        continue
-                    elif isinstance(node, FunctionNode):
-                        vnode = VersionedFunction(part)
-                    elif isinstance(node, MethodNode):
-                        vnode = VersionedMethod(part)
-                    elif isinstance(node, CodeBlockNode):
-                        vnode = VersionedCodeBlock(part)
-                    elif isinstance(node, ImportNode):
-                        vnode = VersionedImport(part)
-                    else:
-                        # fallback
-                        vnode = VersionedNode(part, node.node_type)
-                    # Добавляем версию
-                    vnode.add_version(node)
-                    # Добавляем в текущий контейнер
-                    existing = self._find_child(current, part)
-                    if existing:
-                        # Если уже есть, добавляем версию в существующий
-                        existing.add_version(node)
-                    else:
-                        current.add_child(vnode)
-                else:
-                    # Промежуточный узел – должен быть классом (или пакетом)
-                    # Создаём контейнер класса (или пакета)
-                    # Если текущий узел – класс, то создаём VersionedClass
-                    # Для простоты пока создаём VersionedClass
-                    vnode = VersionedClass(part)
-                    existing = self._find_child(current, part)
-                    if existing:
-                        current = existing
-                    else:
-                        current.add_child(vnode)
-                        current = vnode
-
-    def _find_child(self, parent: VersionedNode, name: str) -> Optional[VersionedNode]:
-        """Ищет дочерний узел с заданным именем."""
-        for child in parent.children:
-            if child.name == name:
-                return child
-        return None
+    def _collect_nodes(self, node: CodeNode, module_name: str):
+        """Собирает информацию о классах/функциях в ModuleIdentifier."""
+        # Имитация старого collect_from_tree
+        # Вместо этого нужно заполнять ModuleIdentifier, но он пока не умеет работать с CodeNode.
+        # Для простоты пока пропустим. В следующих итерациях доработаем.
+        pass

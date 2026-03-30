@@ -36,7 +36,7 @@ class StructureDataProvider:
         self._current_local_only: bool = True
 
         # Новое для новых моделей
-        self._use_new_models = False   # пока false, позже переключим
+        self._use_new_models = True   # пока false, позже переключим
         self._versioned_roots: Dict[str, 'VersionedModule'] = {}
         self._versioned_nodes_by_full_name: Dict[str, 'VersionedNode'] = {}
 
