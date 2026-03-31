@@ -209,7 +209,7 @@ class TreeBuilderNew:
                 TreeBuilderNew._collect_flat_items_from_node(child, block, source_map, flat_items, parent_path)
             return
 
-        # Определяем строку для колонки "Узел"
+        # Определяем строку для колонки "Узел" в зависимости от типа узла
         if isinstance(node, ImportNode):
             node_path = node.statement
         elif isinstance(node, CommentNode):
@@ -235,7 +235,7 @@ class TreeBuilderNew:
         strategy = ""
 
         if vnode:
-            # Назначенный узел
+            # Узел назначен (есть версионированный узел)
             if vnode.node_type in ('function', 'method', 'code_block', 'import'):
                 module = vnode.full_path.rsplit('.', 1)[0] if '.' in vnode.full_path else ''
             else:

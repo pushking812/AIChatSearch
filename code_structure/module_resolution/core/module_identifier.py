@@ -1,7 +1,7 @@
 # code_structure/module_resolution/core/module_identifier.py
 
-from typing import Dict, List, Optional, Set
 import logging
+from typing import Dict, List, Optional, Set, Tuple
 
 from code_structure.parsing.models.node import Node
 from code_structure.parsing.core.signature_utils import extract_function_signature
@@ -13,7 +13,7 @@ from code_structure.module_resolution.models.containers import Version
 from code_structure.parsing.core.version_comparator import VersionComparator
 
 from code_structure.utils.logger import get_logger
-logger = get_logger(__name__, level = logging.WARNING)
+logger = get_logger(__name__, level=logging.WARNING)
 
 
 class ModuleIdentifier:
@@ -48,7 +48,6 @@ class ModuleIdentifier:
             class_info.versions.append(version)
             module.classes[class_name] = class_info
 
-        # Обрабатываем методы внутри класса
         for method_node in class_node.children:
             if method_node.node_type == "method":
                 self._add_or_update_callable(module, method_node.name, method_node, block_info, class_name=class_name)
@@ -60,7 +59,6 @@ class ModuleIdentifier:
             return
 
         if class_name:
-            # Метод класса
             if class_name not in module.classes:
                 module.classes[class_name] = ClassInfo(name=class_name)
             class_info = module.classes[class_name]
@@ -74,7 +72,6 @@ class ModuleIdentifier:
                 method.versions.append(version)
                 class_info.methods[name] = method
         else:
-            # Функция верхнего уровня
             sig = extract_function_signature(node)
             if name in module.functions:
                 existing_func = module.functions[name]
@@ -142,7 +139,9 @@ class ModuleIdentifier:
             mod = self._modules.setdefault(target, ModuleInfo(name=target))
             mod.is_imported = True
 
+    # ---------- Методы поиска (добавлены для совместимости с новым кодом) ----------
     def find_imported_class(self, class_name: str) -> Optional[str]:
+        """Ищет модуль, в котором объявлен импортированный класс."""
         for mod_name, imports in self._imported.items():
             for fullname, info in imports.items():
                 if info.target_type == 'class' and fullname.endswith(f".{class_name}"):
@@ -150,6 +149,7 @@ class ModuleIdentifier:
         return None
 
     def find_imported_function(self, func_name: str) -> Optional[str]:
+        """Ищет модуль, в котором объявлена импортированная функция."""
         for mod_name, imports in self._imported.items():
             for fullname, info in imports.items():
                 if info.target_type == 'function' and fullname.endswith(f".{func_name}"):
@@ -157,14 +157,15 @@ class ModuleIdentifier:
         return None
 
     def find_module_by_imported_name(self, name: str) -> Optional[str]:
+        """Ищет модуль, из которого импортирован объект с заданным именем."""
         for mod_name, imports in self._imported.items():
             for fullname, info in imports.items():
                 if fullname == name or fullname.endswith('.' + name):
                     return fullname.rsplit('.', 1)[0]
         return None
 
-    # ---------- Методы поиска ----------
     def find_module_for_class(self, class_name: str) -> Optional[str]:
+        """Ищет модуль, в котором определён класс."""
         for mod_name, mod in self._modules.items():
             if class_name in mod.classes:
                 return mod_name

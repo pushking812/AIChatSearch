@@ -80,10 +80,18 @@ def _handle_from_import_statement(line: str, current_module: Optional[str]) -> L
             name, alias = name.split(' as ', 1)
             name = name.strip()
             alias = alias.strip()
-        if name and name[0].isupper():
-            target_type = 'class'
+
+        # Определяем тип импортируемого объекта
+        if is_relative and len(names) == 1 and not '.' in name:
+            # Относительный импорт одиночного модуля (from . import module)
+            target_type = 'module'
         else:
-            target_type = 'function'
+            # Импорт класса или функции (определяем по первой букве)
+            if name and name[0].isupper():
+                target_type = 'class'
+            else:
+                target_type = 'function'
+
         fullname = f"{base_module}.{name}" if base_module else name
         result.append(ImportInfo(
             source_module=current_module or '',

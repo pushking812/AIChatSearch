@@ -198,6 +198,7 @@ class VersionedTreeBuilder:
             return
         from code_structure.imports.core.import_analyzer import extract_imports_from_block
         imports = extract_imports_from_block(block.content, block.module_hint)
+        logger.debug(f"Block {block.display_name}: found {len(imports)} imports: {[imp.target_fullname for imp in imports]}")
         for imp in imports:
             self.module_identifier.add_imported_item(block.module_hint, imp)
 
