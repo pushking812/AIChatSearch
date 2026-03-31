@@ -13,7 +13,7 @@ from code_structure.module_resolution.models.containers import Version
 from code_structure.parsing.core.version_comparator import VersionComparator
 
 from code_structure.utils.logger import get_logger
-logger = get_logger(__name__, level=logging.WARNING)
+logger = get_logger(__name__, level=logging.DEBUG)
 
 
 class ModuleIdentifier:
@@ -112,48 +112,53 @@ class ModuleIdentifier:
 
     # ---------- Методы работы с импортированными объектами ----------
     def add_imported_item(self, module_name: str, import_info: ImportInfo):
-        """Добавляет информацию об импортированном объекте."""
+        # Принудительное исправление типа для имён с заглавной
+        if import_info.target_type == 'module' and '.' in import_info.target_fullname:
+            target_name = import_info.target_fullname.split('.')[-1]
+            if target_name and target_name[0].isupper():
+                logger.debug(f"Исправлен тип для {target_name}: module -> class")
+                import_info.target_type = 'class'
+
         if module_name not in self._imported:
             self._imported[module_name] = {}
         self._imported[module_name][import_info.target_fullname] = import_info
 
-        # Принудительное исправление типа для имён с заглавной
-        target_name = import_info.target_fullname.split('.')[-1]
-        if import_info.target_type == 'module' and target_name and target_name[0].isupper():
-            logger.debug(f"Исправлен тип для {target_name}: module -> class")
-            import_info.target_type = 'class'
-
         target = import_info.target_fullname
-        # Если импортируется модуль (type='module'), то создаём запись в _modules
-        if import_info.target_type == 'module':
-            # Импорт модуля: target может быть именем модуля (например, 'constants')
-            # или полным путём (например, 'deepseek.gui_components.constants')
-            mod = self._modules.setdefault(target, ModuleInfo(name=target))
-            mod.is_imported = True
-            logger.debug(f"Добавлен импортированный модуль {target} из {module_name}")
-            return
-
-        # Иначе это импорт класса или функции
         if '.' in target:
             target_module, target_name = target.rsplit('.', 1)
         else:
             target_module = target
             target_name = target
 
-        # Добавляем запись в _modules для модуля, содержащего класс/функцию
-        mod = self._modules.setdefault(target_module, ModuleInfo(name=target_module))
-        mod.is_imported = True
+        if import_info.target_type in ('class', 'function') and target_name:
+            mod = self._modules.setdefault(target_module, ModuleInfo(name=target_module))
+            mod.is_imported = True
+            if import_info.target_type == 'class':
+                if target_name not in mod.classes:
+                    mod.classes[target_name] = ClassInfo(name=target_name)
+                    logger.debug(f"Добавлен импортированный класс {target_name} в модуль {target_module}")
+            elif import_info.target_type == 'function':
+                if target_name not in mod.functions:
+                    mod.functions[target_name] = FunctionInfo(name=target_name, signature=(False, []))
+                    logger.debug(f"Добавлена импортированная функция {target_name} в модуль {target_module}")
 
-        if import_info.target_type == 'class':
-            if target_name not in mod.classes:
-                mod.classes[target_name] = ClassInfo(name=target_name)
-                logger.debug(f"Добавлен импортированный класс {target_name} в модуль {target_module}")
-        elif import_info.target_type == 'function':
-            if target_name not in mod.functions:
-                mod.functions[target_name] = FunctionInfo(name=target_name, signature=(False, []))
-                logger.debug(f"Добавлена импортированная функция {target_name} в модуль {target_module}")
+        if import_info.target_type == 'module' and '.' not in target:
+            mod = self._modules.setdefault(target, ModuleInfo(name=target))
+            mod.is_imported = True
 
-    # ---------- Методы поиска (добавлены для совместимости с новым кодом) ----------
+    def add_import_version(self, module_name: str, version: Version):
+        """Добавляет версию импорта в модуль."""
+        module = self._modules.setdefault(module_name, ModuleInfo(name=module_name))
+        module.import_versions.append(version)
+        logger.debug(f"Добавлена версия импорта в модуль {module_name}")
+
+    def add_code_block_version(self, module_name: str, version: Version):
+        """Добавляет версию блока кода верхнего уровня в модуль."""
+        module = self._modules.setdefault(module_name, ModuleInfo(name=module_name))
+        module.code_block_versions.append(version)
+        logger.debug(f"Добавлена версия блока кода в модуль {module_name}")
+
+    # ---------- Методы поиска ----------
     def find_imported_class(self, class_name: str) -> Optional[str]:
         logger.debug(f"find_imported_class: searching for {class_name}")
         for mod_name, imports in self._imported.items():
@@ -161,14 +166,10 @@ class ModuleIdentifier:
                 if info.target_type == 'class' and fullname.endswith(f".{class_name}"):
                     logger.debug(f"  found: {fullname} in {mod_name}")
                     return fullname.rsplit('.', 1)[0]
-        logger.debug(f"find_imported_class: not found for {class_name}. Current imports:")
-        for mod_name, imports in self._imported.items():
-            for fullname, info in imports.items():
-                logger.debug(f"  {fullname} ({info.target_type}) from {mod_name}")
+        logger.debug(f"find_imported_class: not found for {class_name}")
         return None
 
     def find_imported_function(self, func_name: str) -> Optional[str]:
-        """Ищет модуль, в котором объявлена импортированная функция."""
         for mod_name, imports in self._imported.items():
             for fullname, info in imports.items():
                 if info.target_type == 'function' and fullname.endswith(f".{func_name}"):
@@ -176,7 +177,6 @@ class ModuleIdentifier:
         return None
 
     def find_module_by_imported_name(self, name: str) -> Optional[str]:
-        """Ищет модуль, из которого импортирован объект с заданным именем."""
         for mod_name, imports in self._imported.items():
             for fullname, info in imports.items():
                 if fullname == name or fullname.endswith('.' + name):
@@ -184,12 +184,11 @@ class ModuleIdentifier:
         return None
 
     def find_module_for_class(self, class_name: str) -> Optional[str]:
-        logger.debug(f"find_module_for_class: searching for {class_name}")
         for mod_name, mod in self._modules.items():
             if class_name in mod.classes:
-                logger.debug(f"find_module_for_class: found in {mod_name}")
+                logger.debug(f"find_module_for_class: {class_name} found in {mod_name}")
                 return mod_name
-        logger.debug(f"find_module_for_class: not found for {class_name}")
+        logger.debug(f"find_module_for_class: {class_name} not found")
         return None
 
     # ---------- Доступ к данным ----------

@@ -12,21 +12,21 @@ class MethodInfo:
     name: str
     signature: Signature
     class_name: str
-    versions: List['Version'] = field(default_factory=list) # noqa: F821
+    versions: List['Version'] = field(default_factory=list)
 
 
 @dataclass
 class FunctionInfo:
     name: str
     signature: Signature
-    versions: List['Version'] = field(default_factory=list) # noqa: F821
+    versions: List['Version'] = field(default_factory=list)
 
 
 @dataclass
 class ClassInfo:
     name: str
     methods: Dict[str, MethodInfo] = field(default_factory=dict)
-    versions: List['Version'] = field(default_factory=list) # noqa: F821
+    versions: List['Version'] = field(default_factory=list)
 
 
 @dataclass
@@ -42,5 +42,8 @@ class ModuleInfo:
     classes: Dict[str, ClassInfo] = field(default_factory=dict)
     functions: Dict[str, FunctionInfo] = field(default_factory=dict)
     imports: Dict[str, ImportedInfo] = field(default_factory=dict)
-    versions: List['Version'] = field(default_factory=list) # noqa: F821
+    versions: List['Version'] = field(default_factory=list)
     is_imported: bool = False
+    # новые поля для импортов и блоков кода
+    import_versions: List['Version'] = field(default_factory=list)
+    code_block_versions: List['Version'] = field(default_factory=list)

@@ -20,6 +20,7 @@ from code_structure.module_resolution.core.new_resolution_strategies import (
     extract_function_signature_from_code_node
 )
 from code_structure.module_resolution.core.module_identifier import ModuleIdentifier
+from code_structure.module_resolution.models.containers import Version
 from code_structure.utils.helpers import extract_module_hint
 from code_structure.utils.logger import get_logger
 
@@ -90,7 +91,7 @@ class VersionedTreeBuilder:
             if block.code_tree:
                 self._collect_definitions_from_block(block.code_tree, block.module_hint, module_for_def)
 
-        # 2. Сбор из импортов
+        # 2. Сбор из импортов (используем _imported)
         for mod_name, imports_dict in self.module_identifier._imported.items():
             for imp_info in imports_dict.values():
                 target_module = imp_info.target_fullname.rsplit('.', 1)[0] if '.' in imp_info.target_fullname else imp_info.target_fullname
@@ -269,6 +270,8 @@ class VersionedTreeBuilder:
     def _collect_from_code_node(self, code_node: CodeNode, module_name: str, block: Block, class_hint: Optional[str] = None):
         if code_node is None:
             return
+
+        # Автоматическое определение class_hint для функций с self
         if class_hint is None and isinstance(code_node, FunctionNode) and not isinstance(code_node, MethodNode):
             has_self, _ = extract_function_signature_from_code_node(code_node)
             if has_self:
@@ -277,9 +280,41 @@ class VersionedTreeBuilder:
                 if module_info and possible_class_name in module_info.classes:
                     class_hint = possible_class_name
                     logger.debug(f"Автоматически назначен class_hint={class_hint} для функции {code_node.name} в модуле {module_name}")
+
         old_node = code_node_to_old_node(code_node, class_hint)
         old_block_info = block_to_old_block_info(block)
         self.module_identifier.collect_from_tree(old_node, module_name, class_hint=class_hint, block_info=old_block_info)
+
+        # Добавляем версии импортов и блоков кода верхнего уровня
+        if isinstance(code_node, ImportNode):
+            version = self._create_version_from_old_node(old_node, block)
+            if version:
+                self.module_identifier.add_import_version(module_name, version)
+        elif isinstance(code_node, CodeBlockNode):
+            # Проверяем, что это блок верхнего уровня (не внутри класса/функции)
+            if code_node.parent is None or code_node.parent.node_type in ('module', 'package'):
+                version = self._create_version_from_old_node(old_node, block)
+                if version:
+                    self.module_identifier.add_code_block_version(module_name, version)
+
+        # Рекурсивно обрабатываем детей
+        for child in code_node.children:
+            self._collect_from_code_node(child, module_name, block, class_hint)
+
+    def _create_version_from_old_node(self, old_node, block: Block) -> Optional[Version]:
+        """Создаёт старый Version из узла и блока."""
+        try:
+            return Version(
+                node=old_node,
+                block_id=block.id,
+                global_index=block.global_index,
+                block_content=block.content,
+                timestamp=block.timestamp,
+                block_idx=block.block_idx
+            )
+        except Exception as e:
+            logger.error(f"Ошибка создания версии для узла {old_node.name}: {e}")
+            return None
 
     def _add_imports_from_block(self, block: Block):
         if not block.code_tree or not block.module_hint:
@@ -319,7 +354,16 @@ class VersionedTreeBuilder:
                 module_node.node_type = "module"
                 module_node.is_imported = module_info.is_imported
 
-            # Классы и методы
+            # 1. Импорты (один узел)
+            if module_info.import_versions:
+                vimports = VersionedImport("imports")
+                for v in module_info.import_versions:
+                    version_info = self._old_version_to_version_info(v)
+                    if version_info:
+                        vimports.versions.append(version_info)
+                module_node.add_child(vimports)
+
+            # 2. Классы и методы
             method_names = set()
             for class_name, class_info in module_info.classes.items():
                 class_full_name = f"{mod_name}.{class_name}"
@@ -343,7 +387,7 @@ class VersionedTreeBuilder:
                         if version_info:
                             vmethod.versions.append(version_info)
 
-            # Функции верхнего уровня (исключая методы)
+            # 3. Функции верхнего уровня (исключая методы)
             for func_name, func_info in module_info.functions.items():
                 if func_name in method_names:
                     continue
@@ -358,6 +402,14 @@ class VersionedTreeBuilder:
                     version_info = self._old_version_to_version_info(old_version)
                     if version_info:
                         vfunc.versions.append(version_info)
+
+            # 4. Блоки кода верхнего уровня
+            for v in module_info.code_block_versions:
+                vblock = VersionedCodeBlock(v.node.name)
+                version_info = self._old_version_to_version_info(v)
+                if version_info:
+                    vblock.versions.append(version_info)
+                module_node.add_child(vblock)
 
         # Корневые узлы (без родителя)
         roots = {full_name: node for full_name, node in all_nodes.items() if node.parent is None}
