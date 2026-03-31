@@ -1,3 +1,5 @@
+# code_structure/parsing/core/parser.py
+
 import ast
 import logging
 import re
@@ -26,6 +28,7 @@ from code_structure.models.code_node import (
 )
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 class CodeParser(ABC):
@@ -59,14 +62,12 @@ class PythonParser(CodeParser):
         n = len(body)
         while i < n:
             node = body[i]
-
             if isinstance(node, ast.ClassDef):
                 bases = ", ".join(self._format_base(b) for b in node.bases)
                 class_node = OldClassNode(node.name, bases, node.lineno, node.end_lineno)
                 self._process_body_old(node.body, class_node, is_method_body=False)
                 parent_node.add_child(class_node)
                 i += 1
-
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 args_str = self._format_args(node.args, node.returns)
                 if isinstance(parent_node, OldClassNode):
@@ -76,7 +77,6 @@ class PythonParser(CodeParser):
                 self._process_body_old(node.body, func_node, is_method_body=True)
                 parent_node.add_child(func_node)
                 i += 1
-
             else:
                 if not is_method_body:
                     start = i
@@ -113,7 +113,6 @@ class PythonParser(CodeParser):
         while i < n:
             node = body[i]
             if isinstance(node, ast.ClassDef):
-                logger.debug(f"Found class definition: {node.name} at lines {node.lineno}-{node.end_lineno}")
                 bases = ", ".join(self._format_base(b) for b in node.bases)
                 class_node = NewClassNode(
                     name=node.name,
@@ -123,11 +122,9 @@ class PythonParser(CodeParser):
                     end_line=node.end_lineno,
                     parent=parent_node
                 )
-                logger.debug(f"Created NewClassNode for {node.name}")
                 self._process_body_new(node.body, class_node, block, is_method_body=False)
                 parent_node.add_child(class_node)
                 i += 1
-
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 args_str = self._format_args(node.args, node.returns)
                 if isinstance(parent_node, NewClassNode):
@@ -139,7 +136,6 @@ class PythonParser(CodeParser):
                         end_line=node.end_lineno,
                         parent=parent_node
                     )
-                    logger.debug(f"Created NewMethodNode {node.name} for class {parent_node.name}")
                 else:
                     func_node = NewFunctionNode(
                         name=node.name,
@@ -149,11 +145,9 @@ class PythonParser(CodeParser):
                         end_line=node.end_lineno,
                         parent=parent_node
                     )
-                    logger.debug(f"Created NewFunctionNode {node.name}")
                 self._process_body_new(node.body, func_node, block, is_method_body=True)
                 parent_node.add_child(func_node)
                 i += 1
-
             else:
                 if not is_method_body:
                     start = i
@@ -179,40 +173,60 @@ class PythonParser(CodeParser):
                                 code_lines.append(line)
 
                         if import_lines:
-                            start_import = first_node.lineno + fragment_lines.index(import_lines[0])
-                            end_import = first_node.lineno + fragment_lines.index(import_lines[-1])
-                            import_node = NewImportNode(
-                                statement='\n'.join(import_lines),
-                                block=block,
-                                start_line=start_import,
-                                end_line=end_import,
-                                parent=parent_node
-                            )
-                            parent_node.add_child(import_node)
+                            # Собираем все строки, относящиеся к импортам (включая комментарии, идущие с ними)
+                            all_import_related_lines = []
+                            for line in fragment_lines:
+                                if line in import_lines or line in comment_lines:
+                                    all_import_related_lines.append(line)
+                            if all_import_related_lines:
+                                start_import = first_node.lineno + fragment_lines.index(all_import_related_lines[0])
+                                end_import = first_node.lineno + fragment_lines.index(all_import_related_lines[-1])
+                                import_node_text = '\n'.join(all_import_related_lines)
+                                import_node = NewImportNode(
+                                    statement=import_node_text,
+                                    block=block,
+                                    start_line=start_import,
+                                    end_line=end_import,
+                                    parent=parent_node
+                                )
+                                parent_node.add_child(import_node)
 
-                        if comment_lines:
-                            start_comment = first_node.lineno + fragment_lines.index(comment_lines[0])
-                            end_comment = first_node.lineno + fragment_lines.index(comment_lines[-1])
-                            comment_node = NewCommentNode(
-                                text='\n'.join(comment_lines),
-                                block=block,
-                                start_line=start_comment,
-                                end_line=end_comment,
-                                parent=parent_node
-                            )
-                            parent_node.add_child(comment_node)
-
-                        if code_lines:
-                            start_code = first_node.lineno + fragment_lines.index(code_lines[0])
-                            end_code = first_node.lineno + fragment_lines.index(code_lines[-1])
-                            code_block_node = NewCodeBlockNode(
-                                name="code_block",
-                                block=block,
-                                start_line=start_code,
-                                end_line=end_code,
-                                parent=parent_node
-                            )
-                            parent_node.add_child(code_block_node)
+                            # Блок кода (только строки кода)
+                            if code_lines:
+                                start_code = first_node.lineno + fragment_lines.index(code_lines[0])
+                                end_code = first_node.lineno + fragment_lines.index(code_lines[-1])
+                                code_block_node = NewCodeBlockNode(
+                                    name="code_block",
+                                    block=block,
+                                    start_line=start_code,
+                                    end_line=end_code,
+                                    parent=parent_node
+                                )
+                                parent_node.add_child(code_block_node)
+                        else:
+                            # Нет импортов – создаём отдельно комментарии и код
+                            if comment_lines:
+                                start_comment = first_node.lineno + fragment_lines.index(comment_lines[0])
+                                end_comment = first_node.lineno + fragment_lines.index(comment_lines[-1])
+                                comment_node = NewCommentNode(
+                                    text='\n'.join(comment_lines),
+                                    block=block,
+                                    start_line=start_comment,
+                                    end_line=end_comment,
+                                    parent=parent_node
+                                )
+                                parent_node.add_child(comment_node)
+                            if code_lines:
+                                start_code = first_node.lineno + fragment_lines.index(code_lines[0])
+                                end_code = first_node.lineno + fragment_lines.index(code_lines[-1])
+                                code_block_node = NewCodeBlockNode(
+                                    name="code_block",
+                                    block=block,
+                                    start_line=start_code,
+                                    end_line=end_code,
+                                    parent=parent_node
+                                )
+                                parent_node.add_child(code_block_node)
                 else:
                     i += 1
 

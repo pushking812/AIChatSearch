@@ -270,7 +270,6 @@ class VersionedTreeBuilder:
     def _collect_from_code_node(self, code_node: CodeNode, module_name: str, block: Block, class_hint: Optional[str] = None):
         if code_node is None:
             return
-
         # Автоматическое определение class_hint для функций с self
         if class_hint is None and isinstance(code_node, FunctionNode) and not isinstance(code_node, MethodNode):
             has_self, _ = extract_function_signature_from_code_node(code_node)
@@ -285,17 +284,24 @@ class VersionedTreeBuilder:
         old_block_info = block_to_old_block_info(block)
         self.module_identifier.collect_from_tree(old_node, module_name, class_hint=class_hint, block_info=old_block_info)
 
-        # Добавляем версии импортов и блоков кода верхнего уровня
+        # Добавляем версии импортов и блоков кода
         if isinstance(code_node, ImportNode):
             version = self._create_version_from_old_node(old_node, block)
             if version:
                 self.module_identifier.add_import_version(module_name, version)
         elif isinstance(code_node, CodeBlockNode):
-            # Проверяем, что это блок верхнего уровня (не внутри класса/функции)
-            if code_node.parent is None or code_node.parent.node_type in ('module', 'package'):
+            # Определяем, является ли этот блок верхнеуровневым (в модуле или в классе)
+            parent = code_node.parent
+            if parent is None or parent.node_type in ('module', 'package'):
+                # Блок кода верхнего уровня (модуль)
                 version = self._create_version_from_old_node(old_node, block)
                 if version:
                     self.module_identifier.add_code_block_version(module_name, version)
+            elif isinstance(parent, ClassNode):
+                # Блок кода внутри класса
+                version = self._create_version_from_old_node(old_node, block)
+                if version:
+                    self._add_code_block_to_class(module_name, parent.name, version)
 
         # Рекурсивно обрабатываем детей
         for child in code_node.children:
@@ -315,6 +321,18 @@ class VersionedTreeBuilder:
         except Exception as e:
             logger.error(f"Ошибка создания версии для узла {old_node.name}: {e}")
             return None
+
+    def _add_code_block_to_class(self, module_name: str, class_name: str, version: Version):
+        """Добавляет версию блока кода в указанный класс."""
+        module = self.module_identifier.get_module_info(module_name)
+        if not module:
+            return
+        class_info = module.classes.get(class_name)
+        if not class_info:
+            # Если класс не найден, создаём временный? Но такого быть не должно.
+            return
+        class_info.code_block_versions.append(version)
+        logger.debug(f"Добавлена версия блока кода в класс {class_name} модуля {module_name}")
 
     def _add_imports_from_block(self, block: Block):
         if not block.code_tree or not block.module_hint:
@@ -373,6 +391,16 @@ class VersionedTreeBuilder:
                     vclass = VersionedClass(class_name)
                     all_nodes[class_full_name] = vclass
                     module_node.add_child(vclass)
+
+                # Блоки кода внутри класса
+                for v in class_info.code_block_versions:
+                    vblock = VersionedCodeBlock(v.node.name)
+                    version_info = self._old_version_to_version_info(v)
+                    if version_info:
+                        vblock.versions.append(version_info)
+                    vclass.add_child(vblock)
+
+                # Методы
                 for method_name, method_info in class_info.methods.items():
                     method_names.add(method_name)
                     method_full_name = f"{class_full_name}.{method_name}"
@@ -403,7 +431,7 @@ class VersionedTreeBuilder:
                     if version_info:
                         vfunc.versions.append(version_info)
 
-            # 4. Блоки кода верхнего уровня
+            # 4. Блоки кода верхнего уровня (модуль)
             for v in module_info.code_block_versions:
                 vblock = VersionedCodeBlock(v.node.name)
                 version_info = self._old_version_to_version_info(v)

@@ -3,7 +3,6 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Optional
 
-# Тип сигнатуры: (has_self: bool, params: List[str])
 Signature = Tuple[bool, List[str]]
 
 
@@ -27,6 +26,7 @@ class ClassInfo:
     name: str
     methods: Dict[str, MethodInfo] = field(default_factory=dict)
     versions: List['Version'] = field(default_factory=list)
+    code_block_versions: List['Version'] = field(default_factory=list)   # блоки кода внутри класса
 
 
 @dataclass
@@ -44,6 +44,5 @@ class ModuleInfo:
     imports: Dict[str, ImportedInfo] = field(default_factory=dict)
     versions: List['Version'] = field(default_factory=list)
     is_imported: bool = False
-    # новые поля для импортов и блоков кода
-    import_versions: List['Version'] = field(default_factory=list)
-    code_block_versions: List['Version'] = field(default_factory=list)
+    import_versions: List['Version'] = field(default_factory=list)      # импорты уровня модуля
+    code_block_versions: List['Version'] = field(default_factory=list)  # блоки кода уровня модуля
