@@ -35,18 +35,17 @@ class StructureDataProvider:
         self._languages: List[str] = []
         self._current_local_only: bool = True
 
-        # Новое для новых моделей
-        self._use_new_models = True   # пока false, позже переключим
-        self._versioned_roots: Dict[str, 'VersionedModule'] = {}
+        # Новые атрибуты для новых моделей
+        self._use_new_models = True
+        self._versioned_roots: Dict[str, 'VersionedNode'] = {}
         self._versioned_nodes_by_full_name: Dict[str, 'VersionedNode'] = {}
+        self._versioned_nodes_by_source: Dict[Tuple[str, int, int], 'VersionedNode'] = {}
+        self._all_code_blocks: List['Block'] = []
 
     # ---------- Публичные методы ----------
-
     def load_blocks(self) -> None:
-        """
-        Загружает блоки из items, обрабатывает ошибки, строит начальную структуру.
-        """
-        # 1. Загружаем блоки через BlockService (старая и новая логика)
+        """Загружает блоки из items, обрабатывает ошибки, строит начальную структуру."""
+        # 1. Загружаем старые блоки через BlockService
         self.block_service.load_from_items(self.items)
 
         error_blocks = self.block_service.get_error_blocks()
@@ -67,14 +66,14 @@ class StructureDataProvider:
         self.module_service.unknown_blocks = unknown_blocks
         self._has_unknown_blocks = bool(unknown_blocks)
 
-        # 3. Старое построение дерева и плоского списка
+        # 3. Старое построение дерева и плоского списка (для совместимости)
         self._build_tree_and_flat_items(self._current_local_only)
 
         # 4. Получаем языки (из старых блоков)
         self._languages = self.block_service.get_languages()
 
         # ---------------------------------------------
-        # Построение нового дерева VersionedNode
+        # 5. Построение нового дерева VersionedNode
         # ---------------------------------------------
         from code_structure.module_resolution.services.versioned_tree_builder import VersionedTreeBuilder
         builder = VersionedTreeBuilder()
@@ -85,19 +84,24 @@ class StructureDataProvider:
             full_texts_by_pair=full_texts_by_pair
         )
         logger.info(f"[NEW] Построено модулей: {len(self._versioned_roots)}, неразрешённых блоков: {len(unknown)}")
+        self._all_code_blocks = [b for b in new_blocks if b.language in ('python', 'py')]
 
-        # 5. Построение DTO и словаря для быстрого доступа (для новых моделей)
+        # 6. Построение DTO и словарей для быстрого доступа (для новых моделей)
         from code_structure.parsing.core.tree_builder_new import TreeBuilderNew
-        _, _, path_map = TreeBuilderNew.build_display_tree(self._versioned_roots, self._current_local_only)
+        _, _, path_map, source_map = TreeBuilderNew.build_display_tree(self._versioned_roots, self._current_local_only)
         self._versioned_nodes_by_full_name = path_map
+        self._versioned_nodes_by_source = source_map
 
     def get_initial_data(self) -> CodeStructureInitDTO:
         """Возвращает начальные DTO для отображения."""
         if self._use_new_models:
             from code_structure.parsing.core.tree_builder_new import TreeBuilderNew
-            tree_root, flat_items, _ = TreeBuilderNew.build_display_tree(
+            tree_root, _, path_map, source_map = TreeBuilderNew.build_display_tree(
                 self._versioned_roots, self._current_local_only
             )
+            self._versioned_nodes_by_full_name = path_map
+            self._versioned_nodes_by_source = source_map
+            flat_items = TreeBuilderNew.build_flat_list_from_blocks(self._all_code_blocks, source_map)
             return CodeStructureInitDTO(
                 languages=self._languages,
                 tree=tree_root,
@@ -117,10 +121,12 @@ class StructureDataProvider:
         self._current_local_only = local_only
         if self._use_new_models:
             from code_structure.parsing.core.tree_builder_new import TreeBuilderNew
-            tree_root, flat_items, path_map = TreeBuilderNew.build_display_tree(
+            tree_root, _, path_map, source_map = TreeBuilderNew.build_display_tree(
                 self._versioned_roots, local_only
             )
             self._versioned_nodes_by_full_name = path_map
+            self._versioned_nodes_by_source = source_map
+            flat_items = TreeBuilderNew.build_flat_list_from_blocks(self._all_code_blocks, source_map)
             return CodeStructureRefreshDTO(tree=tree_root, flat_items=flat_items)
         else:
             self._build_tree_and_flat_items(local_only)
