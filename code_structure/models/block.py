@@ -20,6 +20,7 @@ class Block:
     global_index: int
     code_tree: Optional['ModuleNode'] = None
     module_hint: Optional[str] = None
+    assignment_strategy: Optional[str] = None
     id: str = field(init=False)   # вычисляется автоматически
 
     def __post_init__(self):

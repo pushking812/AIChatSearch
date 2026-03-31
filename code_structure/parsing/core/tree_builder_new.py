@@ -88,15 +88,7 @@ class TreeBuilderNew:
         """Рекурсивно преобразует VersionedNode в TreeDisplayNode и заполняет source_map."""
         path_map[vnode.full_path] = vnode
 
-        # Сохраняем все источники в source_map (включая классы и пакеты)
-        # Для классов и пакетов у нас нет версий, но мы можем использовать их детей
-        if vnode.node_type in ('class', 'package'):
-            # У классов и пакетов нет собственных версий, но у их детей есть источники.
-            # Чтобы сопоставить класс в плоском списке, мы можем использовать диапазон строк из детей?
-            # Пока не добавляем, но в будущем можно добавить логику.
-            pass
-
-        # Добавляем узлы с версиями
+        # Сохраняем все источники в source_map
         for version in vnode.versions:
             for src in version.sources:
                 key = (src.block_id, src.start_line, src.end_line)
@@ -193,7 +185,6 @@ class TreeBuilderNew:
         flat_items = []
         for block in blocks:
             if not block.code_tree:
-                # Блок с ошибкой или текстовый – пропускаем (они не разбиты на узлы)
                 continue
             TreeBuilderNew._collect_flat_items_from_node(
                 block.code_tree, block, source_map, flat_items, ""
@@ -210,16 +201,15 @@ class TreeBuilderNew:
     ):
         """
         Рекурсивно собирает плоский список, добавляя запись для каждого узла.
-        Пропускает корневой ModuleNode (узел с пустым именем и типом 'module').
+        Пропускает корневой ModuleNode (пустое имя).
         """
         # Пропускаем корневой ModuleNode (пустое имя или тип module и отсутствие имени)
         if isinstance(node, ModuleNode) and (not node.name or node.name == ""):
-            # Не создаём запись, но продолжаем обрабатывать детей
             for child in node.children:
                 TreeBuilderNew._collect_flat_items_from_node(child, block, source_map, flat_items, parent_path)
             return
 
-        # Определяем строку для колонки "Узел" в зависимости от типа узла
+        # Определяем строку для колонки "Узел"
         if isinstance(node, ImportNode):
             node_path = node.statement
         elif isinstance(node, CommentNode):
@@ -252,11 +242,16 @@ class TreeBuilderNew:
                 module = vnode.full_path
             if vnode.node_type == 'method' and vnode.parent and vnode.parent.node_type == 'class':
                 class_name = vnode.parent.name
-            # Стратегия пока пустая (в будущем можно брать из блока)
-            strategy = ""
+            # Стратегию берём из блока (если есть)
+            strategy = block.assignment_strategy or ""
         else:
-            # Неназначенный узел
-            strategy = "Неназначенный блок"
+            # Узел не найден, возможно, блок назначен целиком
+            if block.module_hint:
+                module = block.module_hint
+                strategy = block.assignment_strategy or ""
+                class_name = '-'
+            else:
+                strategy = "Неназначенный блок"
 
         # Создаём запись в плоском списке
         flat_item = FlatListItem(

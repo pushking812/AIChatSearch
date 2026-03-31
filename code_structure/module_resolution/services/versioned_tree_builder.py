@@ -2,12 +2,15 @@
 
 import re
 from typing import List, Dict, Optional, Tuple
+from collections import defaultdict
 
 from code_structure.models.block import Block
-from code_structure.models.code_node import CodeNode
+from code_structure.models.code_node import (
+    CodeNode, ClassNode, FunctionNode, MethodNode, CodeBlockNode, ImportNode
+)
 from code_structure.models.versioned_node import (
     VersionedNode, VersionedModule, VersionedClass, VersionedFunction,
-    VersionedMethod, SourceRef, VersionInfo
+    VersionedMethod, VersionedCodeBlock, VersionedImport, SourceRef, VersionInfo
 )
 from code_structure.models.converters import code_node_to_old_node, block_to_old_block_info
 from code_structure.models.registry import BlockRegistry
@@ -32,7 +35,6 @@ class VersionedTreeBuilder:
         ]
         self.text_blocks_by_pair: Dict[str, Dict[int, str]] = {}
         self.full_texts_by_pair: Dict[str, str] = {}
-        self.all_code_blocks: List[Block] = []
 
     def build_from_blocks(
         self,
@@ -43,24 +45,18 @@ class VersionedTreeBuilder:
         self.text_blocks_by_pair = text_blocks_by_pair or {}
         self.full_texts_by_pair = full_texts_by_pair or {}
 
-        # Фильтруем только кодовые блоки (поддерживаемые языки)
-        code_blocks = [b for b in blocks if b.language in ('python', 'py')]
-        self.all_code_blocks = code_blocks
-        # текстовые блоки не используются
-
         # 1. Назначение из комментариев
-        self._assign_from_comments(code_blocks)
+        self._assign_from_comments(blocks)
 
         # 2. Текстовые подсказки
-        self._apply_text_hints(code_blocks)
+        self._apply_text_hints(blocks)
 
         # 3. Итеративное разрешение
-        unknown_blocks = self._resolve_iteratively(code_blocks)
+        unknown_blocks = self._resolve_iteratively(blocks)
 
         # 4. Построение дерева из разрешённых модулей
         versioned_roots = self._build_versioned_from_identifier()
 
-        # Неразрешённые узлы больше не добавляем в дерево, они будут в плоском списке
         return versioned_roots, unknown_blocks
 
     # ---------- Назначение из комментариев ----------
@@ -77,7 +73,8 @@ class VersionedTreeBuilder:
                         block_idx=block.block_idx,
                         global_index=block.global_index,
                         code_tree=block.code_tree,
-                        module_hint=hint
+                        module_hint=hint,
+                        assignment_strategy="CommentHint"
                     )
                     BlockRegistry().register(new_block)
                     idx = blocks.index(block)
@@ -128,7 +125,8 @@ class VersionedTreeBuilder:
                     block_idx=block.block_idx,
                     global_index=block.global_index,
                     code_tree=block.code_tree,
-                    module_hint=module
+                    module_hint=module,
+                    assignment_strategy="TextHint"
                 )
                 BlockRegistry().register(new_block)
                 idx = blocks.index(block)
@@ -150,7 +148,7 @@ class VersionedTreeBuilder:
                     continue
                 if block.code_tree is None:
                     continue
-                module = self._resolve_block(block)
+                module, strategy = self._resolve_block(block)
                 if module:
                     new_block = Block(
                         chat=block.chat,
@@ -160,7 +158,8 @@ class VersionedTreeBuilder:
                         block_idx=block.block_idx,
                         global_index=block.global_index,
                         code_tree=block.code_tree,
-                        module_hint=module
+                        module_hint=module,
+                        assignment_strategy=strategy
                     )
                     BlockRegistry().register(new_block)
                     unknown.remove(block)
@@ -176,15 +175,15 @@ class VersionedTreeBuilder:
                 break
         return unknown
 
-    def _resolve_block(self, block: Block) -> Optional[str]:
+    def _resolve_block(self, block: Block) -> Tuple[Optional[str], Optional[str]]:
         if not block.code_tree:
-            return None
+            return None, None
         context = {'identifier': self.module_identifier}
         for strategy in self.strategies:
             module = strategy.resolve(block.code_tree, context)
             if module:
-                return module
-        return None
+                return module, strategy.__class__.__name__
+        return None, None
 
     # ---------- Добавление в ModuleIdentifier ----------
     def _collect_from_code_node(self, code_node: CodeNode, module_name: str, block: Block, class_hint: Optional[str] = None):

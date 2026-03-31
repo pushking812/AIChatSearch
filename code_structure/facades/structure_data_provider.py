@@ -84,7 +84,9 @@ class StructureDataProvider:
             full_texts_by_pair=full_texts_by_pair
         )
         logger.info(f"[NEW] Построено модулей: {len(self._versioned_roots)}, неразрешённых блоков: {len(unknown)}")
-        self._all_code_blocks = [b for b in new_blocks if b.language in ('python', 'py')]
+
+        # Важно: обновляем список кодовых блоков из актуального реестра (после разрешения)
+        self._all_code_blocks = [b for b in self.block_service.get_new_blocks() if b.language in ('python', 'py')]
 
         # 6. Построение DTO и словарей для быстрого доступа (для новых моделей)
         from code_structure.parsing.core.tree_builder_new import TreeBuilderNew
