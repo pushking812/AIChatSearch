@@ -112,7 +112,6 @@ class ModuleIdentifier:
 
     # ---------- Методы работы с импортированными объектами ----------
     def add_imported_item(self, module_name: str, import_info: ImportInfo):
-        # Принудительное исправление типа для имён с заглавной
         if import_info.target_type == 'module' and '.' in import_info.target_fullname:
             target_name = import_info.target_fullname.split('.')[-1]
             if target_name and target_name[0].isupper():
@@ -147,26 +146,21 @@ class ModuleIdentifier:
             mod.is_imported = True
 
     def add_import_version(self, module_name: str, version: Version):
-        """Добавляет версию импорта в модуль."""
         module = self._modules.setdefault(module_name, ModuleInfo(name=module_name))
         module.import_versions.append(version)
-        logger.debug(f"Добавлена версия импорта в модуль {module_name}")
+        logger.debug(f"Added import version to module {module_name}, total: {len(module.import_versions)}")
 
     def add_code_block_version(self, module_name: str, version: Version):
-        """Добавляет версию блока кода верхнего уровня в модуль."""
         module = self._modules.setdefault(module_name, ModuleInfo(name=module_name))
         module.code_block_versions.append(version)
-        logger.debug(f"Добавлена версия блока кода в модуль {module_name}")
+        logger.debug(f"Added code block version to module {module_name}, total: {len(module.code_block_versions)}")
 
     # ---------- Методы поиска ----------
     def find_imported_class(self, class_name: str) -> Optional[str]:
-        logger.debug(f"find_imported_class: searching for {class_name}")
         for mod_name, imports in self._imported.items():
             for fullname, info in imports.items():
                 if info.target_type == 'class' and fullname.endswith(f".{class_name}"):
-                    logger.debug(f"  found: {fullname} in {mod_name}")
                     return fullname.rsplit('.', 1)[0]
-        logger.debug(f"find_imported_class: not found for {class_name}")
         return None
 
     def find_imported_function(self, func_name: str) -> Optional[str]:

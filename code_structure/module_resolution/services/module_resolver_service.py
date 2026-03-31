@@ -1,102 +1,173 @@
 # code_structure/module_resolution/services/module_resolver_service.py
 
-import logging
 import re
-from typing import List, Dict, Tuple, Set
+import logging
+from typing import List, Dict, Optional, Tuple
 from collections import defaultdict
 
-from code_structure.module_resolution.models.block_info import MessageBlockInfo
-from code_structure.module_resolution.models.containers import (
-    Container, ModuleContainer, PackageContainer, ClassContainer, MethodContainer, FunctionContainer
+from code_structure.models.block import Block
+from code_structure.models.code_node import (
+    CodeNode, ClassNode, FunctionNode, MethodNode, CodeBlockNode, ImportNode
 )
-from code_structure.module_resolution.models.identifier_models import ModuleInfo
+from code_structure.models.versioned_node import (
+    VersionedNode, VersionedModule, VersionedClass, VersionedFunction,
+    VersionedMethod, VersionedCodeBlock, VersionedImport, SourceRef, VersionInfo
+)
+from code_structure.models.converters import code_node_to_old_node, block_to_old_block_info
+from code_structure.models.registry import BlockRegistry
+from code_structure.module_resolution.core.new_resolution_strategies import (
+    ClassStrategy, MethodStrategy, FunctionStrategy, ImportStrategy,
+    extract_function_signature_from_code_node
+)
 from code_structure.module_resolution.core.module_identifier import ModuleIdentifier
-from code_structure.module_resolution.core.module_resolver import ModuleResolver
-from code_structure.imports.services.import_service import ImportService
-from code_structure.parsing.core.signature_utils import extract_function_signature
-from code_structure.parsing.core.version_comparator import VersionComparator
+from code_structure.module_resolution.models.containers import Version
 from code_structure.utils.helpers import extract_module_hint
-
 from code_structure.utils.logger import get_logger
-logger = get_logger(__name__, level=logging.WARNING)
+
+logger = get_logger(__name__, level=logging.DEBUG)
 
 
-class ModuleResolverService:
-    def __init__(self, import_service: ImportService):
-        self.import_service = import_service
+class VersionedTreeBuilder:
+    def __init__(self):
         self.module_identifier = ModuleIdentifier()
+        self.strategies = [
+            ClassStrategy(),
+            MethodStrategy(),
+            FunctionStrategy(),
+            ImportStrategy()
+        ]
         self.text_blocks_by_pair: Dict[str, Dict[int, str]] = {}
         self.full_texts_by_pair: Dict[str, str] = {}
 
-    def resolve_blocks(
+    def build_from_blocks(
         self,
-        blocks: List[MessageBlockInfo],
-        text_blocks_by_pair: Dict[str, Dict[int, str]],
-        full_texts_by_pair: Dict[str, str]
-    ) -> Tuple[Dict[str, Container], List[MessageBlockInfo]]:
-        self.text_blocks_by_pair = text_blocks_by_pair
-        self.full_texts_by_pair = full_texts_by_pair
+        blocks: List[Block],
+        text_blocks_by_pair: Dict[str, Dict[int, str]] = None,
+        full_texts_by_pair: Dict[str, str] = None
+    ) -> Tuple[Dict[str, VersionedNode], List[Block]]:
+        self.text_blocks_by_pair = text_blocks_by_pair or {}
+        self.full_texts_by_pair = full_texts_by_pair or {}
 
-        valid_blocks, error_blocks = self._separate_error_blocks(blocks)
-        logger.info(f"Блоков с ошибками: {len(error_blocks)}")
+        self._assign_from_comments(blocks)
+        self._assign_from_comments_and_imports(blocks)
+        self._apply_text_hints(blocks)
+        unknown_blocks = self._resolve_iteratively(blocks)
+        versioned_roots = self._build_versioned_from_identifier()
+        return versioned_roots, unknown_blocks
 
-        # 1. Блоки с явным module_hint из комментариев
-        self._add_blocks_with_hint(valid_blocks)
-
-        # 2. Анализ комментариев и импортов для назначения модулей (отключено)
-        # self._assign_from_comments_and_imports(valid_blocks)  # закомментировано
-
-        # 3. Собираем импорты (для идентификации импортированных объектов)
-        imported_by_module = self.import_service.get_imported_items_by_module(valid_blocks)
-        self._add_imported_identifiers(imported_by_module)
-
-        # 4. Текстовые подсказки
-        self._apply_text_hints(valid_blocks)
-
-        # 5. Итеративное разрешение модулей для блоков без подсказок
-        unknown_blocks = self._resolve_modules_iteratively(valid_blocks)
-
-        # 6. Строим итоговые контейнеры
-        containers = self._build_unified_containers()
-
-        return containers, unknown_blocks + error_blocks
-
-    def _separate_error_blocks(self, blocks):
-        valid, errors = [], []
-        for b in blocks:
-            if b.syntax_error or b.tree is None:
-                errors.append(b)
-            else:
-                valid.append(b)
-        return valid, errors
-
-    def _add_blocks_with_hint(self, blocks):
-        for b in blocks:
-            if not b.module_hint and b.content:
-                hint = extract_module_hint(b)
+    # ---------- Назначение из комментариев ----------
+    def _assign_from_comments(self, blocks: List[Block]):
+        for block in blocks:
+            if block.module_hint is None:
+                hint = extract_module_hint(block)
                 if hint:
-                    b.module_hint = hint
-                    b.assignment_strategy = "CommentHint"
-            if b.module_hint and b.tree and not b.syntax_error:
-                self.module_identifier.collect_from_tree(b.tree, b.module_hint, block_info=b)
+                    new_block = Block(
+                        chat=block.chat,
+                        message_pair=block.message_pair,
+                        language=block.language,
+                        content=block.content,
+                        block_idx=block.block_idx,
+                        global_index=block.global_index,
+                        code_tree=block.code_tree,
+                        module_hint=hint,
+                        assignment_strategy="CommentHint"
+                    )
+                    BlockRegistry().register(new_block)
+                    idx = blocks.index(block)
+                    blocks[idx] = new_block
+                    if new_block.code_tree:
+                        self._collect_from_code_node(new_block.code_tree, hint, new_block)
+                        self._add_imports_from_block(new_block)
+                    logger.debug(f"Блоку {new_block.display_name} назначен модуль {hint} по комментарию")
 
-    def _add_imported_identifiers(self, imported_by_module: Dict[str, List]):
-        for module_name, imports in imported_by_module.items():
-            for imp in imports:
-                self.module_identifier.add_imported_item(module_name, imp)
+    # ---------- Назначение из комментариев и импортов ----------
+    def _assign_from_comments_and_imports(self, blocks: List[Block]):
+        module_for_def = defaultdict(lambda: defaultdict(set))
 
-    def _apply_text_hints(self, blocks: List[MessageBlockInfo]):
+        for block in blocks:
+            if block.module_hint is None:
+                continue
+            if block.code_tree:
+                self._collect_definitions_from_block(block.code_tree, block.module_hint, module_for_def)
+
+        for mod_name, imports_dict in self.module_identifier._imported.items():
+            for imp_info in imports_dict.values():
+                target_module = imp_info.target_fullname.rsplit('.', 1)[0] if '.' in imp_info.target_fullname else imp_info.target_fullname
+                name = imp_info.target_fullname.split('.')[-1]
+                module_for_def[name][imp_info.target_type].add(target_module)
+                if name and name[0].isupper() and imp_info.target_type != 'class':
+                    module_for_def[name]['class'].add(target_module)
+
+        logger.debug(f"Собрано определений: {len(module_for_def)}")
+
+        resolved_def = {}
+        for name, types in module_for_def.items():
+            resolved_def[name] = {}
+            for def_type, modules in types.items():
+                if len(modules) == 1:
+                    resolved_def[name][def_type] = next(iter(modules))
+                    logger.debug(f"Имя {name} ({def_type}) -> модуль {resolved_def[name][def_type]}")
+                else:
+                    resolved_def[name][def_type] = None
+
+        for block in blocks:
+            if block.module_hint is not None:
+                continue
+            if not block.code_tree:
+                continue
+            if not self._block_has_classes_or_functions(block.code_tree):
+                continue
+
+            classes = self._extract_class_names(block.code_tree)
+            functions = self._extract_function_names(block.code_tree)
+            possible_modules = set()
+            for cls in classes:
+                mod = resolved_def.get(cls, {}).get('class')
+                if mod:
+                    possible_modules.add(mod)
+            for func in functions:
+                mod = resolved_def.get(func, {}).get('function')
+                if mod:
+                    possible_modules.add(mod)
+
+            logger.debug(f"Блок {block.display_name}: классы={classes}, функции={functions}, кандидаты={possible_modules}")
+
+            if len(possible_modules) == 1:
+                module = next(iter(possible_modules))
+                new_block = Block(
+                    chat=block.chat,
+                    message_pair=block.message_pair,
+                    language=block.language,
+                    content=block.content,
+                    block_idx=block.block_idx,
+                    global_index=block.global_index,
+                    code_tree=block.code_tree,
+                    module_hint=module,
+                    assignment_strategy="CommentImportHint"
+                )
+                BlockRegistry().register(new_block)
+                idx = blocks.index(block)
+                blocks[idx] = new_block
+                if new_block.code_tree:
+                    self._collect_from_code_node(new_block.code_tree, module, new_block)
+                    self._add_imports_from_block(new_block)
+                logger.info(f"Блоку {new_block.display_name} назначен модуль {module} по комментариям/импортам")
+            elif len(possible_modules) > 1:
+                logger.warning(f"Блок {block.display_name} содержит определения из разных модулей: {possible_modules}")
+
+    # ---------- Текстовые подсказки ----------
+    def _apply_text_hints(self, blocks: List[Block]):
         if not self.text_blocks_by_pair:
             return
         for block in blocks:
-            if block.module_hint:
+            if block.module_hint is not None:
                 continue
-            if not block.tree:
+            if not block.code_tree:
                 continue
-            pair_index = block.metadata.get('pair_index')
-            if pair_index is None:
+            pair_index = block.pair_index
+            if pair_index not in self.text_blocks_by_pair:
                 continue
-            text_blocks = self.text_blocks_by_pair.get(pair_index, {})
+            text_blocks = self.text_blocks_by_pair[pair_index]
             prev_text_idx = None
             for idx in text_blocks:
                 if idx < block.block_idx:
@@ -105,6 +176,7 @@ class ModuleResolverService:
             if prev_text_idx is None:
                 continue
             text = text_blocks[prev_text_idx]
+            logger.debug(f"Text hint: block {block.display_name}, prev_text_idx={prev_text_idx}, text='{text[:200]}'")
             class_match = re.search(
                 r'(?:в\s+)?класс[еауы]?\s+(?:`|\'|")?([A-Za-z_][A-Za-z0-9_]*)(?:`|\'|")?',
                 text, re.IGNORECASE
@@ -112,176 +184,298 @@ class ModuleResolverService:
             if not class_match:
                 continue
             class_name = class_match.group(1)
+            logger.debug(f"Text hint found: class {class_name}")
             module = self.module_identifier.find_module_for_class(class_name)
             if not module:
                 module = self.module_identifier.find_imported_class(class_name)
+                logger.debug(f"find_imported_class for {class_name} -> {module}")
             if module:
-                logger.info(f"Текстовая подсказка: класс {class_name} -> модуль {module} для блока {block.block_id}")
-                if block.tree:
-                    self.module_identifier.collect_from_tree(block.tree, module, class_hint=class_name, block_info=block)
-                block.module_hint = module
-                block.assignment_strategy = "TextHint"
-                if block.metadata is None:
-                    block.metadata = {}
-                block.metadata['class_hint'] = class_name
-
-    def _resolve_modules_iteratively(self, blocks: List[MessageBlockInfo]) -> List[MessageBlockInfo]:
-        for b in blocks:
-            if b.module_hint and b.tree and not b.syntax_error:
-                self.module_identifier.collect_from_tree(b.tree, b.module_hint, block_info=b)
-
-        self._apply_text_hints(blocks)
-
-        module_resolver = ModuleResolver(self.module_identifier)
-
-        group_classes_with_hint = []
-        group_imports_with_hint = []
-        group_classes_only = []
-        group_imports_only = []
-        group_neither = []
-
-        for b in blocks:
-            if not b.tree or b.syntax_error:
-                continue
-            has_classes = self._block_has_classes(b)
-            has_imports = self._block_has_imports(b.content)
-
-            if has_classes and b.module_hint:
-                group_classes_with_hint.append(b)
-            elif not has_classes and has_imports and b.module_hint:
-                group_imports_with_hint.append(b)
-            elif has_classes and not b.module_hint:
-                group_classes_only.append(b)
-            elif not has_classes and has_imports and not b.module_hint:
-                group_imports_only.append(b)
+                logger.info(f"Текстовая подсказка: класс {class_name} -> модуль {module} для блока {block.display_name}")
+                new_block = Block(
+                    chat=block.chat,
+                    message_pair=block.message_pair,
+                    language=block.language,
+                    content=block.content,
+                    block_idx=block.block_idx,
+                    global_index=block.global_index,
+                    code_tree=block.code_tree,
+                    module_hint=module,
+                    assignment_strategy="TextHint"
+                )
+                BlockRegistry().register(new_block)
+                idx = blocks.index(block)
+                blocks[idx] = new_block
+                if new_block.code_tree:
+                    self._collect_from_code_node(new_block.code_tree, module, new_block, class_hint=class_name)
+                    self._add_imports_from_block(new_block)
             else:
-                group_neither.append(b)
+                logger.debug(f"Class {class_name} not found in modules or imports")
 
-        def process_group(group):
-            unknown = group[:]
-            while True:
-                newly = []
-                still = []
-                for block in unknown:
-                    if block.module_hint:
-                        continue
-                    resolved, module, _ = module_resolver.resolve_block(block)
-                    if resolved:
-                        block.module_hint = module
-                        self.module_identifier.collect_from_tree(block.tree, module, block_info=block)
-                        newly.append(block)
+    # ---------- Итеративное разрешение ----------
+    def _resolve_iteratively(self, blocks: List[Block]) -> List[Block]:
+        unknown = [b for b in blocks if b.module_hint is None]
+        changed = True
+        iteration = 0
+        while changed and unknown:
+            changed = False
+            for block in unknown[:]:
+                if block.module_hint is not None:
+                    unknown.remove(block)
+                    continue
+                if block.code_tree is None:
+                    continue
+                module, strategy = self._resolve_block(block)
+                if module:
+                    new_block = Block(
+                        chat=block.chat,
+                        message_pair=block.message_pair,
+                        language=block.language,
+                        content=block.content,
+                        block_idx=block.block_idx,
+                        global_index=block.global_index,
+                        code_tree=block.code_tree,
+                        module_hint=module,
+                        assignment_strategy=strategy
+                    )
+                    BlockRegistry().register(new_block)
+                    unknown.remove(block)
+                    unknown.append(new_block)
+                    if new_block.code_tree:
+                        self._collect_from_code_node(new_block.code_tree, module, new_block)
+                        self._add_imports_from_block(new_block)
+                    changed = True
+                    logger.debug(f"Блок {new_block.display_name} разрешён как {module} на итерации {iteration}")
+            unknown = [b for b in unknown if b.module_hint is None]
+            iteration += 1
+            if iteration > 20:
+                break
+        return unknown
+
+    def _resolve_block(self, block: Block) -> Tuple[Optional[str], Optional[str]]:
+        if not block.code_tree:
+            return None, None
+        context = {'identifier': self.module_identifier}
+        for strategy in self.strategies:
+            module = strategy.resolve(block.code_tree, context)
+            if module:
+                return module, strategy.__class__.__name__
+        return None, None
+
+    # ---------- Добавление в ModuleIdentifier ----------
+    def _collect_from_code_node(self, code_node: CodeNode, module_name: str, block: Block, class_hint: Optional[str] = None):
+        if code_node is None:
+            return
+        logger.debug(f"Collecting node {code_node.name} (type={code_node.node_type}) from block {block.id}, module {module_name}")
+
+        if class_hint is None and isinstance(code_node, FunctionNode) and not isinstance(code_node, MethodNode):
+            has_self, _ = extract_function_signature_from_code_node(code_node)
+            if has_self:
+                possible_class_name = module_name.split('.')[-1].capitalize()
+                module_info = self.module_identifier.get_module_info(module_name)
+                if module_info and possible_class_name in module_info.classes:
+                    class_hint = possible_class_name
+                    logger.debug(f"Автоматически назначен class_hint={class_hint} для функции {code_node.name} в модуле {module_name}")
+
+        old_node = code_node_to_old_node(code_node, class_hint)
+        old_block_info = block_to_old_block_info(block)
+        self.module_identifier.collect_from_tree(old_node, module_name, class_hint=class_hint, block_info=old_block_info)
+
+        if isinstance(code_node, ImportNode):
+            version = self._create_version_from_old_node(old_node, block)
+            if version:
+                self.module_identifier.add_import_version(module_name, version)
+                logger.debug(f"Added import version for {code_node.name} in {module_name}")
+        elif isinstance(code_node, CodeBlockNode):
+            parent = code_node.parent
+            if parent is None or parent.node_type in ('module', 'package'):
+                version = self._create_version_from_old_node(old_node, block)
+                if version:
+                    self.module_identifier.add_code_block_version(module_name, version)
+                    logger.debug(f"Added top-level code block version in {module_name}")
+            elif isinstance(parent, ClassNode):
+                version = self._create_version_from_old_node(old_node, block)
+                if version:
+                    self._add_code_block_to_class(module_name, parent.name, version)
+                    logger.debug(f"Added code block version in class {parent.name} of module {module_name}")
+
+        for child in code_node.children:
+            self._collect_from_code_node(child, module_name, block, class_hint)
+
+    def _create_version_from_old_node(self, old_node, block: Block) -> Optional[Version]:
+        try:
+            return Version(
+                node=old_node,
+                block_id=block.id,
+                global_index=block.global_index,
+                block_content=block.content,
+                timestamp=block.timestamp,
+                block_idx=block.block_idx
+            )
+        except Exception as e:
+            logger.error(f"Ошибка создания версии для узла {old_node.name}: {e}")
+            return None
+
+    def _add_code_block_to_class(self, module_name: str, class_name: str, version: Version):
+        module = self.module_identifier.get_module_info(module_name)
+        if not module:
+            return
+        class_info = module.classes.get(class_name)
+        if not class_info:
+            return
+        class_info.code_block_versions.append(version)
+        logger.debug(f"Added code block version to class {class_name} in module {module_name}")
+
+    def _add_imports_from_block(self, block: Block):
+        if not block.code_tree or not block.module_hint:
+            return
+        from code_structure.imports.core.import_analyzer import extract_imports_from_block
+        imports = extract_imports_from_block(block.content, block.module_hint)
+        for imp in imports:
+            logger.debug(f"Adding import: {imp.target_fullname} ({imp.target_type}) from {block.module_hint}")
+            self.module_identifier.add_imported_item(block.module_hint, imp)
+
+    # ---------- Построение дерева VersionedNode ----------
+    def _build_versioned_from_identifier(self) -> Dict[str, VersionedNode]:
+        all_nodes = {}
+        for mod_name in self.module_identifier.get_all_module_names():
+            module_info = self.module_identifier.get_module_info(mod_name)
+            if not module_info:
+                continue
+            parts = mod_name.split('.')
+            parent = None
+            current_path_parts = []
+            for i, part in enumerate(parts):
+                current_path = '.'.join(current_path_parts + [part])
+                if current_path not in all_nodes:
+                    if i == len(parts) - 1:
+                        node = VersionedModule(part)
+                        node.is_imported = module_info.is_imported
                     else:
-                        still.append(block)
-                if not newly:
-                    break
-                unknown = still
-            return unknown
+                        node = VersionedNode(part, "package")
+                    all_nodes[current_path] = node
+                    if parent:
+                        parent.add_child(node)
+                parent = all_nodes[current_path]
+                current_path_parts.append(part)
 
-        # unknown1 = process_group(group_classes_with_hint)
-        unknown2 = process_group(group_imports_with_hint)
-        # unknown3 = process_group(group_classes_only)
-        unknown4 = process_group(group_imports_only)
-        unknown5 = process_group(group_neither)
+            module_node = all_nodes[mod_name]
+            if not isinstance(module_node, VersionedModule):
+                module_node.node_type = "module"
+                module_node.is_imported = module_info.is_imported
 
-        final_unknown = unknown2 + unknown4 + unknown5
-        logger.info(f"Неопределено: {len(final_unknown)}")
-        return final_unknown
+            logger.debug(f"Module {mod_name}: import_versions={len(module_info.import_versions)}, code_block_versions={len(module_info.code_block_versions)}")
 
-    def _block_has_classes(self, block):
-        if not block.tree:
-            return False
-        for child in block.tree.children:
-            if child.node_type == "class":
+            # 1. Импорты
+            if module_info.import_versions:
+                vimports = VersionedImport("imports")
+                for v in module_info.import_versions:
+                    version_info = self._old_version_to_version_info(v)
+                    if version_info:
+                        vimports.versions.append(version_info)
+                module_node.add_child(vimports)
+
+            # 2. Классы и методы
+            method_names = set()
+            for class_name, class_info in module_info.classes.items():
+                class_full_name = f"{mod_name}.{class_name}"
+                if class_full_name in all_nodes:
+                    vclass = all_nodes[class_full_name]
+                else:
+                    vclass = VersionedClass(class_name)
+                    all_nodes[class_full_name] = vclass
+                    module_node.add_child(vclass)
+
+                for v in class_info.code_block_versions:
+                    vblock = VersionedCodeBlock(v.node.name)
+                    version_info = self._old_version_to_version_info(v)
+                    if version_info:
+                        vblock.versions.append(version_info)
+                    vclass.add_child(vblock)
+
+                for method_name, method_info in class_info.methods.items():
+                    method_names.add(method_name)
+                    method_full_name = f"{class_full_name}.{method_name}"
+                    if method_full_name in all_nodes:
+                        vmethod = all_nodes[method_full_name]
+                    else:
+                        vmethod = VersionedMethod(method_name)
+                        all_nodes[method_full_name] = vmethod
+                        vclass.add_child(vmethod)
+                    for old_version in method_info.versions:
+                        version_info = self._old_version_to_version_info(old_version)
+                        if version_info:
+                            vmethod.versions.append(version_info)
+
+            # 3. Функции верхнего уровня
+            for func_name, func_info in module_info.functions.items():
+                if func_name in method_names:
+                    continue
+                func_full_name = f"{mod_name}.{func_name}"
+                if func_full_name in all_nodes:
+                    vfunc = all_nodes[func_full_name]
+                else:
+                    vfunc = VersionedFunction(func_name)
+                    all_nodes[func_full_name] = vfunc
+                    module_node.add_child(vfunc)
+                for old_version in func_info.versions:
+                    version_info = self._old_version_to_version_info(old_version)
+                    if version_info:
+                        vfunc.versions.append(version_info)
+
+            # 4. Блоки кода верхнего уровня
+            for v in module_info.code_block_versions:
+                vblock = VersionedCodeBlock(v.node.name)
+                version_info = self._old_version_to_version_info(v)
+                if version_info:
+                    vblock.versions.append(version_info)
+                module_node.add_child(vblock)
+
+        roots = {full_name: node for full_name, node in all_nodes.items() if node.parent is None}
+        return roots
+
+    def _old_version_to_version_info(self, old_version) -> Optional[VersionInfo]:
+        if not old_version.sources:
+            return None
+        sources = []
+        for src in old_version.sources:
+            block_id, start, end, _ = src
+            block = BlockRegistry().get(block_id)
+            timestamp = block.timestamp if block else 0.0
+            sources.append(SourceRef(block_id, start, end, timestamp))
+        return VersionInfo(normalized_code=old_version.cleaned_content, sources=sources)
+
+    # ---------- Вспомогательные методы ----------
+    def _collect_definitions_from_block(self, code_node: CodeNode, module_name: str, module_for_def: dict):
+        if isinstance(code_node, ClassNode):
+            module_for_def[code_node.name]['class'].add(module_name)
+            for child in code_node.children:
+                self._collect_definitions_from_block(child, module_name, module_for_def)
+        elif isinstance(code_node, FunctionNode) and not isinstance(code_node, MethodNode):
+            module_for_def[code_node.name]['function'].add(module_name)
+        else:
+            for child in code_node.children:
+                self._collect_definitions_from_block(child, module_name, module_for_def)
+
+    def _block_has_classes_or_functions(self, code_node: CodeNode) -> bool:
+        if isinstance(code_node, (ClassNode, FunctionNode)):
+            return True
+        for child in code_node.children:
+            if self._block_has_classes_or_functions(child):
                 return True
         return False
 
-    def _block_has_imports(self, content):
-        import_patterns = [r'^import\s+\w+', r'^from\s+\w+\s+import']
-        lines = content.split('\n')
-        for line in lines:
-            line = line.strip()
-            for pattern in import_patterns:
-                if re.match(pattern, line):
-                    return True
-        return False
+    def _extract_class_names(self, code_node: CodeNode) -> set:
+        classes = set()
+        if isinstance(code_node, ClassNode):
+            classes.add(code_node.name)
+        for child in code_node.children:
+            classes.update(self._extract_class_names(child))
+        return classes
 
-    def _build_unified_containers(self) -> Dict[str, Container]:
-        root_containers = {}
-        for module_name, module_info in self.module_identifier._modules.items():
-            parts = module_name.split('.')
-            current = root_containers
-            parent = None
-            parent_path = ""
-            for i, part in enumerate(parts):
-                is_last = (i == len(parts) - 1)
-                if part not in current:
-                    if is_last:
-                        container = ModuleContainer(part)
-                        container.is_imported = module_info.is_imported
-                    else:
-                        container = PackageContainer(part)
-                    current[part] = container
-                    if parent_path:
-                        container.full_path = f"{parent_path}.{part}"
-                    else:
-                        container.full_path = part
-                else:
-                    container = current[part]
-
-                if parent is not None:
-                    if container not in parent.children:
-                        parent.add_child(container)
-
-                parent = container
-                parent_path = container.full_path
-                if hasattr(container, 'children_dict'):
-                    current = container.children_dict
-                else:
-                    container.children_dict = {c.name: c for c in container.children}
-                    current = container.children_dict
-
-                if is_last:
-                    self._populate_container_with_module_info(container, module_info)
-
-        return root_containers
-
-    def _populate_container_with_module_info(self, module_container: ModuleContainer, module_info: ModuleInfo):
-        method_names = set()
-        for class_name, class_info in module_info.classes.items():
-            class_container = module_container.find_child_container(class_name, "class")
-            if not class_container:
-                class_container = ClassContainer(class_name)
-                module_container.add_child(class_container)
-                class_container.full_path = f"{module_container.full_path}.{class_name}"
-            for v in class_info.versions:
-                class_container.add_version(v)
-            for method_name, method_info in class_info.methods.items():
-                method_names.add(method_name)
-                method_container = class_container.find_child_container(method_name, "method")
-                if not method_container:
-                    method_container = MethodContainer(method_name)
-                    class_container.add_child(method_container)
-                    method_container.full_path = f"{class_container.full_path}.{method_name}"
-                for v in method_info.versions:
-                    method_container.add_version(v)
-
-        for func_name, func_info in module_info.functions.items():
-            if func_name in method_names:
-                for class_name, class_info in module_info.classes.items():
-                    if func_name in class_info.methods:
-                        class_container = module_container.find_child_container(class_name, "class")
-                        if class_container:
-                            method_container = class_container.find_child_container(func_name, "method")
-                            if method_container:
-                                for v in func_info.versions:
-                                    existing = VersionComparator.find_existing(method_container.versions, v)
-                                    if not existing:
-                                        method_container.add_version(v)
-            else:
-                func_container = module_container.find_child_container(func_name, "function")
-                if not func_container:
-                    func_container = FunctionContainer(func_name)
-                    module_container.add_child(func_container)
-                    func_container.full_path = f"{module_container.full_path}.{func_name}"
-                for v in func_info.versions:
-                    func_container.add_version(v)
+    def _extract_function_names(self, code_node: CodeNode) -> set:
+        functions = set()
+        if isinstance(code_node, FunctionNode) and not isinstance(code_node, MethodNode):
+            functions.add(code_node.name)
+        for child in code_node.children:
+            functions.update(self._extract_function_names(child))
+        return functions

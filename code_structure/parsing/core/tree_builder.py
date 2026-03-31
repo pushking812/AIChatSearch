@@ -1,144 +1,245 @@
 # code_structure/parsing/core/tree_builder.py
 
-import logging
-from typing import Dict, Any, Optional, List, Tuple
+import re
+from typing import List, Dict, Any, Optional, Tuple
 
-from code_structure.module_resolution.models.containers import Container, Version
-
+from code_structure.models.versioned_node import (
+    VersionedNode, VersionedModule, VersionedClass, VersionedFunction,
+    VersionedMethod, VersionedCodeBlock, VersionedImport
+)
+from code_structure.models.registry import BlockRegistry
+from code_structure.models.code_node import (
+    CodeNode, ModuleNode, ClassNode, FunctionNode, MethodNode,
+    CodeBlockNode, ImportNode, CommentNode
+)
+from code_structure.dialogs.dto import TreeDisplayNode, FlatListItem
 from code_structure.utils.logger import get_logger
-logger = get_logger(__name__, level = logging.WARNING)
+
+logger = get_logger(__name__)
 
 
-class TreeBuilder:
-    def build_display_tree(self, module_containers: Dict[str, Container], local_only: bool = False) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
-        """
-        Строит дерево для отображения и плоский список узлов с версиями.
+class TreeBuilderNew:
+    @staticmethod
+    def build_display_tree(
+        versioned_roots: Dict[str, VersionedNode],
+        local_only: bool
+    ) -> Tuple[TreeDisplayNode, List[FlatListItem], Dict[str, VersionedNode], Dict[Tuple[str, int, int], VersionedNode]]:
+        if not versioned_roots:
+            return TreeBuilderNew._empty_tree(), [], {}, {}
 
-        Returns:
-            tuple: (root_node, flat_items)
-        """
-        if not module_containers:
-            return self._empty_tree(), []
-
-        max_version = 0
-        children = []
         flat_items = []
+        children = []
+        path_map = {}
+        source_map = {}
 
-        for name, container in module_containers.items():
-            # Фильтрация по локальности
-            if local_only and not self._is_container_local(container):
+        for name, vnode in versioned_roots.items():
+            if local_only and not TreeBuilderNew._is_local(vnode):
                 continue
-            node = self._container_to_node(container, local_only, flat_items)
+            node, path_map, source_map = TreeBuilderNew._versioned_to_node(vnode, local_only, flat_items, path_map, source_map)
             if node:
                 children.append(node)
-                if 'max_version' in node:
-                    max_version = max(max_version, node['max_version'])
 
-        root = {
-            'text': 'Все модули',
-            'type': 'root',
-            'signature': '',
-            'version': f"v{max_version}" if max_version > 0 else '',
-            'sources': '',
-            'children': children
-        }
-        return root, flat_items
+        max_version = max((node.version for node in children if node.version), default='')
+        root = TreeDisplayNode(
+            text="Все модули",
+            type="root",
+            signature="",
+            version=f"v{max_version}" if max_version else "",
+            sources="",
+            children=children
+        )
+        return root, flat_items, path_map, source_map
 
-    def _empty_tree(self):
-        return {
-            'text': 'Все модули',
-            'type': 'root',
-            'signature': '',
-            'version': '',
-            'sources': '',
-            'children': []
-        }
+    @staticmethod
+    def _empty_tree() -> TreeDisplayNode:
+        return TreeDisplayNode(
+            text="Все модули",
+            type="root",
+            signature="",
+            version="",
+            sources="",
+            children=[]
+        )
 
-    def _is_container_local(self, container: Container) -> bool:
-        """Проверяет, является ли контейнер локальным (не импортированным)."""
-        if container.node_type == 'module':
-            return not getattr(container, 'is_imported', False)
-        # Для пакета: проверяем детей
-        for child in container.children:
-            if self._is_container_local(child):
-                return True
-        return False
+    @staticmethod
+    def _is_local(vnode: VersionedNode) -> bool:
+        if isinstance(vnode, VersionedModule):
+            return not getattr(vnode, 'is_imported', False)
+        if vnode.parent:
+            return TreeBuilderNew._is_local(vnode.parent)
+        return True
 
-    def _container_to_node(self, container: Container, local_only: bool, flat_items: List[Dict[str, Any]], parent_path: str = "") -> Optional[Dict[str, Any]]:
-        try:
-            node = {
-                'text': container.name,
-                'type': container.node_type,
-                'signature': '',
-                'version': '',
-                'sources': '',
-                'children': [],
-                'max_version': 0,
-                '_container': container
-            }
+    @staticmethod
+    def _versioned_to_node(
+        vnode: VersionedNode,
+        local_only: bool,
+        flat_items: List[FlatListItem],
+        path_map: Dict[str, VersionedNode],
+        source_map: Dict[Tuple[str, int, int], VersionedNode],
+        parent_path: str = ""
+    ) -> Tuple[Optional[TreeDisplayNode], Dict[str, VersionedNode], Dict[Tuple[str, int, int], VersionedNode]]:
+        logger.debug(f"Rendering node {vnode.name} type={vnode.node_type}")
+        path_map[vnode.full_path] = vnode
 
-            # Узлы, которые могут иметь версии
-            if container.node_type in ('function', 'method', 'code_block', 'import'):
-                max_version = len(container.versions)
-                node['version'] = f"v{max_version}" if max_version > 0 else ''
-                node['max_version'] = max_version
-                # Добавляем версии как детей
-                for i, version in enumerate(container.versions):
-                    version_node = self._version_to_node(version, i + 1)
-                    node['children'].append(version_node)
-                # Добавляем информацию в плоский список, если есть версии
-                if max_version > 0:
-                    self._add_flat_item(container, node, flat_items, parent_path)
+        # Сохраняем все источники в source_map
+        for version in vnode.versions:
+            for src in version.sources:
+                key = (src.block_id, src.start_line, src.end_line)
+                if key not in source_map:
+                    source_map[key] = vnode
 
-            # Рекурсивная обработка детей для составных узлов
-            if container.node_type in ('module', 'class', 'package'):
-                current_path = f"{parent_path}.{container.name}" if parent_path else container.name
-                for child in container.children:
-                    child_node = self._container_to_node(child, local_only, flat_items, current_path)
-                    if child_node:
-                        node['children'].append(child_node)
+        node = TreeDisplayNode(
+            text=vnode.name,
+            type=vnode.node_type,
+            signature="",
+            version=f"v{len(vnode.versions)}" if vnode.versions else "",
+            sources="",
+            children=[],
+            full_name=vnode.full_path
+        )
 
-            return node
+        if vnode.node_type in ('function', 'method', 'code_block', 'import'):
+            for i, version in enumerate(vnode.versions, 1):
+                version_node = TreeBuilderNew._version_to_node(version, i, vnode)
+                node.children.append(version_node)
 
-        except Exception as e:
-            logger.error(f"Ошибка преобразования контейнера {container.name}: {e}")
-            return None
+            if vnode.versions:
+                latest = vnode.versions[-1]
+                src = latest.sources[-1]
+                block = BlockRegistry().get(src.block_id)
+                if block:
+                    block_name = block.display_name
+                else:
+                    block_name = src.block_id
 
-    def _add_flat_item(self, container: Container, node_data: Dict[str, Any], flat_items: List[Dict[str, Any]], parent_path: str):
-        """Добавляет информацию об узле в плоский список."""
-        latest = container.get_latest_version()
-        if latest and latest.sources:
-            block_id, start, end, _ = latest.sources[0]
-            item = {
-                'block_id': block_id,
-                'block_name': block_id,
-                'node_path': node_data['text'],
-                'node_type': container.node_type,
-                'parent_path': parent_path,
-                'lines': f"{start}-{end}",
-                'module': None,
-                'class': '-',
-                'strategy': None
-            }
-            flat_items.append(item)
-            logger.debug(f"[TreeBuilder] flat_item добавлен: {item}")
+                class_name = '-'
+                if vnode.node_type == 'method':
+                    if vnode.parent and vnode.parent.node_type == 'class':
+                        class_name = vnode.parent.name
 
-    def _version_to_node(self, version: Version, index: int) -> Dict[str, Any]:
-        last_source = version.get_last_source()
-        if last_source:
-            block_id, start, end, _ = last_source
-            sources = f"{block_id}:{start}-{end}"
-            sources_count = len(version.sources)
-            if sources_count > 1:
-                sources += f" ({sources_count})"
+                item = FlatListItem(
+                    block_id=src.block_id,
+                    block_name=block_name,
+                    node_path=vnode.local_path if hasattr(vnode, 'local_path') else vnode.name,
+                    parent_path=parent_path,
+                    lines=f"{src.start_line}-{src.end_line}",
+                    module=vnode.full_path.rsplit('.', 1)[0] if '.' in vnode.full_path else '',
+                    class_name=class_name,
+                    strategy=''
+                )
+                flat_items.append(item)
+
+        if vnode.node_type in ('module', 'class', 'package'):
+            current_path = f"{parent_path}.{vnode.name}" if parent_path else vnode.name
+            for child in vnode.children:
+                child_node, path_map, source_map = TreeBuilderNew._versioned_to_node(
+                    child, local_only, flat_items, path_map, source_map, current_path
+                )
+                if child_node:
+                    node.children.append(child_node)
+
+        return node, path_map, source_map
+
+    @staticmethod
+    def _version_to_node(version_info, index: int, parent_vnode: VersionedNode) -> TreeDisplayNode:
+        src = version_info.sources[-1]
+        block_id = src.block_id
+        start = src.start_line
+        end = src.end_line
+        sources = f"{block_id}:{start}-{end}"
+        if len(version_info.sources) > 1:
+            sources += f" ({len(version_info.sources)})"
+        return TreeDisplayNode(
+            text=parent_vnode.name,
+            type="version",
+            signature="",
+            version=f"v{index}",
+            sources=sources,
+            children=[],
+            full_name=f"{parent_vnode.full_path}_v{index}",
+            block_id=block_id,
+            start_line=start,
+            end_line=end
+        )
+
+    @staticmethod
+    def build_flat_list_from_blocks(
+        blocks: List['Block'],
+        source_map: Dict[Tuple[str, int, int], 'VersionedNode']
+    ) -> List[FlatListItem]:
+        flat_items = []
+        for block in blocks:
+            if not block.code_tree:
+                continue
+            TreeBuilderNew._collect_flat_items_from_node(
+                block.code_tree, block, source_map, flat_items, ""
+            )
+        return flat_items
+
+    @staticmethod
+    def _collect_flat_items_from_node(
+        node: CodeNode,
+        block: 'Block',
+        source_map: Dict[Tuple[str, int, int], 'VersionedNode'],
+        flat_items: List[FlatListItem],
+        parent_path: str
+    ):
+        if isinstance(node, ModuleNode) and (not node.name or node.name == ""):
+            for child in node.children:
+                TreeBuilderNew._collect_flat_items_from_node(child, block, source_map, flat_items, parent_path)
+            return
+
+        # Определяем строку для колонки "Узел"
+        if isinstance(node, ImportNode):
+            node_path = node.statement
+        elif isinstance(node, CommentNode):
+            node_path = node.text
+        elif isinstance(node, CodeBlockNode):
+            node_path = "блок кода"
+        elif isinstance(node, (FunctionNode, MethodNode, ClassNode)):
+            node_path = node.name
         else:
-            sources = ''
-        return {
-            'text': version.node.name,
-            'type': 'version',
-            'signature': version.node.signature,
-            'version': f"v{index}",
-            'sources': sources,
-            'children': [],
-            '_version_data': version
-        }
+            node_path = node.name or "?"
+
+        source_parent = ""
+        if isinstance(node, MethodNode) and node.parent and isinstance(node.parent, ClassNode):
+            source_parent = node.parent.name
+
+        key = (block.id, node.start_line, node.end_line)
+        vnode = source_map.get(key)
+
+        module = ""
+        class_name = "-"
+        strategy = ""
+
+        if vnode:
+            if vnode.node_type in ('function', 'method', 'code_block', 'import'):
+                module = vnode.full_path.rsplit('.', 1)[0] if '.' in vnode.full_path else ''
+            else:
+                module = vnode.full_path
+            if vnode.node_type == 'method' and vnode.parent and vnode.parent.node_type == 'class':
+                class_name = vnode.parent.name
+            strategy = block.assignment_strategy or ""
+        else:
+            if block.module_hint:
+                module = block.module_hint
+                strategy = block.assignment_strategy or ""
+                class_name = '-'
+            else:
+                strategy = "Неназначенный блок"
+
+        flat_item = FlatListItem(
+            block_id=block.id,
+            block_name=block.display_name,
+            node_path=node_path,
+            parent_path=source_parent,
+            lines=f"{node.start_line}-{node.end_line}",
+            module=module,
+            class_name=class_name,
+            strategy=strategy
+        )
+        flat_items.append(flat_item)
+
+        current_path = f"{parent_path}.{node.name}" if parent_path else node.name
+        for child in node.children:
+            TreeBuilderNew._collect_flat_items_from_node(child, block, source_map, flat_items, current_path)
