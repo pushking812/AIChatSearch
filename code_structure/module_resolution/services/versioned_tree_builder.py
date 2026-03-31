@@ -1,6 +1,7 @@
 # code_structure/module_resolution/services/versioned_tree_builder.py
 
 import re
+import logging
 from typing import List, Dict, Optional, Tuple
 from collections import defaultdict
 
@@ -15,13 +16,14 @@ from code_structure.models.versioned_node import (
 from code_structure.models.converters import code_node_to_old_node, block_to_old_block_info
 from code_structure.models.registry import BlockRegistry
 from code_structure.module_resolution.core.new_resolution_strategies import (
-    ClassStrategy, MethodStrategy, FunctionStrategy, ImportStrategy
+    ClassStrategy, MethodStrategy, FunctionStrategy, ImportStrategy,
+    extract_function_signature_from_code_node
 )
 from code_structure.module_resolution.core.module_identifier import ModuleIdentifier
 from code_structure.utils.helpers import extract_module_hint
 from code_structure.utils.logger import get_logger
 
-logger = get_logger(__name__)
+logger = get_logger(__name__, level=logging.DEBUG)
 
 
 class VersionedTreeBuilder:
@@ -45,18 +47,11 @@ class VersionedTreeBuilder:
         self.text_blocks_by_pair = text_blocks_by_pair or {}
         self.full_texts_by_pair = full_texts_by_pair or {}
 
-        # 1. Назначение из комментариев
         self._assign_from_comments(blocks)
-
-        # 2. Текстовые подсказки
+        self._assign_from_comments_and_imports(blocks)
         self._apply_text_hints(blocks)
-
-        # 3. Итеративное разрешение
         unknown_blocks = self._resolve_iteratively(blocks)
-
-        # 4. Построение дерева из разрешённых модулей
         versioned_roots = self._build_versioned_from_identifier()
-
         return versioned_roots, unknown_blocks
 
     # ---------- Назначение из комментариев ----------
@@ -84,6 +79,86 @@ class VersionedTreeBuilder:
                         self._add_imports_from_block(new_block)
                     logger.debug(f"Блоку {new_block.display_name} назначен модуль {hint} по комментарию")
 
+    # ---------- Назначение из комментариев и импортов ----------
+    def _assign_from_comments_and_imports(self, blocks: List[Block]):
+        module_for_def = defaultdict(lambda: defaultdict(set))
+
+        # 1. Сбор из блоков с назначенным модулем
+        for block in blocks:
+            if block.module_hint is None:
+                continue
+            if block.code_tree:
+                self._collect_definitions_from_block(block.code_tree, block.module_hint, module_for_def)
+
+        # 2. Сбор из импортов
+        for mod_name, imports_dict in self.module_identifier._imported.items():
+            for imp_info in imports_dict.values():
+                target_module = imp_info.target_fullname.rsplit('.', 1)[0] if '.' in imp_info.target_fullname else imp_info.target_fullname
+                name = imp_info.target_fullname.split('.')[-1]
+                module_for_def[name][imp_info.target_type].add(target_module)
+                # Если имя начинается с заглавной, добавим его также как 'class'
+                if name and name[0].isupper() and imp_info.target_type != 'class':
+                    module_for_def[name]['class'].add(target_module)
+
+        logger.debug(f"Собрано определений: {len(module_for_def)}")
+
+        # 3. Определение модуля для каждого имени
+        resolved_def = {}
+        for name, types in module_for_def.items():
+            resolved_def[name] = {}
+            for def_type, modules in types.items():
+                if len(modules) == 1:
+                    resolved_def[name][def_type] = next(iter(modules))
+                    logger.debug(f"Имя {name} ({def_type}) -> модуль {resolved_def[name][def_type]}")
+                else:
+                    resolved_def[name][def_type] = None
+
+        # 4. Назначение модулей блокам
+        for block in blocks:
+            if block.module_hint is not None:
+                continue
+            if not block.code_tree:
+                continue
+            if not self._block_has_classes_or_functions(block.code_tree):
+                continue
+
+            classes = self._extract_class_names(block.code_tree)
+            functions = self._extract_function_names(block.code_tree)
+            possible_modules = set()
+            for cls in classes:
+                mod = resolved_def.get(cls, {}).get('class')
+                if mod:
+                    possible_modules.add(mod)
+            for func in functions:
+                mod = resolved_def.get(func, {}).get('function')
+                if mod:
+                    possible_modules.add(mod)
+
+            logger.debug(f"Блок {block.display_name}: классы={classes}, функции={functions}, кандидаты={possible_modules}")
+
+            if len(possible_modules) == 1:
+                module = next(iter(possible_modules))
+                new_block = Block(
+                    chat=block.chat,
+                    message_pair=block.message_pair,
+                    language=block.language,
+                    content=block.content,
+                    block_idx=block.block_idx,
+                    global_index=block.global_index,
+                    code_tree=block.code_tree,
+                    module_hint=module,
+                    assignment_strategy="CommentImportHint"
+                )
+                BlockRegistry().register(new_block)
+                idx = blocks.index(block)
+                blocks[idx] = new_block
+                if new_block.code_tree:
+                    self._collect_from_code_node(new_block.code_tree, module, new_block)
+                    self._add_imports_from_block(new_block)
+                logger.info(f"Блоку {new_block.display_name} назначен модуль {module} по комментариям/импортам")
+            elif len(possible_modules) > 1:
+                logger.warning(f"Блок {block.display_name} содержит определения из разных модулей: {possible_modules}")
+
     # ---------- Текстовые подсказки ----------
     def _apply_text_hints(self, blocks: List[Block]):
         if not self.text_blocks_by_pair:
@@ -105,6 +180,7 @@ class VersionedTreeBuilder:
             if prev_text_idx is None:
                 continue
             text = text_blocks[prev_text_idx]
+            logger.debug(f"Text hint: block {block.display_name}, prev_text_idx={prev_text_idx}, text='{text[:200]}'")
             class_match = re.search(
                 r'(?:в\s+)?класс[еауы]?\s+(?:`|\'|")?([A-Za-z_][A-Za-z0-9_]*)(?:`|\'|")?',
                 text, re.IGNORECASE
@@ -112,11 +188,13 @@ class VersionedTreeBuilder:
             if not class_match:
                 continue
             class_name = class_match.group(1)
+            logger.debug(f"Text hint found: class {class_name}")
             module = self.module_identifier.find_module_for_class(class_name)
             if not module:
                 module = self.module_identifier.find_imported_class(class_name)
+                logger.debug(f"find_imported_class for {class_name} -> {module}")
             if module:
-                logger.debug(f"Текстовая подсказка: класс {class_name} -> модуль {module} для блока {block.display_name}")
+                logger.info(f"Текстовая подсказка: класс {class_name} -> модуль {module} для блока {block.display_name}")
                 new_block = Block(
                     chat=block.chat,
                     message_pair=block.message_pair,
@@ -134,6 +212,8 @@ class VersionedTreeBuilder:
                 if new_block.code_tree:
                     self._collect_from_code_node(new_block.code_tree, module, new_block, class_hint=class_name)
                     self._add_imports_from_block(new_block)
+            else:
+                logger.debug(f"Class {class_name} not found in modules or imports")
 
     # ---------- Итеративное разрешение ----------
     def _resolve_iteratively(self, blocks: List[Block]) -> List[Block]:
@@ -189,6 +269,14 @@ class VersionedTreeBuilder:
     def _collect_from_code_node(self, code_node: CodeNode, module_name: str, block: Block, class_hint: Optional[str] = None):
         if code_node is None:
             return
+        if class_hint is None and isinstance(code_node, FunctionNode) and not isinstance(code_node, MethodNode):
+            has_self, _ = extract_function_signature_from_code_node(code_node)
+            if has_self:
+                possible_class_name = module_name.split('.')[-1].capitalize()
+                module_info = self.module_identifier.get_module_info(module_name)
+                if module_info and possible_class_name in module_info.classes:
+                    class_hint = possible_class_name
+                    logger.debug(f"Автоматически назначен class_hint={class_hint} для функции {code_node.name} в модуле {module_name}")
         old_node = code_node_to_old_node(code_node, class_hint)
         old_block_info = block_to_old_block_info(block)
         self.module_identifier.collect_from_tree(old_node, module_name, class_hint=class_hint, block_info=old_block_info)
@@ -198,8 +286,8 @@ class VersionedTreeBuilder:
             return
         from code_structure.imports.core.import_analyzer import extract_imports_from_block
         imports = extract_imports_from_block(block.content, block.module_hint)
-        logger.debug(f"Block {block.display_name}: found {len(imports)} imports: {[imp.target_fullname for imp in imports]}")
         for imp in imports:
+            logger.debug(f"Adding import: {imp.target_fullname} ({imp.target_type}) from {block.module_hint}")
             self.module_identifier.add_imported_item(block.module_hint, imp)
 
     # ---------- Построение дерева VersionedNode ----------
@@ -285,3 +373,39 @@ class VersionedTreeBuilder:
             timestamp = block.timestamp if block else 0.0
             sources.append(SourceRef(block_id, start, end, timestamp))
         return VersionInfo(normalized_code=old_version.cleaned_content, sources=sources)
+
+    # ---------- Вспомогательные методы ----------
+    def _collect_definitions_from_block(self, code_node: CodeNode, module_name: str, module_for_def: dict):
+        if isinstance(code_node, ClassNode):
+            module_for_def[code_node.name]['class'].add(module_name)
+            for child in code_node.children:
+                self._collect_definitions_from_block(child, module_name, module_for_def)
+        elif isinstance(code_node, FunctionNode) and not isinstance(code_node, MethodNode):
+            module_for_def[code_node.name]['function'].add(module_name)
+        else:
+            for child in code_node.children:
+                self._collect_definitions_from_block(child, module_name, module_for_def)
+
+    def _block_has_classes_or_functions(self, code_node: CodeNode) -> bool:
+        if isinstance(code_node, (ClassNode, FunctionNode)):
+            return True
+        for child in code_node.children:
+            if self._block_has_classes_or_functions(child):
+                return True
+        return False
+
+    def _extract_class_names(self, code_node: CodeNode) -> set:
+        classes = set()
+        if isinstance(code_node, ClassNode):
+            classes.add(code_node.name)
+        for child in code_node.children:
+            classes.update(self._extract_class_names(child))
+        return classes
+
+    def _extract_function_names(self, code_node: CodeNode) -> set:
+        functions = set()
+        if isinstance(code_node, FunctionNode) and not isinstance(code_node, MethodNode):
+            functions.add(code_node.name)
+        for child in code_node.children:
+            functions.update(self._extract_function_names(child))
+        return functions

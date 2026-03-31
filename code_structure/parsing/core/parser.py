@@ -113,6 +113,7 @@ class PythonParser(CodeParser):
         while i < n:
             node = body[i]
             if isinstance(node, ast.ClassDef):
+                logger.debug(f"Found class definition: {node.name} at lines {node.lineno}-{node.end_lineno}")
                 bases = ", ".join(self._format_base(b) for b in node.bases)
                 class_node = NewClassNode(
                     name=node.name,
@@ -122,6 +123,7 @@ class PythonParser(CodeParser):
                     end_line=node.end_lineno,
                     parent=parent_node
                 )
+                logger.debug(f"Created NewClassNode for {node.name}")
                 self._process_body_new(node.body, class_node, block, is_method_body=False)
                 parent_node.add_child(class_node)
                 i += 1
@@ -137,6 +139,7 @@ class PythonParser(CodeParser):
                         end_line=node.end_lineno,
                         parent=parent_node
                     )
+                    logger.debug(f"Created NewMethodNode {node.name} for class {parent_node.name}")
                 else:
                     func_node = NewFunctionNode(
                         name=node.name,
@@ -146,6 +149,7 @@ class PythonParser(CodeParser):
                         end_line=node.end_lineno,
                         parent=parent_node
                     )
+                    logger.debug(f"Created NewFunctionNode {node.name}")
                 self._process_body_new(node.body, func_node, block, is_method_body=True)
                 parent_node.add_child(func_node)
                 i += 1
