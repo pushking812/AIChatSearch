@@ -11,19 +11,13 @@ from code_structure.facades import (
 
 class CodeStructureController:
     def __init__(self, parent, items: List[Tuple[Chat, MessagePair]]):
-        # Создаём провайдеры
         data_provider = StructureDataProvider(items)
-        module_manager = ModuleAssignmentManager(
-            data_provider.block_service,
-            None  # module_service больше не нужен
-        )
+        module_manager = ModuleAssignmentManager(data_provider.block_service)
         persistence_manager = PersistenceManager(
             data_provider.block_service,
-            data_provider.module_service,  # всё ещё может использоваться в старом коде, но это заглушка
             data_provider.import_service
         )
 
-        # Создаём View и Presenter
         self.view = CodeStructureView(parent)
         self.presenter = CodeStructurePresenter(
             self.view,

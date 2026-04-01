@@ -115,16 +115,16 @@ class CodeStructurePresenter:
             self.view.display_merged_tree(refresh_data.tree)
             self.view.set_flat_list(refresh_data.flat_items)
 
-    # ---------- Сохранение / загрузка ----------
     def on_save_structure(self):
-        self.persistence_manager.save_structure(parent=self.view)
+        """Сохранение структуры модулей."""
+        roots = self.data_provider.get_versioned_roots()
+        self.persistence_manager.save_structure(roots, self.view)
 
     def on_load_structure(self):
-        self.persistence_manager.load_structure(parent=self.view)
-        # После загрузки обновить отображение
-        refresh_data = self.data_provider.refresh(self.view.get_local_only())
-        self.view.display_merged_tree(refresh_data.tree)
-        self.view.set_flat_list(refresh_data.flat_items)
+        roots, _ = self.persistence_manager.load_structure(self.view)
+        if roots is not None:
+            self.data_provider.set_versioned_roots(roots)
+            self._refresh_display()
 
     # ---------- Создание проекта (заглушка) ----------
     def on_create_project(self):

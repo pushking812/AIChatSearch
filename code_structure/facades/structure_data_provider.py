@@ -114,10 +114,19 @@ class StructureDataProvider:
     def rebuild_structure(self): pass
     def has_unknown_blocks(self): return False
     
-    
     def get_code_for_block(self, block_id: str) -> Optional[str]:
         """Возвращает код для блока по его ID."""
         block = self.block_service.get_new_block(block_id)
         if block:
             return block.content
         return None
+        
+    def get_versioned_roots(self) -> Dict[str, VersionedNode]:
+        return self._versioned_roots
+
+    def set_versioned_roots(self, roots: Dict[str, VersionedNode]):
+        self._versioned_roots = roots
+        from code_structure.parsing.core.tree_builder_new import TreeBuilderNew
+        _, _, path_map, source_map = TreeBuilderNew.build_display_tree(self._versioned_roots, self._current_local_only)
+        self._versioned_nodes_by_full_name = path_map
+        self._versioned_nodes_by_source = source_map

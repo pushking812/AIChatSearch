@@ -9,7 +9,7 @@ from code_structure.module_resolution.services.versioned_tree_builder import Ver
 
 
 class ModuleAssignmentManager:
-    def __init__(self, block_service, module_service=None):
+    def __init__(self, block_service):
         """
         Args:
             block_service: BlockService (для доступа к блокам)
