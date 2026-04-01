@@ -5,9 +5,10 @@
 import pickle
 import os
 from tkinter import messagebox
-from code_structure.utils.logger import get_logger
 
-logger = get_logger(__name__)
+import logging
+from code_structure.utils.logger import get_logger
+logger = get_logger(__name__, level=logging.WARNING)
 
 
 class PersistenceManager:

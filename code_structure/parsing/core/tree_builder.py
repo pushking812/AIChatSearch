@@ -15,7 +15,8 @@ from code_structure.models.code_node import (
 from code_structure.dialogs.dto import TreeDisplayNode, FlatListItem
 from code_structure.utils.logger import get_logger
 
-logger = get_logger(__name__)
+import logging
+logger = get_logger(__name__, level=logging.WARNING)
 
 
 class TreeBuilderNew:

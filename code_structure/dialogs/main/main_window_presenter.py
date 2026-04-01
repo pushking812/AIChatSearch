@@ -9,9 +9,9 @@ from code_structure.dialogs.dto import (
     CodeStructureInitDTO, TreeDisplayNode
 )
 
+import logging
 from code_structure.utils.logger import get_logger
-
-logger = get_logger(__name__)
+logger = get_logger(__name__, level=logging.WARNING)
 
 
 class CodeStructurePresenter:

@@ -12,6 +12,7 @@ from code_structure.models.registry import BlockRegistry
 from code_structure.parsing.core.parser import PythonParser
 
 from code_structure.utils.logger import get_logger
+
 logger = get_logger(__name__, level=logging.WARNING)
 
 

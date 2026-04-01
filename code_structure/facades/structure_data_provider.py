@@ -12,9 +12,10 @@ from code_structure.dialogs.dto import (
 from code_structure.parsing.core.tree_builder import TreeBuilderNew
 from code_structure.module_resolution.services.versioned_tree_builder import VersionedTreeBuilder
 from code_structure.models.versioned_node import VersionedNode
-from code_structure.utils.logger import get_logger
 
-logger = get_logger(__name__)
+import logging
+from code_structure.utils.logger import get_logger
+logger = get_logger(__name__, level=logging.WARNING)
 
 
 class StructureDataProvider:

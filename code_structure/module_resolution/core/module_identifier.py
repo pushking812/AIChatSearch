@@ -1,3 +1,5 @@
+# code_structure/module_resolution/core/module_identifier.py
+
 import logging
 import re
 from typing import Dict, List, Optional, Set, Tuple

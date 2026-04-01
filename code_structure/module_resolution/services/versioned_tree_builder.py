@@ -3,7 +3,6 @@
 import re
 import logging
 from typing import List, Dict, Optional, Tuple
-from collections import defaultdict
 
 from code_structure.models.block import Block
 from code_structure.models.code_node import (
@@ -14,12 +13,10 @@ from code_structure.models.versioned_node import (
     VersionedMethod, VersionedCodeBlock, VersionedImport, SourceRef, VersionInfo
 )
 from code_structure.models.registry import BlockRegistry
-from code_structure.module_resolution.core.new_resolution_strategies import (
-    ClassStrategy, MethodStrategy, FunctionStrategy, ImportStrategy,
-    extract_function_signature_from_code_node
-)
 from code_structure.module_resolution.core.module_identifier import ModuleIdentifier
 from code_structure.module_resolution.core.identifier_tree import IdentifierTree
+from code_structure.imports.models.import_models import ImportInfo
+from code_structure.parsing.core.signature_utils import extract_function_signature as extract_function_signature_from_code_node
 from code_structure.utils.helpers import extract_module_hint
 from code_structure.utils.logger import get_logger
 
@@ -29,15 +26,10 @@ logger = get_logger(__name__, level=logging.DEBUG)
 class VersionedTreeBuilder:
     def __init__(self):
         self.module_identifier = ModuleIdentifier()
-        self.strategies = [
-            ClassStrategy(),
-            MethodStrategy(),
-            FunctionStrategy(),
-            ImportStrategy()
-        ]
         self.text_blocks_by_pair: Dict[str, Dict[int, str]] = {}
         self.full_texts_by_pair: Dict[str, str] = {}
-        self.identifier_tree = IdentifierTree()   # <-- Итерация 1
+        self.identifier_tree = IdentifierTree()
+        self._block_imports: Dict[str, List[ImportInfo]] = {}
 
     def build_from_blocks(
         self,
@@ -49,12 +41,10 @@ class VersionedTreeBuilder:
         self.full_texts_by_pair = full_texts_by_pair or {}
 
         self._assign_from_comments(blocks)
-        self._assign_from_comments_and_imports(blocks)
         self._preprocess_classes(blocks)
         self._apply_text_hints(blocks)
-        unknown_blocks = self._resolve_iteratively(blocks)
+        unknown_blocks = self._resolve_with_tree(blocks)
 
-        # Итерация 2: сбор абсолютных импортов в дерево
         self._collect_absolute_imports_to_tree()
 
         versioned_roots = self._build_versioned_from_identifier()
@@ -83,84 +73,7 @@ class VersionedTreeBuilder:
                     if new_block.code_tree:
                         self._collect_from_code_node(new_block.code_tree, hint, new_block)
                         self._add_imports_from_block(new_block)
-                        # Итерация 3: добавление определений в дерево
                         self._add_definitions_from_block(new_block)
-
-    # ---------- Назначение из комментариев и импортов ----------
-    def _assign_from_comments_and_imports(self, blocks: List[Block]):
-        module_for_def = defaultdict(lambda: defaultdict(set))
-
-        # 1. Сбор из блоков с назначенным модулем
-        for block in blocks:
-            if block.module_hint is None:
-                continue
-            if block.code_tree:
-                self._collect_definitions_from_block(block.code_tree, block.module_hint, module_for_def)
-
-        # 2. Сбор из импортов (используем _imported)
-        for mod_name, imports_dict in self.module_identifier._imported.items():
-            for imp_info in imports_dict.values():
-                target_module = imp_info.target_fullname.rsplit('.', 1)[0] if '.' in imp_info.target_fullname else imp_info.target_fullname
-                name = imp_info.target_fullname.split('.')[-1]
-                module_for_def[name][imp_info.target_type].add(target_module)
-                # Если имя начинается с заглавной, добавим его также как 'class'
-                if name and name[0].isupper() and imp_info.target_type != 'class':
-                    module_for_def[name]['class'].add(target_module)
-
-        # 3. Определение модуля для каждого имени
-        resolved_def = {}
-        for name, types in module_for_def.items():
-            resolved_def[name] = {}
-            for def_type, modules in types.items():
-                if len(modules) == 1:
-                    resolved_def[name][def_type] = next(iter(modules))
-                else:
-                    resolved_def[name][def_type] = None
-
-        # 4. Назначение модулей блокам
-        for block in blocks:
-            if block.module_hint is not None:
-                continue
-            if not block.code_tree:
-                continue
-            if not self._block_has_classes_or_functions(block.code_tree):
-                continue
-
-            classes = self._extract_class_names(block.code_tree)
-            functions = self._extract_function_names(block.code_tree)
-            possible_modules = set()
-            for cls in classes:
-                mod = resolved_def.get(cls, {}).get('class')
-                if mod:
-                    possible_modules.add(mod)
-            for func in functions:
-                mod = resolved_def.get(func, {}).get('function')
-                if mod:
-                    possible_modules.add(mod)
-
-            if len(possible_modules) == 1:
-                module = next(iter(possible_modules))
-                new_block = Block(
-                    chat=block.chat,
-                    message_pair=block.message_pair,
-                    language=block.language,
-                    content=block.content,
-                    block_idx=block.block_idx,
-                    global_index=block.global_index,
-                    code_tree=block.code_tree,
-                    module_hint=module,
-                    assignment_strategy="CommentImportHint"
-                )
-                BlockRegistry().register(new_block)
-                idx = blocks.index(block)
-                blocks[idx] = new_block
-                if new_block.code_tree:
-                    self._collect_from_code_node(new_block.code_tree, module, new_block)
-                    self._add_imports_from_block(new_block)
-                    # Итерация 3: добавление определений в дерево
-                    self._add_definitions_from_block(new_block)
-            elif len(possible_modules) > 1:
-                logger.warning(f"Блок {block.display_name} содержит определения из разных модулей: {possible_modules}")
 
     # ---------- Текстовые подсказки ----------
     def _apply_text_hints(self, blocks: List[Block]):
@@ -217,11 +130,10 @@ class VersionedTreeBuilder:
                 if new_block.code_tree:
                     self._collect_from_code_node(new_block.code_tree, module, new_block, class_hint=class_name)
                     self._add_imports_from_block(new_block)
-                    # Итерация 3: добавление определений в дерево
                     self._add_definitions_from_block(new_block)
 
-    # ---------- Итеративное разрешение ----------
-    def _resolve_iteratively(self, blocks: List[Block]) -> List[Block]:
+    # ---------- Разрешение с помощью дерева ----------
+    def _resolve_with_tree(self, blocks: List[Block]) -> List[Block]:
         unknown = [b for b in blocks if b.module_hint is None]
         changed = True
         iteration = 0
@@ -233,7 +145,7 @@ class VersionedTreeBuilder:
                     continue
                 if block.code_tree is None:
                     continue
-                module, strategy = self._resolve_block(block)
+                module = self._resolve_block_with_tree(block)
                 if module:
                     new_block = Block(
                         chat=block.chat,
@@ -244,7 +156,7 @@ class VersionedTreeBuilder:
                         global_index=block.global_index,
                         code_tree=block.code_tree,
                         module_hint=module,
-                        assignment_strategy=strategy
+                        assignment_strategy="TreeResolution"
                     )
                     BlockRegistry().register(new_block)
                     unknown.remove(block)
@@ -252,8 +164,8 @@ class VersionedTreeBuilder:
                     if new_block.code_tree:
                         self._collect_from_code_node(new_block.code_tree, module, new_block)
                         self._add_imports_from_block(new_block)
-                        # Итерация 3: добавление определений в дерево
                         self._add_definitions_from_block(new_block)
+                        self._process_relative_imports_for_block(new_block)
                     changed = True
             unknown = [b for b in unknown if b.module_hint is None]
             iteration += 1
@@ -261,35 +173,43 @@ class VersionedTreeBuilder:
                 break
         return unknown
 
+    def _resolve_block_with_tree(self, block: Block) -> Optional[str]:
+        """Разрешает блок с помощью дерева идентификаторов. Возвращает модуль или None."""
+        if not block.code_tree:
+            return None
+        classes = self._extract_class_names(block.code_tree)
+        functions = self._extract_function_names(block.code_tree)
+        if not classes and not functions:
+            return None
+        candidates = set()
+        for name in classes:
+            module = self.identifier_tree.find_module_for_name(name)
+            if module:
+                candidates.add(module)
+        for name in functions:
+            module = self.identifier_tree.find_module_for_name(name)
+            if module:
+                candidates.add(module)
+        if len(candidates) == 1:
+            return next(iter(candidates))
+        return None
+
+    # ---------- Предобработка классов ----------
     def _preprocess_classes(self, blocks: List[Block]):
-        """Предварительно обрабатывает все блоки, содержащие классы, чтобы зарегистрировать их в ModuleIdentifier."""
         for block in blocks:
             if block.module_hint is None:
                 continue
             if not block.code_tree:
                 continue
-            # Ищем классы в блоке
             classes = self._extract_class_names(block.code_tree)
             if classes:
-                # Регистрируем блок в ModuleIdentifier, чтобы классы попали в _modules
                 self._collect_from_code_node(block.code_tree, block.module_hint, block)
-
-    def _resolve_block(self, block: Block) -> Tuple[Optional[str], Optional[str]]:
-        if not block.code_tree:
-            return None, None
-        context = {'identifier': self.module_identifier}
-        for strategy in self.strategies:
-            module = strategy.resolve(block.code_tree, context)
-            if module:
-                return module, strategy.__class__.__name__
-        return None, None
 
     # ---------- Добавление в ModuleIdentifier ----------
     def _collect_from_code_node(self, code_node: CodeNode, module_name: str, block: Block, class_hint: Optional[str] = None):
         if code_node is None:
             return
 
-        # Автоматическое определение class_hint для функций с self
         if class_hint is None and isinstance(code_node, FunctionNode) and not isinstance(code_node, MethodNode):
             has_self, _ = extract_function_signature_from_code_node(code_node)
             if has_self:
@@ -298,9 +218,7 @@ class VersionedTreeBuilder:
                 if module_info and possible_class_name in module_info.classes:
                     class_hint = possible_class_name
 
-        # Используем новый метод ModuleIdentifier для работы с CodeNode
         self.module_identifier.collect_from_code_node(code_node, block, module_name, class_hint)
-        # Добавляем версии импортов и блоков кода
         if isinstance(code_node, ImportNode):
             version_info = self._create_version_info_from_code_node(code_node, block)
             if version_info:
@@ -316,12 +234,10 @@ class VersionedTreeBuilder:
                 if version_info:
                     self._add_code_block_to_class(module_name, parent.name, version_info)
 
-        # Рекурсивно обрабатываем детей
         for child in code_node.children:
             self._collect_from_code_node(child, module_name, block, class_hint)
 
     def _create_version_info_from_code_node(self, code_node: CodeNode, block: Block) -> Optional[VersionInfo]:
-        """Создаёт VersionInfo из CodeNode и Block."""
         norm = code_node.normalized_content()
         src = SourceRef(block.id, code_node.start_line, code_node.end_line, block.timestamp)
         return VersionInfo(norm, [src])
@@ -340,8 +256,18 @@ class VersionedTreeBuilder:
             return
         from code_structure.imports.core.import_analyzer import extract_imports_from_block
         imports = extract_imports_from_block(block.content, block.module_hint)
+        self._block_imports[block.id] = imports
         for imp in imports:
             self.module_identifier.add_imported_item(block.module_hint, imp)
+
+    def _process_relative_imports_for_block(self, block: Block):
+        if block.id not in self._block_imports:
+            return
+        imports = self._block_imports[block.id]
+        for imp in imports:
+            if imp.is_relative:
+                self.identifier_tree.add_path(imp.target_fullname)
+                logger.debug(f"Добавлен относительный импорт в дерево: {imp.target_fullname}")
 
     # ---------- Построение дерева VersionedNode ----------
     def _build_versioned_from_identifier(self) -> Dict[str, VersionedNode]:
@@ -442,25 +368,6 @@ class VersionedTreeBuilder:
         return roots
 
     # ---------- Вспомогательные методы ----------
-    def _collect_definitions_from_block(self, code_node: CodeNode, module_name: str, module_for_def: dict):
-        if isinstance(code_node, ClassNode):
-            module_for_def[code_node.name]['class'].add(module_name)
-            for child in code_node.children:
-                self._collect_definitions_from_block(child, module_name, module_for_def)
-        elif isinstance(code_node, FunctionNode) and not isinstance(code_node, MethodNode):
-            module_for_def[code_node.name]['function'].add(module_name)
-        else:
-            for child in code_node.children:
-                self._collect_definitions_from_block(child, module_name, module_for_def)
-
-    def _block_has_classes_or_functions(self, code_node: CodeNode) -> bool:
-        if isinstance(code_node, (ClassNode, FunctionNode)):
-            return True
-        for child in code_node.children:
-            if self._block_has_classes_or_functions(child):
-                return True
-        return False
-
     def _extract_class_names(self, code_node: CodeNode) -> set:
         classes = set()
         if isinstance(code_node, ClassNode):
@@ -477,9 +384,8 @@ class VersionedTreeBuilder:
             functions.update(self._extract_function_names(child))
         return functions
 
-    # ---------- Итерация 2: сбор абсолютных импортов ----------
+    # ---------- Сбор абсолютных импортов ----------
     def _collect_absolute_imports_to_tree(self):
-        """Собирает все абсолютные импорты из ModuleIdentifier и добавляет их в дерево идентификаторов."""
         count = 0
         for mod_name, imports_dict in self.module_identifier._imported.items():
             for imp in imports_dict.values():
@@ -488,24 +394,19 @@ class VersionedTreeBuilder:
                     count += 1
         logger.debug(f"Добавлено абсолютных импортов в дерево: {count}")
 
-    # ---------- Итерация 3: добавление определений из блоков ----------
+    # ---------- Добавление определений из блоков ----------
     def _add_definitions_from_block(self, block: Block):
-        """Добавляет определения (классы, функции, методы) из блока в дерево идентификаторов."""
         if not block.module_hint or not block.code_tree:
             return
-        # Добавляем сам модуль (гарантирует наличие корневого узла)
         self.identifier_tree.add_path(block.module_hint)
         self._add_definitions_recursive(block.code_tree, block.module_hint)
 
     def _add_definitions_recursive(self, node: CodeNode, current_path: str):
-        """Рекурсивно обходит узлы кода и добавляет пути классов, функций, методов."""
         for child in node.children:
             if isinstance(child, (ClassNode, FunctionNode, MethodNode)):
                 full_path = f"{current_path}.{child.name}"
                 self.identifier_tree.add_path(full_path)
                 logger.debug(f"Добавлен узел в дерево: {full_path} (тип: {child.node_type})")
-                # Рекурсивно обрабатываем вложенные определения (например, методы внутри класса)
                 self._add_definitions_recursive(child, full_path)
             else:
-                # Для других типов узлов продолжаем с текущим путём (не создаём новых узлов)
                 self._add_definitions_recursive(child, current_path)

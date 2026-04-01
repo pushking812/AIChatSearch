@@ -1,6 +1,6 @@
 # code_structure/module_resolution/core/identifier_tree.py
 
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 
 class IdentifierNode:
@@ -49,6 +49,25 @@ class IdentifierTree:
             parts.append(cur.name)
             cur = cur.parent
         return '.'.join(reversed(parts))
+
+    def find_module_for_name(self, name: str) -> Optional[str]:
+        """Ищет узел с заданным именем и возвращает полный путь его родительского модуля."""
+        nodes = self._find_nodes_by_name(self.root, name)
+        if len(nodes) == 1:
+            parent = nodes[0].parent
+            if parent is None:
+                return None
+            return self.get_full_path(parent)
+        return None
+
+    def _find_nodes_by_name(self, node: IdentifierNode, name: str) -> List[IdentifierNode]:
+        """Рекурсивно находит все узлы с заданным именем."""
+        result = []
+        if node.name == name:
+            result.append(node)
+        for child in node.children.values():
+            result.extend(self._find_nodes_by_name(child, name))
+        return result
 
     def __repr__(self) -> str:
         def _format(node: IdentifierNode, indent: int = 0) -> str:
