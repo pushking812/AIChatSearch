@@ -22,6 +22,8 @@ from code_structure.module_resolution.core.module_identifier import ModuleIdenti
 from code_structure.utils.helpers import extract_module_hint
 from code_structure.utils.logger import get_logger
 
+from code_structure.module_resolution.core.identifier_tree import IdentifierTree
+
 logger = get_logger(__name__, level=logging.DEBUG)
 
 
@@ -36,6 +38,8 @@ class VersionedTreeBuilder:
         ]
         self.text_blocks_by_pair: Dict[str, Dict[int, str]] = {}
         self.full_texts_by_pair: Dict[str, str] = {}
+        
+        self.identifier_tree = IdentifierTree()
 
     def build_from_blocks(
         self,
@@ -48,9 +52,13 @@ class VersionedTreeBuilder:
 
         self._assign_from_comments(blocks)
         self._assign_from_comments_and_imports(blocks)
-        self._preprocess_classes(blocks)           # <-- новый вызов
+        self._preprocess_classes(blocks)
         self._apply_text_hints(blocks)
         unknown_blocks = self._resolve_iteratively(blocks)
+        
+        # Сбор абсолютных импортов в дерево идентификаторов
+        self._collect_absolute_imports_to_tree()
+        
         versioned_roots = self._build_versioned_from_identifier()
         return versioned_roots, unknown_blocks
 
