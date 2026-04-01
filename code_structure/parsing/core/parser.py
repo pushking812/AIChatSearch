@@ -6,25 +6,16 @@ import re
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
-# старые модели узлов (для обратной совместимости)
-from code_structure.parsing.models.node import (
-    ModuleNode as OldModuleNode,
-    ClassNode as OldClassNode,
-    FunctionNode as OldFunctionNode,
-    MethodNode as OldMethodNode,
-    CodeBlockNode as OldCodeBlockNode
-)
-# новые модели узлов
 from code_structure.models.block import Block
 from code_structure.models.code_node import (
     CodeNode,
-    ModuleNode as NewModuleNode,
-    ClassNode as NewClassNode,
-    FunctionNode as NewFunctionNode,
-    MethodNode as NewMethodNode,
-    CodeBlockNode as NewCodeBlockNode,
-    ImportNode as NewImportNode,
-    CommentNode as NewCommentNode
+    ModuleNode,
+    ClassNode,
+    FunctionNode,
+    MethodNode,
+    CodeBlockNode,
+    ImportNode,
+    CommentNode
 )
 
 logger = logging.getLogger(__name__)
@@ -33,72 +24,17 @@ logger.setLevel(logging.DEBUG)
 
 class CodeParser(ABC):
     @abstractmethod
-    def parse(self, code: str) -> OldModuleNode:
-        pass
-
-    @abstractmethod
-    def parse_new(self, block: Block) -> NewModuleNode:
+    def parse(self, block: Block) -> ModuleNode:
         pass
 
 
 class PythonParser(CodeParser):
-    # ---------- старый парсер (для обратной совместимости) ----------
-    def parse(self, code: str) -> OldModuleNode:
-        try:
-            tree = ast.parse(code)
-            last_line = code.count('\n') + 1
-            module_node = OldModuleNode(lineno_start=1, lineno_end=last_line)
-            self._process_body_old(tree.body, module_node, is_method_body=False)
-            return module_node
-        except SyntaxError as e:
-            logger.debug(f"Синтаксическая ошибка в блоке: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"КРИТИЧЕСКАЯ ОШИБКА В ПАРСЕРЕ: {e}", exc_info=True)
-            raise
-
-    def _process_body_old(self, body, parent_node, is_method_body=False):
-        i = 0
-        n = len(body)
-        while i < n:
-            node = body[i]
-            if isinstance(node, ast.ClassDef):
-                bases = ", ".join(self._format_base(b) for b in node.bases)
-                class_node = OldClassNode(node.name, bases, node.lineno, node.end_lineno)
-                self._process_body_old(node.body, class_node, is_method_body=False)
-                parent_node.add_child(class_node)
-                i += 1
-            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                args_str = self._format_args(node.args, node.returns)
-                if isinstance(parent_node, OldClassNode):
-                    func_node = OldMethodNode(node.name, args_str, node.lineno, node.end_lineno)
-                else:
-                    func_node = OldFunctionNode(node.name, args_str, node.lineno, node.end_lineno)
-                self._process_body_old(node.body, func_node, is_method_body=True)
-                parent_node.add_child(func_node)
-                i += 1
-            else:
-                if not is_method_body:
-                    start = i
-                    while i < n and not isinstance(body[i], (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-                        i += 1
-                    if i > start:
-                        first_node = body[start]
-                        last_node = body[i-1]
-                        end_line = last_node.end_lineno if hasattr(last_node, 'end_lineno') else last_node.lineno
-                        line_range = f"строки {first_node.lineno}-{end_line}"
-                        block_node = OldCodeBlockNode("Блок кода", line_range, first_node.lineno, end_line)
-                        parent_node.add_child(block_node)
-                else:
-                    i += 1
-
-    # ---------- новый парсер (для новых моделей) ----------
-    def parse_new(self, block: Block) -> NewModuleNode:
+    def parse(self, block: Block) -> ModuleNode:
         try:
             tree = ast.parse(block.content)
             last_line = block.content.count('\n') + 1
-            module_node = NewModuleNode("", block, 1, last_line)
-            self._process_body_new(tree.body, module_node, block, is_method_body=False)
+            module_node = ModuleNode("", block, 1, last_line)
+            self._process_body(tree.body, module_node, block, is_method_body=False)
             return module_node
         except SyntaxError as e:
             logger.debug(f"Синтаксическая ошибка в блоке {block.id}: {e}")
@@ -107,7 +43,7 @@ class PythonParser(CodeParser):
             logger.error(f"КРИТИЧЕСКАЯ ОШИБКА В ПАРСЕРЕ ДЛЯ БЛОКА {block.id}: {e}", exc_info=True)
             raise
 
-    def _process_body_new(self, body, parent_node: CodeNode, block: Block, is_method_body: bool = False):
+    def _process_body(self, body, parent_node: CodeNode, block: Block, is_method_body: bool = False):
         i = 0
         n = len(body)
         while i < n:
@@ -115,7 +51,7 @@ class PythonParser(CodeParser):
 
             if isinstance(node, ast.ClassDef):
                 bases = ", ".join(self._format_base(b) for b in node.bases)
-                class_node = NewClassNode(
+                class_node = ClassNode(
                     name=node.name,
                     bases=bases,
                     block=block,
@@ -123,14 +59,14 @@ class PythonParser(CodeParser):
                     end_line=node.end_lineno,
                     parent=parent_node
                 )
-                self._process_body_new(node.body, class_node, block, is_method_body=False)
+                self._process_body(node.body, class_node, block, is_method_body=False)
                 parent_node.add_child(class_node)
                 i += 1
 
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 args_str = self._format_args(node.args, node.returns)
-                if isinstance(parent_node, NewClassNode):
-                    func_node = NewMethodNode(
+                if isinstance(parent_node, ClassNode):
+                    func_node = MethodNode(
                         name=node.name,
                         signature=args_str,
                         block=block,
@@ -139,7 +75,7 @@ class PythonParser(CodeParser):
                         parent=parent_node
                     )
                 else:
-                    func_node = NewFunctionNode(
+                    func_node = FunctionNode(
                         name=node.name,
                         signature=args_str,
                         block=block,
@@ -147,7 +83,7 @@ class PythonParser(CodeParser):
                         end_line=node.end_lineno,
                         parent=parent_node
                     )
-                self._process_body_new(node.body, func_node, block, is_method_body=True)
+                self._process_body(node.body, func_node, block, is_method_body=True)
                 parent_node.add_child(func_node)
                 i += 1
 
@@ -175,7 +111,7 @@ class PythonParser(CodeParser):
                             # Импорты и комментарии перед кодом
                             import_start = first_node.lineno
                             import_end = first_node.lineno + first_code_idx - 1
-                            import_node = NewImportNode(
+                            import_node = ImportNode(
                                 statement='\n'.join(fragment_lines[:first_code_idx]),
                                 block=block,
                                 start_line=import_start,
@@ -188,7 +124,7 @@ class PythonParser(CodeParser):
                             # Блок кода
                             code_start = first_node.lineno + first_code_idx
                             code_end = end_line
-                            code_block_node = NewCodeBlockNode(
+                            code_block_node = CodeBlockNode(
                                 name="code_block",
                                 block=block,
                                 start_line=code_start,
@@ -200,7 +136,7 @@ class PythonParser(CodeParser):
 
                         elif first_code_idx == 0:
                             # Сразу код
-                            code_block_node = NewCodeBlockNode(
+                            code_block_node = CodeBlockNode(
                                 name="code_block",
                                 block=block,
                                 start_line=first_node.lineno,
@@ -212,7 +148,7 @@ class PythonParser(CodeParser):
 
                         else:
                             # Нет кода – всё импорты/комментарии
-                            import_node = NewImportNode(
+                            import_node = ImportNode(
                                 statement='\n'.join(fragment_lines),
                                 block=block,
                                 start_line=first_node.lineno,
@@ -224,7 +160,7 @@ class PythonParser(CodeParser):
                 else:
                     i += 1
 
-    # ---------- вспомогательные методы (общие) ----------
+    # ---------- вспомогательные методы (без изменений) ----------
     def _format_base(self, base_node):
         if isinstance(base_node, ast.Name):
             return base_node.id

@@ -15,11 +15,11 @@ class CodeStructureController:
         data_provider = StructureDataProvider(items)
         module_manager = ModuleAssignmentManager(
             data_provider.block_service,
-            data_provider.module_service
+            None  # module_service больше не нужен
         )
         persistence_manager = PersistenceManager(
             data_provider.block_service,
-            data_provider.module_service,
+            data_provider.module_service,  # всё ещё может использоваться в старом коде, но это заглушка
             data_provider.import_service
         )
 

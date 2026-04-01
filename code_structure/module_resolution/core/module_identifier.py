@@ -1,18 +1,18 @@
-# code_structure/module_resolution/core/module_identifier.py
-
 import logging
+import re
 from typing import Dict, List, Optional, Set, Tuple
 
-from code_structure.parsing.models.node import Node
-from code_structure.parsing.core.signature_utils import extract_function_signature
+from code_structure.models.block import Block
+from code_structure.models.code_node import (
+    CodeNode, ClassNode, FunctionNode, MethodNode, CodeBlockNode, ImportNode
+)
+from code_structure.models.versioned_node import SourceRef, VersionInfo
 from code_structure.module_resolution.models.identifier_models import (
     ModuleInfo, ClassInfo, MethodInfo, FunctionInfo
 )
 from code_structure.imports.models.import_models import ImportInfo
-from code_structure.module_resolution.models.containers import Version
-from code_structure.parsing.core.version_comparator import VersionComparator
-
 from code_structure.utils.logger import get_logger
+
 logger = get_logger(__name__, level=logging.DEBUG)
 
 
@@ -21,94 +21,155 @@ class ModuleIdentifier:
         self._modules: Dict[str, ModuleInfo] = {}
         self._imported: Dict[str, Dict[str, ImportInfo]] = {}
 
-    # ---------- Вспомогательные методы ----------
-    def _create_version(self, node: Node, block_info=None) -> Optional[Version]:
-        if not block_info:
-            return None
-        return Version(node, block_info.block_id, block_info.global_index, block_info.content,
-                      block_info.timestamp, block_info.block_idx)
+    # ---------- Работа с CodeNode (новые методы) ----------
+    def collect_from_code_node(self, code_node: CodeNode, block: Block, module_name: str, class_hint: Optional[str] = None):
+        module = self._modules.setdefault(module_name, ModuleInfo(name=module_name))
+        self._collect_code_node(code_node, module, block, class_hint)
 
-    def _add_version_to_object(self, versions: List[Version], new_version: Version):
-        existing = VersionComparator.find_existing(versions, new_version)
-        if existing:
-            existing.add_source(*new_version.sources[0])
-        else:
-            versions.append(new_version)
+    def _collect_code_node(self, code_node: CodeNode, module: ModuleInfo, block: Block, class_hint: Optional[str] = None):
+        for child in code_node.children:
+            if isinstance(child, ClassNode):
+                class_name = class_hint if class_hint else child.name
+                self._add_class_from_code_node(child, module, class_name, block)
+            elif isinstance(child, FunctionNode) and not isinstance(child, MethodNode):
+                self._add_function_from_code_node(child, module, class_hint, block)
+            elif isinstance(child, MethodNode):
+                self._add_method_from_code_node(child, module, class_hint, block)
+            else:
+                self._collect_code_node(child, module, block, class_hint)
 
-    def _add_or_update_class(self, module: ModuleInfo, class_name: str, class_node: Node, block_info=None):
-        version = self._create_version(class_node, block_info)
-        if version is None:
+    def _add_class_from_code_node(self, class_node: ClassNode, module: ModuleInfo, class_name: str, block: Block):
+        version_info = self._create_version_info_from_code_node(class_node, block)
+        if version_info is None:
             return
 
         if class_name in module.classes:
             existing_class = module.classes[class_name]
-            self._add_version_to_object(existing_class.versions, version)
+            for v in existing_class.versions:
+                if v.normalized_code == version_info.normalized_code:
+                    for src in version_info.sources:
+                        v.add_source(src)
+                    return
+            existing_class.versions.append(version_info)
         else:
             class_info = ClassInfo(name=class_name)
-            class_info.versions.append(version)
+            class_info.versions.append(version_info)
             module.classes[class_name] = class_info
 
-        for method_node in class_node.children:
-            if method_node.node_type == "method":
-                self._add_or_update_callable(module, method_node.name, method_node, block_info, class_name=class_name)
+        for child in class_node.children:
+            if isinstance(child, MethodNode):
+                self._add_method_from_code_node(child, module, class_name, block)
 
-    def _add_or_update_callable(self, module: ModuleInfo, name: str, node: Node, block_info=None,
-                                class_name: Optional[str] = None):
-        version = self._create_version(node, block_info)
-        if version is None:
+    def _add_function_from_code_node(self, func_node: FunctionNode, module: ModuleInfo, class_hint: Optional[str], block: Block):
+        version_info = self._create_version_info_from_code_node(func_node, block)
+        if version_info is None:
             return
 
-        if class_name:
-            if class_name not in module.classes:
-                module.classes[class_name] = ClassInfo(name=class_name)
-            class_info = module.classes[class_name]
+        def strip_whitespace(s: str) -> str:
+            return re.sub(r'\s', '', s)
 
-            if name in class_info.methods:
-                existing_method = class_info.methods[name]
-                self._add_version_to_object(existing_method.versions, version)
+        if class_hint:
+            if class_hint not in module.classes:
+                module.classes[class_hint] = ClassInfo(name=class_hint)
+            class_info = module.classes[class_hint]
+
+            if func_node.name in class_info.methods:
+                existing_method = class_info.methods[func_node.name]
+                # Точное сравнение
+                for v in existing_method.versions:
+                    if v.normalized_code == version_info.normalized_code:
+                        for src in version_info.sources:
+                            v.add_source(src)
+                        return
+                # Сравнение без учёта пробелов
+                new_no_ws = strip_whitespace(version_info.normalized_code)
+                for v in existing_method.versions:
+                    if strip_whitespace(v.normalized_code) == new_no_ws:
+                        for src in version_info.sources:
+                            v.add_source(src)
+                        return
+                existing_method.versions.append(version_info)
             else:
-                sig = extract_function_signature(node)
-                method = MethodInfo(name=name, signature=sig, class_name=class_name)
-                method.versions.append(version)
-                class_info.methods[name] = method
+                sig = self._extract_signature_from_code_node(func_node)
+                method = MethodInfo(name=func_node.name, signature=sig, class_name=class_hint)
+                method.versions.append(version_info)
+                class_info.methods[func_node.name] = method
         else:
-            sig = extract_function_signature(node)
-            if name in module.functions:
-                existing_func = module.functions[name]
-                self._add_version_to_object(existing_func.versions, version)
+            if func_node.name in module.functions:
+                existing_func = module.functions[func_node.name]
+                for v in existing_func.versions:
+                    if v.normalized_code == version_info.normalized_code:
+                        for src in version_info.sources:
+                            v.add_source(src)
+                        return
+                new_no_ws = strip_whitespace(version_info.normalized_code)
+                for v in existing_func.versions:
+                    if strip_whitespace(v.normalized_code) == new_no_ws:
+                        for src in version_info.sources:
+                            v.add_source(src)
+                        return
+                existing_func.versions.append(version_info)
             else:
-                func = FunctionInfo(name=name, signature=sig)
-                func.versions.append(version)
-                module.functions[name] = func
+                sig = self._extract_signature_from_code_node(func_node)
+                func = FunctionInfo(name=func_node.name, signature=sig)
+                func.versions.append(version_info)
+                module.functions[func_node.name] = func
 
-    # ---------- Публичные методы ----------
-    def collect_from_tree(self, node: Node, module_name: str, class_hint: Optional[str] = None, block_info=None):
-        module = self._modules.setdefault(module_name, ModuleInfo(name=module_name))
-        self._collect_node(node, module, class_hint, block_info)
-        if block_info and not block_info.module_hint:
-            block_info.module_hint = module_name
-            logger.debug(f"[IDENTIFIER] Блоку {block_info.block_id} назначен модуль {module_name}")
+    def _add_method_from_code_node(self, method_node: MethodNode, module: ModuleInfo, class_name: str, block: Block):
+        version_info = self._create_version_info_from_code_node(method_node, block)
+        if version_info is None:
+            return
 
-    def _collect_node(self, node: Node, module: ModuleInfo, class_hint: Optional[str] = None, block_info=None):
-        for child in node.children:
-            if child.node_type == "class":
-                class_name = class_hint if class_hint else child.name
-                self._add_class(child, module, class_name, block_info)
-            elif child.node_type == "function":
-                self._add_function(child, module, class_hint, block_info)
-            elif child.node_type == "method":
-                self._add_method_as_function(child, module, class_hint, block_info)
-            else:
-                self._collect_node(child, module, class_hint, block_info)
+        def strip_whitespace(s: str) -> str:
+            return re.sub(r'\s', '', s)
 
-    def _add_class(self, class_node: Node, module: ModuleInfo, class_name: str, block_info):
-        self._add_or_update_class(module, class_name, class_node, block_info)
+        if class_name not in module.classes:
+            module.classes[class_name] = ClassInfo(name=class_name)
+        class_info = module.classes[class_name]
 
-    def _add_function(self, func_node: Node, module: ModuleInfo, class_hint: Optional[str], block_info):
-        self._add_or_update_callable(module, func_node.name, func_node, block_info, class_name=class_hint)
+        if method_node.name in class_info.methods:
+            existing_method = class_info.methods[method_node.name]
+            for v in existing_method.versions:
+                if v.normalized_code == version_info.normalized_code:
+                    for src in version_info.sources:
+                        v.add_source(src)
+                    return
+            new_no_ws = strip_whitespace(version_info.normalized_code)
+            for v in existing_method.versions:
+                if strip_whitespace(v.normalized_code) == new_no_ws:
+                    for src in version_info.sources:
+                        v.add_source(src)
+                    return
+            existing_method.versions.append(version_info)
+        else:
+            sig = self._extract_signature_from_code_node(method_node)
+            method = MethodInfo(name=method_node.name, signature=sig, class_name=class_name)
+            method.versions.append(version_info)
+            class_info.methods[method_node.name] = method
 
-    def _add_method_as_function(self, method_node: Node, module: ModuleInfo, class_hint: Optional[str], block_info):
-        self._add_or_update_callable(module, method_node.name, method_node, block_info, class_name=class_hint)
+    def _create_version_info_from_code_node(self, code_node: CodeNode, block: Block) -> Optional[VersionInfo]:
+        norm = code_node.normalized_content()
+        src = SourceRef(block.id, code_node.start_line, code_node.end_line, block.timestamp)
+        return VersionInfo(norm, [src])
+
+    def _extract_signature_from_code_node(self, node: CodeNode) -> Tuple[bool, List[str]]:
+        if node.node_type not in ('function', 'method'):
+            return False, []
+        signature = node.signature.strip('()')
+        if not signature:
+            return False, []
+        params = []
+        for param in signature.split(','):
+            param = param.strip()
+            if param:
+                if ':' in param:
+                    param = param.split(':')[0].strip()
+                if '=' in param:
+                    param = param.split('=')[0].strip()
+                param = param.lstrip('*')
+                params.append(param)
+        has_self = len(params) > 0 and params[0] in ('self', 'cls')
+        return has_self, params
 
     # ---------- Методы работы с импортированными объектами ----------
     def add_imported_item(self, module_name: str, import_info: ImportInfo):
@@ -145,15 +206,13 @@ class ModuleIdentifier:
             mod = self._modules.setdefault(target, ModuleInfo(name=target))
             mod.is_imported = True
 
-    def add_import_version(self, module_name: str, version: Version):
+    def add_import_version(self, module_name: str, version_info: VersionInfo):
         module = self._modules.setdefault(module_name, ModuleInfo(name=module_name))
-        module.import_versions.append(version)
-        logger.debug(f"Added import version to module {module_name}, total: {len(module.import_versions)}")
+        module.import_versions.append(version_info)
 
-    def add_code_block_version(self, module_name: str, version: Version):
+    def add_code_block_version(self, module_name: str, version_info: VersionInfo):
         module = self._modules.setdefault(module_name, ModuleInfo(name=module_name))
-        module.code_block_versions.append(version)
-        logger.debug(f"Added code block version to module {module_name}, total: {len(module.code_block_versions)}")
+        module.code_block_versions.append(version_info)
 
     # ---------- Методы поиска ----------
     def find_imported_class(self, class_name: str) -> Optional[str]:
@@ -180,9 +239,7 @@ class ModuleIdentifier:
     def find_module_for_class(self, class_name: str) -> Optional[str]:
         for mod_name, mod in self._modules.items():
             if class_name in mod.classes:
-                logger.debug(f"find_module_for_class: {class_name} found in {mod_name}")
                 return mod_name
-        logger.debug(f"find_module_for_class: {class_name} not found")
         return None
 
     # ---------- Доступ к данным ----------

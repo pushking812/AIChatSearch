@@ -1,13 +1,15 @@
 # code_structure/imports/core/import_analyzer.py
+
 import re
 import logging
 from typing import List, Optional, Dict
 
 from code_structure.imports.models.import_models import ImportInfo
-from code_structure.module_resolution.models.block_info import MessageBlockInfo
+from code_structure.models.block import Block
 
 from code_structure.utils.logger import get_logger
-logger = get_logger(__name__, level = logging.WARNING)
+logger = get_logger(__name__, level=logging.WARNING)
+
 
 def extract_imports_from_block(content: str, current_module: Optional[str] = None) -> List[ImportInfo]:
     imports = []
@@ -81,12 +83,9 @@ def _handle_from_import_statement(line: str, current_module: Optional[str]) -> L
             name = name.strip()
             alias = alias.strip()
 
-        # Определяем тип импортируемого объекта
         if is_relative and len(names) == 1 and not '.' in name:
-            # Относительный импорт одиночного модуля (from . import module)
             target_type = 'module'
         else:
-            # Импорт класса или функции (определяем по первой букве)
             if name and name[0].isupper():
                 target_type = 'class'
             else:
@@ -127,10 +126,10 @@ def _resolve_relative_import(relative: str, current_module: str) -> str:
     return '.'.join(full_parts) if full_parts else ''
 
 
-def build_imported_items(blocks: List[MessageBlockInfo]) -> Dict[str, str]:
+def build_imported_items(blocks: List[Block]) -> Dict[str, str]:
     result = {}
     for block in blocks:
-        if block.syntax_error or not block.content:
+        if not block.code_tree or not block.content:
             continue
         current_module = block.module_hint if block.module_hint else None
         imports = extract_imports_from_block(block.content, current_module)
@@ -143,10 +142,10 @@ def build_imported_items(blocks: List[MessageBlockInfo]) -> Dict[str, str]:
     return result
 
 
-def build_imported_items_by_module(blocks: List[MessageBlockInfo]) -> Dict[str, List[ImportInfo]]:
+def build_imported_items_by_module(blocks: List[Block]) -> Dict[str, List[ImportInfo]]:
     result = {}
     for block in blocks:
-        if block.syntax_error or not block.content:
+        if not block.code_tree or not block.content:
             continue
         current_module = block.module_hint if block.module_hint else None
         if not current_module:
@@ -158,9 +157,6 @@ def build_imported_items_by_module(blocks: List[MessageBlockInfo]) -> Dict[str, 
 
 
 def is_import_block(content: str) -> bool:
-    """
-    Проверяет, состоит ли блок кода только из импортов, комментариев и пустых строк.
-    """
     lines = content.splitlines()
     for line in lines:
         line = line.strip()

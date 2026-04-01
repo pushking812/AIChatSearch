@@ -39,6 +39,7 @@ class TreeBuilderNew:
             if node:
                 children.append(node)
 
+        logger.debug(f"Root has {len(children)} children")
         max_version = max((node.version for node in children if node.version), default='')
         root = TreeDisplayNode(
             text="Все модули",
@@ -78,8 +79,13 @@ class TreeBuilderNew:
         source_map: Dict[Tuple[str, int, int], VersionedNode],
         parent_path: str = ""
     ) -> Tuple[Optional[TreeDisplayNode], Dict[str, VersionedNode], Dict[Tuple[str, int, int], VersionedNode]]:
-        logger.debug(f"Rendering node {vnode.name} type={vnode.node_type}")
-        path_map[vnode.full_path] = vnode
+        logger.debug(f"Rendering node {vnode.name} type={vnode.node_type} with {len(vnode.children)} children")
+
+        # Защита от None в имени
+        name = vnode.name if vnode.name is not None else "?"
+        full_name = vnode.full_path if vnode.full_path is not None else name
+
+        path_map[full_name] = vnode
 
         # Сохраняем все источники в source_map
         for version in vnode.versions:
@@ -89,20 +95,22 @@ class TreeBuilderNew:
                     source_map[key] = vnode
 
         node = TreeDisplayNode(
-            text=vnode.name,
+            text=name,
             type=vnode.node_type,
             signature="",
             version=f"v{len(vnode.versions)}" if vnode.versions else "",
             sources="",
             children=[],
-            full_name=vnode.full_path
+            full_name=full_name
         )
 
         if vnode.node_type in ('function', 'method', 'code_block', 'import'):
+            # Добавляем версии как детей
             for i, version in enumerate(vnode.versions, 1):
                 version_node = TreeBuilderNew._version_to_node(version, i, vnode)
                 node.children.append(version_node)
 
+            # Добавляем запись в плоский список для последней версии
             if vnode.versions:
                 latest = vnode.versions[-1]
                 src = latest.sources[-1]
@@ -117,10 +125,11 @@ class TreeBuilderNew:
                     if vnode.parent and vnode.parent.node_type == 'class':
                         class_name = vnode.parent.name
 
+                local = vnode.local_path if hasattr(vnode, 'local_path') else name
                 item = FlatListItem(
                     block_id=src.block_id,
                     block_name=block_name,
-                    node_path=vnode.local_path if hasattr(vnode, 'local_path') else vnode.name,
+                    node_path=local,
                     parent_path=parent_path,
                     lines=f"{src.start_line}-{src.end_line}",
                     module=vnode.full_path.rsplit('.', 1)[0] if '.' in vnode.full_path else '',
@@ -130,7 +139,8 @@ class TreeBuilderNew:
                 flat_items.append(item)
 
         if vnode.node_type in ('module', 'class', 'package'):
-            current_path = f"{parent_path}.{vnode.name}" if parent_path else vnode.name
+            current_path = f"{parent_path}.{name}" if parent_path else name
+            logger.debug(f"Processing children of {vnode.name} (type={vnode.node_type})")
             for child in vnode.children:
                 child_node, path_map, source_map = TreeBuilderNew._versioned_to_node(
                     child, local_only, flat_items, path_map, source_map, current_path
@@ -138,6 +148,7 @@ class TreeBuilderNew:
                 if child_node:
                     node.children.append(child_node)
 
+        logger.debug(f"Created node {node.text} type={node.type} with {len(node.children)} children")
         return node, path_map, source_map
 
     @staticmethod
@@ -197,13 +208,13 @@ class TreeBuilderNew:
         elif isinstance(node, CodeBlockNode):
             node_path = "блок кода"
         elif isinstance(node, (FunctionNode, MethodNode, ClassNode)):
-            node_path = node.name
+            node_path = node.name if node.name is not None else "?"
         else:
-            node_path = node.name or "?"
+            node_path = node.name if node.name is not None else "?"
 
         source_parent = ""
         if isinstance(node, MethodNode) and node.parent and isinstance(node.parent, ClassNode):
-            source_parent = node.parent.name
+            source_parent = node.parent.name if node.parent.name is not None else ""
 
         key = (block.id, node.start_line, node.end_line)
         vnode = source_map.get(key)
@@ -218,7 +229,7 @@ class TreeBuilderNew:
             else:
                 module = vnode.full_path
             if vnode.node_type == 'method' and vnode.parent and vnode.parent.node_type == 'class':
-                class_name = vnode.parent.name
+                class_name = vnode.parent.name if vnode.parent.name is not None else "-"
             strategy = block.assignment_strategy or ""
         else:
             if block.module_hint:

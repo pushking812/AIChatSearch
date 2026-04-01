@@ -1,32 +1,23 @@
-# code_structure/models/versioned_node.py
-
-"""
-Модели версионированных узлов (VersionedNode).
-"""
-
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from .code_node import CodeNode
 from .block import Block
 from .registry import BlockRegistry
 
 
 @dataclass
 class SourceRef:
-    """Ссылка на источник кода (блок и строки)."""
     block_id: str
     start_line: int
     end_line: int
-    timestamp: float   # для сортировки
+    timestamp: float
 
-    def __repr__(self) -> str:
+    def __repr__(self):
         return f"SourceRef({self.block_id}:{self.start_line}-{self.end_line})"
 
 
 @dataclass
 class VersionInfo:
-    """Информация об одной версии."""
     normalized_code: str
     sources: List[SourceRef] = field(default_factory=list)
 
@@ -34,48 +25,38 @@ class VersionInfo:
     def max_timestamp(self) -> float:
         return max(s.timestamp for s in self.sources) if self.sources else 0.0
 
+    def add_source(self, source: SourceRef):
+        """Добавляет источник, если его ещё нет в списке."""
+        for s in self.sources:
+            if s.block_id == source.block_id and s.start_line == source.start_line and s.end_line == source.end_line:
+                return
+        self.sources.append(source)
+
 
 class VersionedNode:
-    """Базовый класс для версионированных узлов."""
     def __init__(self, name: str, node_type: str):
-        self.name = name
-        self.node_type = node_type   # "module", "class", "function", "method", "code_block", "import"
+        self.name = name or "?"
+        self.node_type = node_type
         self.versions: List[VersionInfo] = []
         self.children: List['VersionedNode'] = []
         self.parent: Optional['VersionedNode'] = None
+        self.is_imported: bool = False
 
-    def add_version(self, code_node: CodeNode):
-        """Добавляет версию из CodeNode, если нормализованный код уникален."""
-        norm = code_node.normalized_content()
-        src = SourceRef(
-            block_id=code_node.block.id,
-            start_line=code_node.start_line,
-            end_line=code_node.end_line,
-            timestamp=code_node.block.timestamp
-        )
-        # Поиск существующей версии с таким же нормализованным кодом
+    def add_version_info(self, version_info: VersionInfo):
         for v in self.versions:
-            if v.normalized_code == norm:
-                v.sources.append(src)
-                self._sort_versions()
+            if v.normalized_code == version_info.normalized_code:
+                for src in version_info.sources:
+                    v.add_source(src)
                 return
-        # Новая версия
-        self.versions.append(VersionInfo(norm, [src]))
-        self._sort_versions()
-
-    def _sort_versions(self):
-        """Сортирует версии по возрастанию max_timestamp."""
-        self.versions.sort(key=lambda v: v.max_timestamp)
+        self.versions.append(version_info)
 
     def get_latest_code(self) -> str:
-        """Возвращает исходный код последней версии (не нормализованный)."""
         if not self.versions:
             return ""
         latest = self.versions[-1]
-        # Берём источник с максимальным timestamp (последний добавленный)
         src = latest.sources[-1]
         block = BlockRegistry().get(src.block_id)
-        if block is None:
+        if not block:
             return ""
         lines = block.content.splitlines()
         return '\n'.join(lines[src.start_line - 1:src.end_line])
@@ -86,26 +67,22 @@ class VersionedNode:
             return self.name
         return f"{self.parent.full_path}.{self.name}"
 
+    @property
+    def local_path(self) -> str:
+        parts = []
+        node = self
+        while node is not None and node.node_type not in ('module', 'package'):
+            if node.name is not None:
+                parts.append(node.name)
+            node = node.parent
+        return '.'.join(reversed(parts))
+
     def add_child(self, child: 'VersionedNode'):
         child.parent = self
         self.children.append(child)
 
-    def __repr__(self) -> str:
+    def __repr__(self):
         return f"<Versioned{self.node_type.capitalize()} name={self.name} versions={len(self.versions)}>"
-        
-
-    @property
-    def local_path(self) -> str:
-        """
-        Возвращает локальный путь узла в исходном блоке (без модуля и пакетов).
-        Например: 'MessageDetailPanel.clear' или 'update_list'.
-        """
-        parts = []
-        node = self
-        while node is not None and node.node_type not in ('module', 'package'):
-            parts.append(node.name)
-            node = node.parent
-        return '.'.join(reversed(parts))
 
 
 class VersionedModule(VersionedNode):
@@ -116,8 +93,6 @@ class VersionedModule(VersionedNode):
 class VersionedClass(VersionedNode):
     def __init__(self, name: str):
         super().__init__(name, "class")
-        # Классы не имеют версий, но могут содержать методы
-        self.versions = []   # явно обнуляем, чтобы не было версий
 
 
 class VersionedFunction(VersionedNode):
@@ -131,7 +106,7 @@ class VersionedMethod(VersionedNode):
 
 
 class VersionedCodeBlock(VersionedNode):
-    def __init__(self, name: str):
+    def __init__(self, name: str = "code_block"):
         super().__init__(name, "code_block")
 
 

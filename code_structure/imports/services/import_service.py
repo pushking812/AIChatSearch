@@ -8,19 +8,17 @@ from code_structure.imports.core.import_analyzer import (
     build_imported_items_by_module
 )
 from code_structure.imports.models.import_models import ImportInfo
-from code_structure.module_resolution.models.block_info import MessageBlockInfo
+from code_structure.models.block import Block
 
 from code_structure.utils.logger import get_logger
-logger = get_logger(__name__, level = logging.WARNING)
+logger = get_logger(__name__, level=logging.WARNING)
 
 
 class ImportService:
-    """Сервис для работы с импортами."""
-
     def __init__(self):
         pass
 
-    def get_imported_items(self, blocks: List[MessageBlockInfo]) -> Dict[str, str]:
+    def get_imported_items(self, blocks: List[Block]) -> Dict[str, str]:
         if not blocks:
             return {}
         logger.info(f"Анализ импортов для {len(blocks)} блоков")
@@ -28,7 +26,7 @@ class ImportService:
         logger.info(f"Найдено {len(items)} импортированных объектов")
         return items
 
-    def get_imported_items_by_module(self, blocks: List[MessageBlockInfo]) -> Dict[str, List[ImportInfo]]:
+    def get_imported_items_by_module(self, blocks: List[Block]) -> Dict[str, List[ImportInfo]]:
         if not blocks:
             return {}
         logger.info(f"Сбор импортов по модулям для {len(blocks)} блоков")

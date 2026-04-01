@@ -1,45 +1,59 @@
 # code_structure/facades/module_assignment_manager.py
 
-from typing import Dict
-from code_structure.module_resolution.services.module_service import ModuleService
-from code_structure.block_processing.services.block_service import BlockService
+from typing import Dict, List
 from code_structure.dialogs.dto import ModuleAssignmentInput, UnknownBlockInfo, KnownModuleInfo, TreeDisplayNode
-from code_structure.dialogs.dto_builder import DtoBuilder
-from code_structure.parsing.core.tree_builder import TreeBuilder
+from code_structure.parsing.core.tree_builder import TreeBuilderNew
+from code_structure.models.block import Block
+from code_structure.models.registry import BlockRegistry
+from code_structure.module_resolution.services.versioned_tree_builder import VersionedTreeBuilder
 
 
 class ModuleAssignmentManager:
-    def __init__(self, block_service: BlockService, module_service: ModuleService):
+    def __init__(self, block_service, module_service=None):
+        """
+        Args:
+            block_service: BlockService (для доступа к блокам)
+            module_service: не используется (оставлен для совместимости)
+        """
         self.block_service = block_service
-        self.module_service = module_service
-        self.tree_builder = TreeBuilder()
+        self.tree_builder = TreeBuilderNew()
 
     def get_module_assignment_input(self, local_only: bool) -> ModuleAssignmentInput:
+        # Получаем неизвестные блоки (те, у которых нет module_hint)
+        all_blocks = self.block_service.get_new_blocks()
+        unknown_blocks = [b for b in all_blocks if b.module_hint is None and b.language in ('python', 'py')]
+
         unknown_blocks_info = []
-        for block in self.module_service.unknown_blocks:
-            chat_title = block.metadata.get('chat_title', block.block_id)
-            display_name = f"{chat_title} – {self.block_service.get_block_description(block)}"
+        for block in unknown_blocks:
+            display_name = f"{block.display_name} – {self._get_block_description(block)}"
             unknown_blocks_info.append(UnknownBlockInfo(
-                id=block.block_id,
+                id=block.id,
                 display_name=display_name,
                 content=block.content
             ))
 
+        # Получаем известные модули из ModuleIdentifier (через VersionedTreeBuilder)
+        # Для этого нужно создать временный builder, чтобы получить модули из уже разрешённых блоков
+        builder = VersionedTreeBuilder()
+        # Строим дерево, чтобы ModuleIdentifier заполнился
+        builder.build_from_blocks(all_blocks)  # это может быть тяжело, но для получения модулей подойдёт
         known_modules_info = []
-        for module_name in sorted(self.module_service.get_known_modules()):
-            source = self.module_service.get_module_source(module_name, self.block_service.get_all_blocks())
-            code = self.module_service.get_module_code(module_name, self.block_service.get_all_blocks()) or ""
+        for module_name in sorted(builder.module_identifier.get_known_modules()):
+            # Игнорируем служебные модули
+            if module_name.startswith('__'):
+                continue
+            # Получаем код модуля из первого блока, который его содержит
+            code = self._get_module_code(module_name, all_blocks)
             known_modules_info.append(KnownModuleInfo(
                 name=module_name,
-                source=source,
+                source="",
                 code=code
             ))
 
-        root_dict, _ = self.tree_builder.build_display_tree(
-            self.module_service.module_containers,
-            local_only=local_only
-        )
-        module_tree = DtoBuilder.tree_dict_to_dto(root_dict) if root_dict else TreeDisplayNode(text="", type="root")
+        # Построение дерева модулей для отображения
+        # Передаём пустые корни (так как в диалоге мы отображаем структуру модулей)
+        root_dict, _, _, _ = self.tree_builder.build_display_tree({}, local_only)
+        module_tree = root_dict
 
         return ModuleAssignmentInput(
             unknown_blocks=unknown_blocks_info,
@@ -48,35 +62,68 @@ class ModuleAssignmentManager:
         )
 
     def apply_assignments(self, assignments: Dict[str, str]):
-        all_blocks = self.block_service.get_all_blocks()
-        for block in all_blocks:
-            if block.block_id in assignments:
-                block.module_hint = assignments[block.block_id]
-                if block.tree and not block.syntax_error:
-                    self.module_service.identifier.collect_from_tree(
-                        block.tree, block.module_hint, block_info=block
-                    )
-
-        # Перестраиваем контейнеры
-        text_blocks_by_pair = self.block_service.get_text_blocks_by_pair()
-        full_texts_by_pair = self.block_service.get_full_texts_by_pair()
-        containers, unknown_blocks = self.module_service.process_blocks(
-            all_blocks,
-            text_blocks_by_pair=text_blocks_by_pair,
-            full_texts_by_pair=full_texts_by_pair
-        )
-        self.module_service.module_containers = containers
-        self.module_service.unknown_blocks = unknown_blocks
+        # Обновляем module_hint в блоках
+        for block_id, module_name in assignments.items():
+            block = self.block_service.get_new_block(block_id)
+            if block:
+                # Создаём новый блок с обновлённым module_hint (так как Block неизменяемый)
+                new_block = Block(
+                    id=block.id,
+                    chat=block.chat,
+                    message_pair=block.message_pair,
+                    language=block.language,
+                    content=block.content,
+                    block_idx=block.block_idx,
+                    global_index=block.global_index,
+                    code_tree=block.code_tree,
+                    module_hint=module_name
+                )
+                BlockRegistry().register(new_block)
+        # После назначений нужно перестроить дерево. Это будет сделано при следующем обновлении UI.
 
     def reset_assignments(self):
-        all_blocks = self.block_service.get_all_blocks()
-        self.module_service.reset_assignments(all_blocks)
-        text_blocks_by_pair = self.block_service.get_text_blocks_by_pair()
-        full_texts_by_pair = self.block_service.get_full_texts_by_pair()
-        containers, unknown_blocks = self.module_service.process_blocks(
-            all_blocks,
-            text_blocks_by_pair=text_blocks_by_pair,
-            full_texts_by_pair=full_texts_by_pair
-        )
-        self.module_service.module_containers = containers
-        self.module_service.unknown_blocks = unknown_blocks
+        # Сброс module_hint для всех блоков
+        all_blocks = self.block_service.get_new_blocks()
+        for block in all_blocks:
+            if block.module_hint:
+                new_block = Block(
+                    id=block.id,
+                    chat=block.chat,
+                    message_pair=block.message_pair,
+                    language=block.language,
+                    content=block.content,
+                    block_idx=block.block_idx,
+                    global_index=block.global_index,
+                    code_tree=block.code_tree,
+                    module_hint=None
+                )
+                BlockRegistry().register(new_block)
+
+    def _get_block_description(self, block: Block) -> str:
+        # Возвращает описание блока (имя класса/функции или просто "блок кода")
+        if block.code_tree is None:
+            return "ошибка"
+        # Ищем первое определение
+        desc = self._find_first_definition(block.code_tree)
+        return desc or "блок_кода"
+
+    def _find_first_definition(self, node) -> str:
+        if node.node_type == "class":
+            for child in node.children:
+                if child.node_type == "method":
+                    return f"class_{node.name}_def_{child.name}"
+            return f"class_{node.name}"
+        elif node.node_type == "function":
+            return f"def_{node.name}"
+        for child in node.children:
+            res = self._find_first_definition(child)
+            if res:
+                return res
+        return ""
+
+    def _get_module_code(self, module_name: str, blocks: List[Block]) -> str:
+        # Возвращает код модуля (из первого блока с этим module_hint)
+        for block in blocks:
+            if block.module_hint == module_name and block.code_tree:
+                return block.content
+        return ""
