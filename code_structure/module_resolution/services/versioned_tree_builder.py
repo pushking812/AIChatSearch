@@ -27,7 +27,7 @@ class VersionedTreeBuilder:
         self.identifier_tree = IdentifierTree()
         self._version_map: Dict[str, List[VersionInfo]] = {}
         self._node_type_map: Dict[str, str] = {}
-        self._imported_paths: set = set()  # для фильтра "только локальные"
+        self._imported_paths: set = set()
         self.text_blocks_by_pair: Dict[str, Dict[int, str]] = {}
         self.full_texts_by_pair: Dict[str, str] = {}
         self._block_imports: Dict[str, List[ImportInfo]] = {}
@@ -74,7 +74,6 @@ class VersionedTreeBuilder:
                     if new_block.code_tree:
                         self._collect_from_code_node(new_block.code_tree, hint, new_block)
                         self._add_imports_from_block(new_block)
-                        self._add_definitions_from_block(new_block)
 
     # ---------- Предобработка классов ----------
     def _preprocess_classes(self, blocks: List[Block]):
@@ -138,7 +137,6 @@ class VersionedTreeBuilder:
                 if new_block.code_tree:
                     self._collect_from_code_node(new_block.code_tree, module, new_block, class_hint=class_name)
                     self._add_imports_from_block(new_block)
-                    self._add_definitions_from_block(new_block)
 
     # ---------- Разрешение с помощью дерева ----------
     def _resolve_with_tree(self, blocks: List[Block]) -> List[Block]:
@@ -172,7 +170,6 @@ class VersionedTreeBuilder:
                     if new_block.code_tree:
                         self._collect_from_code_node(new_block.code_tree, module, new_block)
                         self._add_imports_from_block(new_block)
-                        self._add_definitions_from_block(new_block)
                         self._process_relative_imports_for_block(new_block)
                     changed = True
             unknown = [b for b in unknown if b.module_hint is None]
@@ -206,35 +203,47 @@ class VersionedTreeBuilder:
         if code_node is None:
             return
 
-        # Обработка метода (вызывается только для детей класса)
-        if isinstance(code_node, MethodNode):
-            method_path = f"{module_name}.{code_node.name}"
-            self.identifier_tree.add_path(method_path)
-            self._node_type_map[method_path] = 'method'
-            self._add_version(method_path, code_node, block)
-            return
-
+        logger.debug(f"Collect from code_node: type={code_node.node_type}, name={code_node.name}, module_name={module_name}, class_hint={class_hint}")
         for child in code_node.children:
+            logger.debug(f"  Child: type={child.node_type}, name={child.name}")
             if isinstance(child, ClassNode):
                 class_path = f"{module_name}.{child.name}"
+                logger.debug(f"    Class path: {class_path}")
                 self.identifier_tree.add_path(class_path)
                 self._node_type_map[class_path] = 'class'
                 self._add_version(class_path, child, block)
-                self._collect_from_code_node(child, class_path, block, class_hint)
+                self._collect_from_code_node(child, class_path, block, child.name)
+            elif isinstance(child, MethodNode):
+                method_path = f"{module_name}.{child.name}"
+                logger.debug(f"    Method path: {method_path}")
+                self.identifier_tree.add_path(method_path)
+                self._node_type_map[method_path] = 'method'
+                self._add_version(method_path, child, block)
             elif isinstance(child, FunctionNode) and not isinstance(child, MethodNode):
-                func_path = f"{module_name}.{child.name}"
-                self.identifier_tree.add_path(func_path)
-                self._node_type_map[func_path] = 'function'
-                self._add_version(func_path, child, block)
+                if class_hint:
+                    # Функция является методом класса (из текстовой подсказки)
+                    method_path = f"{module_name}.{class_hint}.{child.name}"
+                    logger.debug(f"    Method (from hint) path: {method_path}")
+                    self.identifier_tree.add_path(method_path)
+                    self._node_type_map[method_path] = 'method'
+                    self._add_version(method_path, child, block)
+                else:
+                    func_path = f"{module_name}.{child.name}"
+                    logger.debug(f"    Function path: {func_path}")
+                    self.identifier_tree.add_path(func_path)
+                    self._node_type_map[func_path] = 'function'
+                    self._add_version(func_path, child, block)
             elif isinstance(child, CodeBlockNode):
                 block_path = f"{module_name}._code_block"
+                logger.debug(f"    CodeBlock path: {block_path}")
                 self.identifier_tree.add_path(block_path)
                 self._node_type_map[block_path] = 'code_block'
                 self._add_version(block_path, child, block)
             elif isinstance(child, ImportNode):
-                # Не создаём узел для импорта, только обрабатываем его
+                logger.debug(f"    Import statement: {child.statement[:50]}")
                 self._process_import_statement(child.statement, module_name, block)
             else:
+                logger.debug(f"    Other node: {child.node_type}, recursing")
                 self._collect_from_code_node(child, module_name, block, class_hint)
 
     def _add_version(self, path: str, code_node: CodeNode, block: Block):
@@ -279,21 +288,21 @@ class VersionedTreeBuilder:
             self._imported_paths.add(imp.target_fullname)
             self._block_imports.setdefault(block.id, []).append(imp)
 
-    # ---------- Определения из блоков (для дерева) ----------
-    def _add_definitions_from_block(self, block: Block):
-        if not block.module_hint or not block.code_tree:
-            return
-        self.identifier_tree.add_path(block.module_hint)
-        self._add_definitions_recursive(block.code_tree, block.module_hint)
-
-    def _add_definitions_recursive(self, node: CodeNode, current_path: str):
-        for child in node.children:
-            if isinstance(child, (ClassNode, FunctionNode, MethodNode)):
-                full_path = f"{current_path}.{child.name}"
-                self.identifier_tree.add_path(full_path)
-                self._add_definitions_recursive(child, full_path)
-            else:
-                self._add_definitions_recursive(child, current_path)
+    # ---------- Вычисление локальных узлов ----------
+    def _compute_local_nodes(self, all_nodes: Dict[str, VersionedNode]):
+        local_nodes = set()
+        for path, node in all_nodes.items():
+            if node.versions:
+                logger.debug(f"Node with versions: {path} (versions={len(node.versions)})")
+                local_nodes.add(node)
+                parent = node.parent
+                while parent:
+                    local_nodes.add(parent)
+                    parent = parent.parent
+        for node in local_nodes:
+            node.is_local = True
+            logger.debug(f"Marked as local: {node.full_path} (type={node.node_type})")
+        logger.debug(f"Total local nodes: {len(local_nodes)}")
 
     # ---------- Построение VersionedNode из identifier_tree ----------
     def _build_versioned_from_identifier(self) -> Dict[str, VersionedNode]:
@@ -306,7 +315,7 @@ class VersionedTreeBuilder:
             else:
                 logger.warning(f"Версии для пути {path}, но узел не найден в дереве")
         self._mark_imported_nodes(all_nodes)
-        self._compute_local_nodes(all_nodes)   # <-- добавить
+        self._compute_local_nodes(all_nodes)
         roots = {path: node for path, node in all_nodes.items() if node.parent is None}
         return roots
 
@@ -349,53 +358,21 @@ class VersionedTreeBuilder:
             return VersionedNode(name, node_type)
 
     def _mark_imported_nodes(self, all_nodes: Dict[str, VersionedNode]):
-        """
-        Помечает импортированные узлы и всех их потомков.
-        """
-        logger.debug(f"=== Marking imported nodes, total paths: {len(self._imported_paths)} ===")
-        logger.debug(f"Imported paths: {sorted(self._imported_paths)}")
-        
-        marked = set()
         for path in self._imported_paths:
             node = all_nodes.get(path)
             if node:
-                # Добавляем сам узел и всех его предков
-                cur = node
-                while cur:
-                    marked.add(cur)
-                    cur = cur.parent
-                # Добавляем всех потомков этого узла
-                stack = list(node.children)
-                while stack:
-                    child = stack.pop()
-                    marked.add(child)
-                    stack.extend(child.children)
+                node.is_imported = True
+                parent = node.parent
+                while parent:
+                    parent.is_imported = True
+                    parent = parent.parent
             else:
-                # Ищем ближайшего родителя в дереве
                 parts = path.split('.')
                 for i in range(len(parts), 0, -1):
                     parent_path = '.'.join(parts[:i])
                     if parent_path in all_nodes:
-                        parent_node = all_nodes[parent_path]
-                        # Добавляем предков
-                        cur = parent_node
-                        while cur:
-                            marked.add(cur)
-                            cur = cur.parent
-                        # Добавляем потомков родителя
-                        stack = list(parent_node.children)
-                        while stack:
-                            child = stack.pop()
-                            marked.add(child)
-                            stack.extend(child.children)
+                        all_nodes[parent_path].is_imported = True
                         break
-                else:
-                    logger.warning(f"Could not find any node for imported path: {path}")
-        
-        for node in marked:
-            node.is_imported = True
-        
-        logger.debug(f"Marked {len(marked)} nodes as imported")
 
     # ---------- Вспомогательные методы ----------
     def _extract_class_names(self, code_node: CodeNode) -> set:
@@ -416,22 +393,3 @@ class VersionedTreeBuilder:
 
     def _find_imported_class(self, class_name: str) -> Optional[str]:
         return self.identifier_tree.find_module_for_name(class_name)
-        
-    def _compute_local_nodes(self, all_nodes: Dict[str, VersionedNode]):
-        """
-        Помечает узлы, которые являются локальными (определены в анализируемых блоках).
-        Локальными считаются:
-        - узлы, у которых есть версии (node.versions не пуст)
-        - все их родители (рекурсивно)
-        """
-        local_nodes = set()
-        for node in all_nodes.values():
-            if node.versions:
-                local_nodes.add(node)
-                parent = node.parent
-                while parent:
-                    local_nodes.add(parent)
-                    parent = parent.parent
-        for node in local_nodes:
-            node.is_local = True
-        logger.debug(f"Local nodes count: {len(local_nodes)}")
