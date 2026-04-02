@@ -20,7 +20,7 @@ from code_structure.parsing.core.signature_utils import extract_function_signatu
 from code_structure.utils.helpers import extract_module_hint
 from code_structure.utils.logger import get_logger
 
-logger = get_logger(__name__, level=logging.DEBUG)
+logger = get_logger(__name__, level=logging.WARNING)
 
 
 class VersionedTreeBuilder:

@@ -10,7 +10,7 @@ from code_structure.dialogs.dto import (
     TreeDisplayNode, FlatListItem, CodeStructureInitDTO, CodeStructureRefreshDTO
 )
 from code_structure.parsing.core.tree_builder import TreeBuilderNew
-from code_structure.module_resolution.services.versioned_tree_builder import VersionedTreeBuilder
+from code_structure.module_resolution.services.versioned_tree_builder_v2 import VersionedTreeBuilderV2
 from code_structure.models.versioned_node import VersionedNode
 
 import logging
@@ -43,15 +43,17 @@ class StructureDataProvider:
         self._all_code_blocks = [b for b in all_blocks if b.language in ('python', 'py')]
         self._languages = list(set(b.language for b in self._all_code_blocks))
 
-        # Строим дерево
-        builder = VersionedTreeBuilder()
+        # Строим дерево с помощью нового билдера
         text_blocks_by_pair = self.block_service.get_text_blocks_by_pair()
         full_texts_by_pair = self.block_service.get_full_texts_by_pair()
+
+        builder = VersionedTreeBuilderV2()
         self._versioned_roots, unknown = builder.build_from_blocks(
             all_blocks,
             text_blocks_by_pair=text_blocks_by_pair,
             full_texts_by_pair=full_texts_by_pair
         )
+
         logger.info(f"Построено модулей: {len(self._versioned_roots)}, неразрешённых блоков: {len(unknown)}")
 
         # Построение DTO
@@ -88,7 +90,7 @@ class StructureDataProvider:
             return self._render_versioned_node_code(vnode)
         return None
 
-    def _render_versioned_node_code(self, vnode) -> str:
+    def _render_versioned_node_code(self, vnode: VersionedNode) -> str:
         if vnode.node_type in ('function', 'method', 'code_block', 'import'):
             return vnode.get_latest_code()
         elif vnode.node_type == 'class':
@@ -127,7 +129,7 @@ class StructureDataProvider:
 
     def set_versioned_roots(self, roots: Dict[str, VersionedNode]):
         self._versioned_roots = roots
-        from code_structure.parsing.core.tree_builder_new import TreeBuilderNew
-        _, _, path_map, source_map = TreeBuilderNew.build_display_tree(self._versioned_roots, self._current_local_only)
+        # Перестраиваем карты для быстрого доступа
+        _, _, path_map, source_map = self.tree_builder.build_display_tree(self._versioned_roots, self._current_local_only)
         self._versioned_nodes_by_full_name = path_map
         self._versioned_nodes_by_source = source_map

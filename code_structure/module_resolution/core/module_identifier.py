@@ -15,7 +15,7 @@ from code_structure.module_resolution.models.identifier_models import (
 from code_structure.imports.models.import_models import ImportInfo
 from code_structure.utils.logger import get_logger
 
-logger = get_logger(__name__, level=logging.DEBUG)
+logger = get_logger(__name__, level=logging.WARNING)
 
 
 class ModuleIdentifier:

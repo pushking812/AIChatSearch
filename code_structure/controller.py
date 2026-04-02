@@ -12,7 +12,8 @@ from code_structure.facades import (
 class CodeStructureController:
     def __init__(self, parent, items: List[Tuple[Chat, MessagePair]]):
         data_provider = StructureDataProvider(items)
-        module_manager = ModuleAssignmentManager(data_provider.block_service)
+        # Передаём оба аргумента: block_service и data_provider
+        module_manager = ModuleAssignmentManager(data_provider.block_service, data_provider)
         persistence_manager = PersistenceManager(
             data_provider.block_service,
             data_provider.import_service
