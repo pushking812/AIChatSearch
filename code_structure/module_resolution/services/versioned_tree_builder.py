@@ -247,14 +247,20 @@ class VersionedTreeBuilder:
                 self._collect_from_code_node(child, module_name, block, class_hint)
 
     def _add_version(self, path: str, code_node: CodeNode, block: Block):
-        norm = clean_code(code_node.get_raw_code())
+        raw_code = code_node.get_raw_code()
+        norm = clean_code(raw_code)
         src = SourceRef(block.id, code_node.start_line, code_node.end_line, block.timestamp)
         versions = self._version_map.setdefault(path, [])
+        logger.debug(f"Adding version for {path} from block {block.id}")
+        logger.debug(f"  Raw code length: {len(raw_code)}, normalized length: {len(norm)}")
+        logger.debug(f"  Normalized first 200 chars: {norm[:200]}")
         for ver in versions:
             if ver.normalized_code == norm:
                 ver.add_source(src)
+                logger.debug(f"  Matched existing version, sources now {len(ver.sources)}")
                 return
         versions.append(VersionInfo(norm, [src]))
+        logger.debug(f"  Created NEW version (total {len(versions)})")
 
     # ---------- Импорты ----------
     def _add_imports_from_block(self, block: Block):
