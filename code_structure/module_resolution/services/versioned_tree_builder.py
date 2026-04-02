@@ -119,7 +119,6 @@ class VersionedTreeBuilder:
             if not module:
                 module = self._find_imported_class(class_name)
             if module:
-                logger.info(f"Текстовая подсказка: класс {class_name} -> модуль {module} для блока {block.display_name}")
                 new_block = Block(
                     chat=block.chat,
                     message_pair=block.message_pair,
@@ -205,17 +204,14 @@ class VersionedTreeBuilder:
 
         logger.debug(f"Collect from code_node: type={code_node.node_type}, name={code_node.name}, module_name={module_name}, class_hint={class_hint}")
         for child in code_node.children:
-            logger.debug(f"  Child: type={child.node_type}, name={child.name}")
             if isinstance(child, ClassNode):
                 class_path = f"{module_name}.{child.name}"
-                logger.debug(f"    Class path: {class_path}")
                 self.identifier_tree.add_path(class_path)
                 self._node_type_map[class_path] = 'class'
-                self._add_version(class_path, child, block)
+                # self._add_version(class_path, child, block)
                 self._collect_from_code_node(child, class_path, block, child.name)
             elif isinstance(child, MethodNode):
                 method_path = f"{module_name}.{child.name}"
-                logger.debug(f"    Method path: {method_path}")
                 self.identifier_tree.add_path(method_path)
                 self._node_type_map[method_path] = 'method'
                 self._add_version(method_path, child, block)
@@ -223,42 +219,55 @@ class VersionedTreeBuilder:
                 if class_hint:
                     # Функция является методом класса (из текстовой подсказки)
                     method_path = f"{module_name}.{class_hint}.{child.name}"
-                    logger.debug(f"    Method (from hint) path: {method_path}")
                     self.identifier_tree.add_path(method_path)
                     self._node_type_map[method_path] = 'method'
                     self._add_version(method_path, child, block)
                 else:
                     func_path = f"{module_name}.{child.name}"
-                    logger.debug(f"    Function path: {func_path}")
                     self.identifier_tree.add_path(func_path)
                     self._node_type_map[func_path] = 'function'
                     self._add_version(func_path, child, block)
             elif isinstance(child, CodeBlockNode):
                 block_path = f"{module_name}._code_block"
-                logger.debug(f"    CodeBlock path: {block_path}")
                 self.identifier_tree.add_path(block_path)
                 self._node_type_map[block_path] = 'code_block'
                 self._add_version(block_path, child, block)
             elif isinstance(child, ImportNode):
-                logger.debug(f"    Import statement: {child.statement[:50]}")
                 self._process_import_statement(child.statement, module_name, block)
             else:
-                logger.debug(f"    Other node: {child.node_type}, recursing")
                 self._collect_from_code_node(child, module_name, block, class_hint)
 
+
     def _add_version(self, path: str, code_node: CodeNode, block: Block):
+        import difflib  # в начало файла
         raw_code = code_node.get_raw_code()
         norm = clean_code(raw_code)
         src = SourceRef(block.id, code_node.start_line, code_node.end_line, block.timestamp)
         versions = self._version_map.setdefault(path, [])
         logger.debug(f"Adding version for {path} from block {block.id}")
         logger.debug(f"  Raw code length: {len(raw_code)}, normalized length: {len(norm)}")
-        logger.debug(f"  Normalized first 200 chars: {norm[:200]}")
-        for ver in versions:
+        if len(norm) < 1000:
+            logger.debug(f"  Normalized code:\n{norm}")
+        else:
+            logger.debug(f"  Normalized first 500 chars:\n{norm[:500]}")
+        for i, ver in enumerate(versions):
             if ver.normalized_code == norm:
                 ver.add_source(src)
-                logger.debug(f"  Matched existing version, sources now {len(ver.sources)}")
+                logger.debug(f"  Matched existing version {i+1}, sources now {len(ver.sources)}")
                 return
+            else:
+                logger.debug(f"  Comparing with version {i+1}: different")
+                diff = difflib.unified_diff(
+                    ver.normalized_code.splitlines(),
+                    norm.splitlines(),
+                    fromfile=f'version_{i+1}',
+                    tofile='new',
+                    lineterm=''
+                )
+                diff_lines = list(diff)[:30]  # первые 30 строк diff
+                if diff_lines:
+                    diff_text = '\n'.join(diff_lines)
+                    logger.debug(f"  Diff with version {i+1}:\n{diff_text}")
         versions.append(VersionInfo(norm, [src]))
         logger.debug(f"  Created NEW version (total {len(versions)})")
 
@@ -269,7 +278,6 @@ class VersionedTreeBuilder:
         imports = extract_imports_from_block(block.content, block.module_hint)
         self._block_imports[block.id] = imports
         for imp in imports:
-            logger.debug(f"Import from block {block.id}: {imp.target_fullname} (type={imp.target_type})")
             self.identifier_tree.add_path(imp.target_fullname)
             self._imported_paths.add(imp.target_fullname)
 
@@ -281,7 +289,6 @@ class VersionedTreeBuilder:
             if imp.is_relative:
                 self.identifier_tree.add_path(imp.target_fullname)
                 self._imported_paths.add(imp.target_fullname)
-                logger.debug(f"Добавлен относительный импорт в дерево: {imp.target_fullname}")
 
     def _collect_absolute_imports_to_tree(self):
         # Уже делается в _add_imports_from_block
@@ -299,7 +306,6 @@ class VersionedTreeBuilder:
         local_nodes = set()
         for path, node in all_nodes.items():
             if node.versions:
-                logger.debug(f"Node with versions: {path} (versions={len(node.versions)})")
                 local_nodes.add(node)
                 parent = node.parent
                 while parent:
@@ -307,8 +313,6 @@ class VersionedTreeBuilder:
                     parent = parent.parent
         for node in local_nodes:
             node.is_local = True
-            logger.debug(f"Marked as local: {node.full_path} (type={node.node_type})")
-        logger.debug(f"Total local nodes: {len(local_nodes)}")
 
     # ---------- Построение VersionedNode из identifier_tree ----------
     def _build_versioned_from_identifier(self) -> Dict[str, VersionedNode]:

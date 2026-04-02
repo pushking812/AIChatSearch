@@ -5,9 +5,10 @@ import sys
 import logging
 import re
 from typing import Optional
+import textwrap
 
 from code_structure.utils.logger import get_logger
-logger = get_logger(__name__, level = logging.WARNING)
+logger = get_logger(__name__, level = logging.DEBUG)
 
 class DocstringRemover(ast.NodeTransformer):
     @staticmethod
@@ -30,14 +31,18 @@ class DocstringRemover(ast.NodeTransformer):
     visit_AsyncFunctionDef = _remove_docstring
 
 
+
 def _legacy_clean_code(code: str) -> str:
     """
-    Очищает код от docstring, комментариев, пустых строк и лишних пробелов.
-    Используется как fallback при синтаксических ошибках или для Python < 3.9.
-    Возвращает "сжатую" версию для сравнения.
+    Очищает код от docstring, комментариев, пустых строк, но сохраняет внутренние отступы.
+    Сначала удаляет общий ведущий отступ (как textwrap.dedent).
+    Используется как fallback при синтаксических ошибках.
     """
     if not code:
         return ""
+
+    # 1. Убираем общий ведущий отступ (выравниваем код по левому краю)
+    code = textwrap.dedent(code)
 
     lines = code.splitlines()
     result_lines = []
@@ -45,45 +50,46 @@ def _legacy_clean_code(code: str) -> str:
     docstring_char = None
 
     for line in lines:
-        stripped = line.strip()
+        # Сохраняем отступ после выравнивания
+        stripped = line.lstrip()
+        indent = line[:len(line)-len(stripped)]
 
         # Обработка docstring
         if not in_docstring:
-            # Начало docstring (тройные кавычки)
             if stripped.startswith('"""') or stripped.startswith("'''"):
-                # Проверяем, не закрывается ли он на той же строке
-                if stripped.count('"""') == 1 and stripped.endswith('"""') or \
-                   stripped.count("'''") == 1 and stripped.endswith("'''"):
-                    # Однострочный docstring
+                # Проверяем, не закрывается ли на той же строке
+                if (stripped.count('"""') == 1 and stripped.endswith('"""')) or \
+                   (stripped.count("'''") == 1 and stripped.endswith("'''")):
+                    # Однострочный docstring – пропускаем строку
                     continue
                 else:
                     in_docstring = True
                     docstring_char = '"""' if stripped.startswith('"""') else "'''"
-                    # Если после открывающих сразу есть закрывающие (например, """text""")
+                    # Если открытие и закрытие в одной строке (например, """text""")
                     if stripped.count(docstring_char) == 2:
                         in_docstring = False
                     continue
         else:
-            # Ищем закрывающие тройные кавычки
+            # Внутри docstring, ищем закрытие
             if docstring_char in stripped:
                 in_docstring = False
-                # Если после закрывающих есть код, он будет обработан в следующих итерациях,
-                # но по упрощению пропускаем всю строку
-                continue
+                rest = stripped.split(docstring_char, 1)[1]
+                if rest.strip():
+                    stripped = rest.lstrip()
+                    line = indent + stripped
+                else:
+                    continue
             else:
                 continue
 
-        # Удаляем комментарии (всё после #, не внутри строк – упрощённо)
-        if '#' in line:
-            line = line.split('#', 1)[0]
+        # Удаление комментариев (всё после #, не внутри строк – упрощённо)
+        if '#' in stripped:
+            stripped = stripped.split('#', 1)[0]
+            line = indent + stripped
 
-        # Убираем пустые строки
-        if stripped == "":
+        # Удаляем пустые строки
+        if stripped.strip() == "":
             continue
-
-        # Нормализуем пробелы: заменяем табуляцию на 4 пробела, убираем лишние пробелы
-        line = line.replace('\t', '    ')
-        line = re.sub(r'[ \t]+', ' ', line).strip()
 
         result_lines.append(line)
 
