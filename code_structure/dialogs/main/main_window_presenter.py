@@ -130,3 +130,9 @@ class CodeStructurePresenter:
     def on_create_project(self):
         from tkinter import messagebox
         messagebox.showinfo("Создание проекта", "Функция создания проекта будет реализована в следующей версии.")
+        
+    def _refresh_display(self):
+        """Обновляет отображение дерева и плоского списка."""
+        refresh_data = self.data_provider.refresh(self.view.get_local_only())
+        self.view.display_merged_tree(refresh_data.tree)
+        self.view.set_flat_list(refresh_data.flat_items)

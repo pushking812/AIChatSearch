@@ -24,7 +24,6 @@ class StructureDataProvider:
         self.block_service = BlockService()
         self.import_service = ImportService()
         self.tree_builder = TreeBuilderNew()
-        self.module_service = None
         self._unknown_blocks: List[Block] = []
         self._error_blocks: List[Block] = []
 
