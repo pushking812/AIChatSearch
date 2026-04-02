@@ -224,8 +224,6 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
             self.merged_tree.focus(first_item)
 
     def _add_merged_node(self, parent: str, node: TreeDisplayNode):
-        print(f"Adding node: text={node.text}, type={node.type}, full_name={node.full_name}, children={len(node.children)}")
-        
         item = self.merged_tree.insert(
             parent, tk.END,
             text=node.text,

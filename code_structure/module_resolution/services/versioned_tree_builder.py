@@ -13,22 +13,23 @@ from code_structure.models.versioned_node import (
     VersionedMethod, VersionedCodeBlock, VersionedImport, SourceRef, VersionInfo
 )
 from code_structure.models.registry import BlockRegistry
-from code_structure.module_resolution.core.module_identifier import ModuleIdentifier
 from code_structure.module_resolution.core.identifier_tree import IdentifierTree
 from code_structure.imports.models.import_models import ImportInfo
-from code_structure.parsing.core.signature_utils import extract_function_signature as extract_function_signature_from_code_node
-from code_structure.utils.helpers import extract_module_hint
+from code_structure.imports.core.import_analyzer import extract_imports_from_block
+from code_structure.utils.helpers import extract_module_hint, clean_code
 from code_structure.utils.logger import get_logger
 
-logger = get_logger(__name__, level=logging.WARNING)
+logger = get_logger(__name__, level=logging.DEBUG)
 
 
 class VersionedTreeBuilder:
     def __init__(self):
-        self.module_identifier = ModuleIdentifier()
+        self.identifier_tree = IdentifierTree()
+        self._version_map: Dict[str, List[VersionInfo]] = {}
+        self._node_type_map: Dict[str, str] = {}
+        self._imported_paths: set = set()  # для фильтра "только локальные"
         self.text_blocks_by_pair: Dict[str, Dict[int, str]] = {}
         self.full_texts_by_pair: Dict[str, str] = {}
-        self.identifier_tree = IdentifierTree()
         self._block_imports: Dict[str, List[ImportInfo]] = {}
 
     def build_from_blocks(
@@ -75,6 +76,17 @@ class VersionedTreeBuilder:
                         self._add_imports_from_block(new_block)
                         self._add_definitions_from_block(new_block)
 
+    # ---------- Предобработка классов ----------
+    def _preprocess_classes(self, blocks: List[Block]):
+        for block in blocks:
+            if block.module_hint is None:
+                continue
+            if not block.code_tree:
+                continue
+            classes = self._extract_class_names(block.code_tree)
+            if classes:
+                self._collect_from_code_node(block.code_tree, block.module_hint, block)
+
     # ---------- Текстовые подсказки ----------
     def _apply_text_hints(self, blocks: List[Block]):
         if not self.text_blocks_by_pair:
@@ -104,13 +116,9 @@ class VersionedTreeBuilder:
             if not class_match:
                 continue
             class_name = class_match.group(1)
-            logger.debug(f"Text hint found: class {class_name}")
-            module = self.module_identifier.find_module_for_class(class_name)
+            module = self.identifier_tree.find_module_for_name(class_name)
             if not module:
-                module = self.module_identifier.find_imported_class(class_name)
-                logger.debug(f"find_imported_class for {class_name} -> {module}")
-            if not module:
-                logger.warning(f"Class {class_name} not found in modules or imports for block {block.display_name}")
+                module = self._find_imported_class(class_name)
             if module:
                 logger.info(f"Текстовая подсказка: класс {class_name} -> модуль {module} для блока {block.display_name}")
                 new_block = Block(
@@ -174,7 +182,6 @@ class VersionedTreeBuilder:
         return unknown
 
     def _resolve_block_with_tree(self, block: Block) -> Optional[str]:
-        """Разрешает блок с помощью дерева идентификаторов. Возвращает модуль или None."""
         if not block.code_tree:
             return None
         classes = self._extract_class_names(block.code_tree)
@@ -194,71 +201,62 @@ class VersionedTreeBuilder:
             return next(iter(candidates))
         return None
 
-    # ---------- Предобработка классов ----------
-    def _preprocess_classes(self, blocks: List[Block]):
-        for block in blocks:
-            if block.module_hint is None:
-                continue
-            if not block.code_tree:
-                continue
-            classes = self._extract_class_names(block.code_tree)
-            if classes:
-                self._collect_from_code_node(block.code_tree, block.module_hint, block)
-
-    # ---------- Добавление в ModuleIdentifier ----------
+    # ---------- Сбор данных из CodeNode ----------
     def _collect_from_code_node(self, code_node: CodeNode, module_name: str, block: Block, class_hint: Optional[str] = None):
         if code_node is None:
             return
 
-        if class_hint is None and isinstance(code_node, FunctionNode) and not isinstance(code_node, MethodNode):
-            has_self, _ = extract_function_signature_from_code_node(code_node)
-            if has_self:
-                possible_class_name = module_name.split('.')[-1].capitalize()
-                module_info = self.module_identifier.get_module_info(module_name)
-                if module_info and possible_class_name in module_info.classes:
-                    class_hint = possible_class_name
-
-        self.module_identifier.collect_from_code_node(code_node, block, module_name, class_hint)
-        if isinstance(code_node, ImportNode):
-            version_info = self._create_version_info_from_code_node(code_node, block)
-            if version_info:
-                self.module_identifier.add_import_version(module_name, version_info)
-        elif isinstance(code_node, CodeBlockNode):
-            parent = code_node.parent
-            if parent is None or parent.node_type in ('module', 'package'):
-                version_info = self._create_version_info_from_code_node(code_node, block)
-                if version_info:
-                    self.module_identifier.add_code_block_version(module_name, version_info)
-            elif isinstance(parent, ClassNode):
-                version_info = self._create_version_info_from_code_node(code_node, block)
-                if version_info:
-                    self._add_code_block_to_class(module_name, parent.name, version_info)
+        # Обработка метода (вызывается только для детей класса)
+        if isinstance(code_node, MethodNode):
+            method_path = f"{module_name}.{code_node.name}"
+            self.identifier_tree.add_path(method_path)
+            self._node_type_map[method_path] = 'method'
+            self._add_version(method_path, code_node, block)
+            return
 
         for child in code_node.children:
-            self._collect_from_code_node(child, module_name, block, class_hint)
+            if isinstance(child, ClassNode):
+                class_path = f"{module_name}.{child.name}"
+                self.identifier_tree.add_path(class_path)
+                self._node_type_map[class_path] = 'class'
+                self._add_version(class_path, child, block)
+                self._collect_from_code_node(child, class_path, block, class_hint)
+            elif isinstance(child, FunctionNode) and not isinstance(child, MethodNode):
+                func_path = f"{module_name}.{child.name}"
+                self.identifier_tree.add_path(func_path)
+                self._node_type_map[func_path] = 'function'
+                self._add_version(func_path, child, block)
+            elif isinstance(child, CodeBlockNode):
+                block_path = f"{module_name}._code_block"
+                self.identifier_tree.add_path(block_path)
+                self._node_type_map[block_path] = 'code_block'
+                self._add_version(block_path, child, block)
+            elif isinstance(child, ImportNode):
+                # Не создаём узел для импорта, только обрабатываем его
+                self._process_import_statement(child.statement, module_name, block)
+            else:
+                self._collect_from_code_node(child, module_name, block, class_hint)
 
-    def _create_version_info_from_code_node(self, code_node: CodeNode, block: Block) -> Optional[VersionInfo]:
-        norm = code_node.normalized_content()
+    def _add_version(self, path: str, code_node: CodeNode, block: Block):
+        norm = clean_code(code_node.get_raw_code())
         src = SourceRef(block.id, code_node.start_line, code_node.end_line, block.timestamp)
-        return VersionInfo(norm, [src])
+        versions = self._version_map.setdefault(path, [])
+        for ver in versions:
+            if ver.normalized_code == norm:
+                ver.add_source(src)
+                return
+        versions.append(VersionInfo(norm, [src]))
 
-    def _add_code_block_to_class(self, module_name: str, class_name: str, version_info: VersionInfo):
-        module = self.module_identifier.get_module_info(module_name)
-        if not module:
-            return
-        class_info = module.classes.get(class_name)
-        if not class_info:
-            return
-        class_info.code_block_versions.append(version_info)
-
+    # ---------- Импорты ----------
     def _add_imports_from_block(self, block: Block):
         if not block.code_tree or not block.module_hint:
             return
-        from code_structure.imports.core.import_analyzer import extract_imports_from_block
         imports = extract_imports_from_block(block.content, block.module_hint)
         self._block_imports[block.id] = imports
         for imp in imports:
-            self.module_identifier.add_imported_item(block.module_hint, imp)
+            logger.debug(f"Import from block {block.id}: {imp.target_fullname} (type={imp.target_type})")
+            self.identifier_tree.add_path(imp.target_fullname)
+            self._imported_paths.add(imp.target_fullname)
 
     def _process_relative_imports_for_block(self, block: Block):
         if block.id not in self._block_imports:
@@ -267,105 +265,137 @@ class VersionedTreeBuilder:
         for imp in imports:
             if imp.is_relative:
                 self.identifier_tree.add_path(imp.target_fullname)
+                self._imported_paths.add(imp.target_fullname)
                 logger.debug(f"Добавлен относительный импорт в дерево: {imp.target_fullname}")
 
-    # ---------- Построение дерева VersionedNode ----------
+    def _collect_absolute_imports_to_tree(self):
+        # Уже делается в _add_imports_from_block
+        pass
+
+    def _process_import_statement(self, statement: str, current_module: str, block: Block):
+        imports = extract_imports_from_block(statement, current_module)
+        for imp in imports:
+            self.identifier_tree.add_path(imp.target_fullname)
+            self._imported_paths.add(imp.target_fullname)
+            self._block_imports.setdefault(block.id, []).append(imp)
+
+    # ---------- Определения из блоков (для дерева) ----------
+    def _add_definitions_from_block(self, block: Block):
+        if not block.module_hint or not block.code_tree:
+            return
+        self.identifier_tree.add_path(block.module_hint)
+        self._add_definitions_recursive(block.code_tree, block.module_hint)
+
+    def _add_definitions_recursive(self, node: CodeNode, current_path: str):
+        for child in node.children:
+            if isinstance(child, (ClassNode, FunctionNode, MethodNode)):
+                full_path = f"{current_path}.{child.name}"
+                self.identifier_tree.add_path(full_path)
+                self._add_definitions_recursive(child, full_path)
+            else:
+                self._add_definitions_recursive(child, current_path)
+
+    # ---------- Построение VersionedNode из identifier_tree ----------
     def _build_versioned_from_identifier(self) -> Dict[str, VersionedNode]:
-        all_nodes = {}
-        for mod_name in self.module_identifier.get_all_module_names():
-            module_info = self.module_identifier.get_module_info(mod_name)
-            if not module_info:
-                continue
-
-            parts = mod_name.split('.')
-            parent = None
-            current_path_parts = []
-            for i, part in enumerate(parts):
-                if part is None:
-                    part = "?"
-                current_path = '.'.join(current_path_parts + [part])
-                if current_path not in all_nodes:
-                    if i == len(parts) - 1:
-                        node = VersionedModule(part)
-                        node.is_imported = module_info.is_imported
-                    else:
-                        node = VersionedNode(part, "package")
-                    all_nodes[current_path] = node
-                    if parent:
-                        parent.add_child(node)
-                parent = all_nodes[current_path]
-                current_path_parts.append(part)
-
-            module_node = all_nodes[mod_name]
-            if not isinstance(module_node, VersionedModule):
-                module_node.node_type = "module"
-                module_node.is_imported = module_info.is_imported
-
-            # 1. Импорты (один узел)
-            if module_info.import_versions:
-                vimports = VersionedImport("imports")
-                for v in module_info.import_versions:
-                    vimports.versions.append(v)
-                module_node.add_child(vimports)
-
-            # 2. Классы и методы
-            method_names = set()
-            for class_name, class_info in module_info.classes.items():
-                if class_name is None:
-                    continue
-                class_full_name = f"{mod_name}.{class_name}"
-                if class_full_name in all_nodes:
-                    vclass = all_nodes[class_full_name]
-                else:
-                    vclass = VersionedClass(class_name)
-                    all_nodes[class_full_name] = vclass
-                    module_node.add_child(vclass)
-
-                # Блоки кода внутри класса
-                for v in class_info.code_block_versions:
-                    vblock = VersionedCodeBlock("code_block")
-                    vblock.versions.append(v)
-                    vclass.add_child(vblock)
-
-                # Методы
-                for method_name, method_info in class_info.methods.items():
-                    if method_name is None:
-                        continue
-                    method_names.add(method_name)
-                    method_full_name = f"{class_full_name}.{method_name}"
-                    if method_full_name in all_nodes:
-                        vmethod = all_nodes[method_full_name]
-                    else:
-                        vmethod = VersionedMethod(method_name)
-                        all_nodes[method_full_name] = vmethod
-                        vclass.add_child(vmethod)
-                    for v in method_info.versions:
-                        vmethod.versions.append(v)
-
-            # 3. Функции верхнего уровня (исключая методы)
-            for func_name, func_info in module_info.functions.items():
-                if func_name is None or func_name in method_names:
-                    continue
-                func_full_name = f"{mod_name}.{func_name}"
-                if func_full_name in all_nodes:
-                    vfunc = all_nodes[func_full_name]
-                else:
-                    vfunc = VersionedFunction(func_name)
-                    all_nodes[func_full_name] = vfunc
-                    module_node.add_child(vfunc)
-                for v in func_info.versions:
-                    vfunc.versions.append(v)
-
-            # 4. Блоки кода верхнего уровня (модуль)
-            if module_info.code_block_versions:
-                vblock = VersionedCodeBlock("code_block")
-                for v in module_info.code_block_versions:
-                    vblock.versions.append(v)
-                module_node.add_child(vblock)
-
-        roots = {full_name: node for full_name, node in all_nodes.items() if node.parent is None}
-        logger.debug(f"Roots: {list(roots.keys())}")
+        all_nodes: Dict[str, VersionedNode] = {}
+        self._build_nodes_recursive(self.identifier_tree.root, "", all_nodes)
+        for path, versions in self._version_map.items():
+            node = all_nodes.get(path)
+            if node:
+                node.versions = versions
+            else:
+                logger.warning(f"Версии для пути {path}, но узел не найден в дереве")
+        self._mark_imported_nodes(all_nodes)
+        self._compute_local_nodes(all_nodes)   # <-- добавить
+        roots = {path: node for path, node in all_nodes.items() if node.parent is None}
         return roots
+
+    def _build_nodes_recursive(self, tree_node, current_path: str, all_nodes: Dict[str, VersionedNode]):
+        if tree_node.name:
+            if current_path:
+                full_path = f"{current_path}.{tree_node.name}"
+            else:
+                full_path = tree_node.name
+
+            node_type = self._node_type_map.get(full_path)
+            if node_type is None:
+                node_type = "package" if tree_node.children else "module"
+
+            node = self._create_versioned_node(tree_node.name, node_type)
+            all_nodes[full_path] = node
+            if current_path and current_path in all_nodes:
+                parent = all_nodes[current_path]
+                parent.add_child(node)
+        else:
+            full_path = current_path
+
+        for child in tree_node.children.values():
+            self._build_nodes_recursive(child, full_path, all_nodes)
+
+    def _create_versioned_node(self, name: str, node_type: str) -> VersionedNode:
+        if node_type == 'class':
+            return VersionedClass(name)
+        elif node_type == 'function':
+            return VersionedFunction(name)
+        elif node_type == 'method':
+            return VersionedMethod(name)
+        elif node_type == 'code_block':
+            return VersionedCodeBlock(name)
+        elif node_type == 'import':
+            return VersionedImport(name)
+        elif node_type == 'module':
+            return VersionedModule(name)
+        else:
+            return VersionedNode(name, node_type)
+
+    def _mark_imported_nodes(self, all_nodes: Dict[str, VersionedNode]):
+        """
+        Помечает импортированные узлы и всех их потомков.
+        """
+        logger.debug(f"=== Marking imported nodes, total paths: {len(self._imported_paths)} ===")
+        logger.debug(f"Imported paths: {sorted(self._imported_paths)}")
+        
+        marked = set()
+        for path in self._imported_paths:
+            node = all_nodes.get(path)
+            if node:
+                # Добавляем сам узел и всех его предков
+                cur = node
+                while cur:
+                    marked.add(cur)
+                    cur = cur.parent
+                # Добавляем всех потомков этого узла
+                stack = list(node.children)
+                while stack:
+                    child = stack.pop()
+                    marked.add(child)
+                    stack.extend(child.children)
+            else:
+                # Ищем ближайшего родителя в дереве
+                parts = path.split('.')
+                for i in range(len(parts), 0, -1):
+                    parent_path = '.'.join(parts[:i])
+                    if parent_path in all_nodes:
+                        parent_node = all_nodes[parent_path]
+                        # Добавляем предков
+                        cur = parent_node
+                        while cur:
+                            marked.add(cur)
+                            cur = cur.parent
+                        # Добавляем потомков родителя
+                        stack = list(parent_node.children)
+                        while stack:
+                            child = stack.pop()
+                            marked.add(child)
+                            stack.extend(child.children)
+                        break
+                else:
+                    logger.warning(f"Could not find any node for imported path: {path}")
+        
+        for node in marked:
+            node.is_imported = True
+        
+        logger.debug(f"Marked {len(marked)} nodes as imported")
 
     # ---------- Вспомогательные методы ----------
     def _extract_class_names(self, code_node: CodeNode) -> set:
@@ -384,29 +414,24 @@ class VersionedTreeBuilder:
             functions.update(self._extract_function_names(child))
         return functions
 
-    # ---------- Сбор абсолютных импортов ----------
-    def _collect_absolute_imports_to_tree(self):
-        count = 0
-        for mod_name, imports_dict in self.module_identifier._imported.items():
-            for imp in imports_dict.values():
-                if not imp.is_relative:
-                    self.identifier_tree.add_path(imp.target_fullname)
-                    count += 1
-        logger.debug(f"Добавлено абсолютных импортов в дерево: {count}")
-
-    # ---------- Добавление определений из блоков ----------
-    def _add_definitions_from_block(self, block: Block):
-        if not block.module_hint or not block.code_tree:
-            return
-        self.identifier_tree.add_path(block.module_hint)
-        self._add_definitions_recursive(block.code_tree, block.module_hint)
-
-    def _add_definitions_recursive(self, node: CodeNode, current_path: str):
-        for child in node.children:
-            if isinstance(child, (ClassNode, FunctionNode, MethodNode)):
-                full_path = f"{current_path}.{child.name}"
-                self.identifier_tree.add_path(full_path)
-                logger.debug(f"Добавлен узел в дерево: {full_path} (тип: {child.node_type})")
-                self._add_definitions_recursive(child, full_path)
-            else:
-                self._add_definitions_recursive(child, current_path)
+    def _find_imported_class(self, class_name: str) -> Optional[str]:
+        return self.identifier_tree.find_module_for_name(class_name)
+        
+    def _compute_local_nodes(self, all_nodes: Dict[str, VersionedNode]):
+        """
+        Помечает узлы, которые являются локальными (определены в анализируемых блоках).
+        Локальными считаются:
+        - узлы, у которых есть версии (node.versions не пуст)
+        - все их родители (рекурсивно)
+        """
+        local_nodes = set()
+        for node in all_nodes.values():
+            if node.versions:
+                local_nodes.add(node)
+                parent = node.parent
+                while parent:
+                    local_nodes.add(parent)
+                    parent = parent.parent
+        for node in local_nodes:
+            node.is_local = True
+        logger.debug(f"Local nodes count: {len(local_nodes)}")

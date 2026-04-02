@@ -45,7 +45,6 @@ class VersionedTreeBuilderV2:
         self._apply_text_hints(blocks)
         unknown_blocks = self._resolve_with_tree(blocks)
 
-        # Финальный сбор всех блоков с module_hint (на случай, если какие-то ещё не были проиндексированы)
         self._collect_all_blocks(blocks)
 
         roots = self._build_versioned_from_identifier()
@@ -73,7 +72,6 @@ class VersionedTreeBuilderV2:
                     blocks[idx] = new_block
                     if new_block.code_tree:
                         self._collect_from_block(new_block)
-                        self._process_imports_from_block(new_block)
 
     # ---------- Предобработка классов ----------
     def _preprocess_classes(self, blocks: List[Block]):
@@ -136,7 +134,6 @@ class VersionedTreeBuilderV2:
                 blocks[idx] = new_block
                 if new_block.code_tree:
                     self._collect_from_block(new_block)
-                    self._process_imports_from_block(new_block)
 
     # ---------- Разрешение через дерево ----------
     def _resolve_with_tree(self, blocks: List[Block]) -> List[Block]:
@@ -169,7 +166,6 @@ class VersionedTreeBuilderV2:
                     unknown.append(new_block)
                     if new_block.code_tree:
                         self._collect_from_block(new_block)
-                        self._process_imports_from_block(new_block)
                         self._process_relative_imports_for_block(new_block)
                     changed = True
             unknown = [b for b in unknown if b.module_hint is None]
@@ -198,54 +194,53 @@ class VersionedTreeBuilderV2:
             return next(iter(candidates))
         return None
 
-    # ---------- Сбор данных из блока ----------
+    # ---------- Сбор данных из блоков ----------
     def _collect_all_blocks(self, blocks: List[Block]):
         for block in blocks:
             if block.module_hint and block.code_tree:
                 self._collect_from_block(block)
-                self._process_imports_from_block(block)
 
     def _collect_from_block(self, block: Block):
         module_path = block.module_hint
         self.identifier_tree.add_path(module_path)
         self._collect_from_code_node(block.code_tree, module_path, block)
 
-    # ---------- Сбор из CodeNode ----------
-    def _collect_from_code_node(self, code_node: CodeNode, current_path: str, block: Block):
-        for child in code_node.children:
-            if isinstance(child, ClassNode):
-                full_path = f"{current_path}.{child.name}"
-                self.identifier_tree.add_path(full_path)
-                self._node_type_map[full_path] = 'class'
-                self._add_version(full_path, child, block)
-                self._collect_from_code_node(child, full_path, block)
-            elif isinstance(child, MethodNode):
-                if child.parent and isinstance(child.parent, ClassNode):
-                    full_path = f"{current_path}.{child.name}"
-                    self.identifier_tree.add_path(full_path)
-                    self._node_type_map[full_path] = 'method'
-                    self._add_version(full_path, child, block)
-            elif isinstance(child, FunctionNode) and not isinstance(child, MethodNode):
-                full_path = f"{current_path}.{child.name}"
-                self.identifier_tree.add_path(full_path)
-                self._node_type_map[full_path] = 'function'
-                self._add_version(full_path, child, block)
-            elif isinstance(child, CodeBlockNode):
-                full_path = f"{current_path}._code_block"
-                self.identifier_tree.add_path(full_path)
-                self._node_type_map[full_path] = 'code_block'
-                self._add_version(full_path, child, block)
-            elif isinstance(child, ImportNode):
-                safe_name = re.sub(r'[^a-zA-Z0-9_]', '_', child.statement[:50])
-                full_path = f"{current_path}._import_{safe_name}"
-                self._node_type_map[full_path] = 'import'
-                self._add_version(full_path, child, block)
-                # Импорт также добавляем в дерево идентификаторов (целевой путь)
-                imports = extract_imports_from_block(child.statement, current_path)
-                for imp in imports:
-                    self.identifier_tree.add_path(imp.target_fullname)
-            else:
-                self._collect_from_code_node(child, current_path, block)
+    def _collect_from_code_node(self, code_node: CodeNode, current_path: str, block: Block, class_hint: Optional[str] = None):
+        if code_node is None:
+            return
+
+        if isinstance(code_node, ClassNode):
+            class_path = f"{current_path}.{code_node.name}"
+            self.identifier_tree.add_path(class_path)
+            self._node_type_map[class_path] = 'class'
+            self._add_version(class_path, code_node, block)
+            for child in code_node.children:
+                self._collect_from_code_node(child, class_path, block, class_hint)
+        elif isinstance(code_node, MethodNode):
+            method_path = f"{current_path}.{code_node.name}"
+            self.identifier_tree.add_path(method_path)
+            self._node_type_map[method_path] = 'method'
+            self._add_version(method_path, code_node, block)
+        elif isinstance(code_node, FunctionNode) and not isinstance(code_node, MethodNode):
+            func_path = f"{current_path}.{code_node.name}"
+            self.identifier_tree.add_path(func_path)
+            self._node_type_map[func_path] = 'function'
+            self._add_version(func_path, code_node, block)
+        elif isinstance(code_node, CodeBlockNode):
+            block_path = f"{current_path}._code_block"
+            self.identifier_tree.add_path(block_path)
+            self._node_type_map[block_path] = 'code_block'
+            self._add_version(block_path, code_node, block)
+        elif isinstance(code_node, ImportNode):
+            safe_name = re.sub(r'[^a-zA-Z0-9_]', '_', code_node.statement[:50])
+            import_path = f"{current_path}._import_{safe_name}"
+            self._node_type_map[import_path] = 'import'
+            self._add_version(import_path, code_node, block)
+            self._process_import_statement(code_node.statement, current_path, block)
+        else:
+            # Другие узлы (например, ModuleNode с пустым именем) – просто рекурсивно обходим детей
+            for child in code_node.children:
+                self._collect_from_code_node(child, current_path, block, class_hint)
 
     def _add_version(self, path: str, code_node: CodeNode, block: Block):
         norm = clean_code(code_node.get_raw_code())
@@ -258,13 +253,11 @@ class VersionedTreeBuilderV2:
         versions.append(VersionInfo(norm, [src]))
 
     # ---------- Обработка импортов ----------
-    def _process_imports_from_block(self, block: Block):
-        if not block.module_hint or not block.code_tree:
-            return
-        imports = extract_imports_from_block(block.content, block.module_hint)
-        self._block_imports[block.id] = imports
+    def _process_import_statement(self, statement: str, current_module: str, block: Block):
+        imports = extract_imports_from_block(statement, current_module)
         for imp in imports:
             self.identifier_tree.add_path(imp.target_fullname)
+            self._block_imports.setdefault(block.id, []).append(imp)
 
     def _process_relative_imports_for_block(self, block: Block):
         if block.id not in self._block_imports:
@@ -278,7 +271,7 @@ class VersionedTreeBuilderV2:
     def _find_imported_class(self, class_name: str) -> Optional[str]:
         return self.identifier_tree.find_module_for_name(class_name)
 
-    # ---------- Построение дерева VersionedNode ----------
+    # ---------- Построение VersionedNode из identifier_tree ----------
     def _build_versioned_from_identifier(self) -> Dict[str, VersionedNode]:
         all_nodes: Dict[str, VersionedNode] = {}
         self._build_nodes_recursive(self.identifier_tree.root, "", all_nodes)
@@ -329,7 +322,7 @@ class VersionedTreeBuilderV2:
         else:
             return VersionedNode(name, node_type)
 
-    # ---------- Вспомогательные ----------
+    # ---------- Вспомогательные методы ----------
     def _extract_class_names(self, code_node: CodeNode) -> set:
         classes = set()
         if isinstance(code_node, ClassNode):

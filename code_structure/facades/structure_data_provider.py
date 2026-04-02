@@ -10,7 +10,7 @@ from code_structure.dialogs.dto import (
     TreeDisplayNode, FlatListItem, CodeStructureInitDTO, CodeStructureRefreshDTO
 )
 from code_structure.parsing.core.tree_builder import TreeBuilderNew
-from code_structure.module_resolution.services.versioned_tree_builder_v2 import VersionedTreeBuilderV2
+from code_structure.module_resolution.services.versioned_tree_builder import VersionedTreeBuilder
 from code_structure.models.versioned_node import VersionedNode
 
 import logging
@@ -43,11 +43,12 @@ class StructureDataProvider:
         self._all_code_blocks = [b for b in all_blocks if b.language in ('python', 'py')]
         self._languages = list(set(b.language for b in self._all_code_blocks))
 
-        # Строим дерево с помощью нового билдера
+        # Строим дерево с помощью нового VersionedTreeBuilder (без ModuleIdentifier)
         text_blocks_by_pair = self.block_service.get_text_blocks_by_pair()
         full_texts_by_pair = self.block_service.get_full_texts_by_pair()
 
-        builder = VersionedTreeBuilderV2()
+        from code_structure.module_resolution.services.versioned_tree_builder import VersionedTreeBuilder
+        builder = VersionedTreeBuilder()
         self._versioned_roots, unknown = builder.build_from_blocks(
             all_blocks,
             text_blocks_by_pair=text_blocks_by_pair,

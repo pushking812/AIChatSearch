@@ -65,11 +65,7 @@ class TreeBuilderNew:
 
     @staticmethod
     def _is_local(vnode: VersionedNode) -> bool:
-        if isinstance(vnode, VersionedModule):
-            return not getattr(vnode, 'is_imported', False)
-        if vnode.parent:
-            return TreeBuilderNew._is_local(vnode.parent)
-        return True
+        return getattr(vnode, 'is_local', False)
 
     @staticmethod
     def _versioned_to_node(
