@@ -20,26 +20,23 @@ class BlockService:
     def __init__(self):
         self.parser = PythonParser()
         self._block_registry = BlockRegistry()
-        # Добавляем хранение текстовых блоков и полных текстов сообщений
         self._text_blocks_by_pair: Dict[str, Dict[int, str]] = {}
         self._full_texts_by_pair: Dict[str, str] = {}
+        self._error_blocks: List[Block] = []
 
     def load_from_items(self, items: List[Tuple[Chat, MessagePair]]):
         block_parser = BlockParser()
+        self._error_blocks.clear()   # очищаем перед загрузкой
         for global_index, (chat, pair) in enumerate(items):
             text = pair.response_text
             blocks = block_parser.parse(text)
-            # Сохраняем полный текст сообщения
             self._full_texts_by_pair[pair.index] = text
-            # Собираем текстовые блоки
             text_blocks_for_pair = {}
             for block_idx, mb in enumerate(blocks):
                 lang = mb.language.lower() if mb.language else ""
-                # Текстовые блоки (язык пустой)
                 if not lang:
                     text_blocks_for_pair[block_idx] = mb.content
                 else:
-                    # Кодовые блоки
                     new_block = Block(
                         chat=chat,
                         message_pair=pair,
@@ -64,16 +61,16 @@ class BlockService:
                                 module_hint=new_block.module_hint
                             )
                         except SyntaxError:
+                            # Сохраняем блок с ошибкой
+                            self._error_blocks.append(new_block)
                             logger.warning(f"Синтаксическая ошибка при парсинге блока {new_block.display_name}")
                         except Exception as e:
                             logger.error(f"Ошибка парсинга блока {new_block.display_name}: {e}")
                     self._block_registry.register(new_block)
-            # Сохраняем текстовые блоки для этой пары
             if text_blocks_for_pair:
                 self._text_blocks_by_pair[pair.index] = text_blocks_for_pair
 
-        logger.info(f"Зарегистрировано новых блоков: {len(self._block_registry.get_all())}")
-        logger.info(f"Собрано текстовых блоков по парам: {len(self._text_blocks_by_pair)}")
+        logger.info(f"Зарегистрировано блоков: {len(self._block_registry.get_all())}, ошибок: {len(self._error_blocks)}")
 
     def get_new_blocks(self) -> List[Block]:
         return self._block_registry.get_all()
@@ -86,3 +83,6 @@ class BlockService:
 
     def get_full_texts_by_pair(self) -> Dict[str, str]:
         return self._full_texts_by_pair
+        
+    def get_error_blocks(self) -> List[Block]:
+        return self._error_blocks

@@ -25,6 +25,8 @@ class StructureDataProvider:
         self.import_service = ImportService()
         self.tree_builder = TreeBuilderNew()
         self.module_service = None
+        self._unknown_blocks: List[Block] = []
+        self._error_blocks: List[Block] = []
 
         # Внутреннее состояние
         self._versioned_roots: Dict[str, VersionedNode] = {}
@@ -35,27 +37,24 @@ class StructureDataProvider:
         self._current_local_only: bool = True
 
     def load_blocks(self) -> None:
-        # Загружаем блоки через BlockService
         self.block_service.load_from_items(self.items)
-
-        # Получаем все блоки
         all_blocks = self.block_service.get_new_blocks()
         self._all_code_blocks = [b for b in all_blocks if b.language in ('python', 'py')]
         self._languages = list(set(b.language for b in self._all_code_blocks))
 
-        # Строим дерево с помощью нового VersionedTreeBuilder (без ModuleIdentifier)
         text_blocks_by_pair = self.block_service.get_text_blocks_by_pair()
         full_texts_by_pair = self.block_service.get_full_texts_by_pair()
 
-        from code_structure.module_resolution.services.versioned_tree_builder import VersionedTreeBuilder
         builder = VersionedTreeBuilder()
         self._versioned_roots, unknown = builder.build_from_blocks(
             all_blocks,
             text_blocks_by_pair=text_blocks_by_pair,
             full_texts_by_pair=full_texts_by_pair
         )
+        self._unknown_blocks = unknown
+        self._error_blocks = self.block_service.get_error_blocks()
 
-        logger.info(f"Построено модулей: {len(self._versioned_roots)}, неразрешённых блоков: {len(unknown)}")
+        logger.info(f"Построено модулей: {len(self._versioned_roots)}, неразрешённых: {len(unknown)}, ошибок: {len(self._error_blocks)}")
 
         # Построение DTO
         _, _, path_map, source_map = self.tree_builder.build_display_tree(self._versioned_roots, self._current_local_only)
@@ -112,12 +111,6 @@ class StructureDataProvider:
             return "# Пакет (не содержит кода)"
         return ""
 
-    # Методы для обратной совместимости (не используются, но оставлены)
-    def get_error_blocks(self): return []
-    def fix_error_block(self, block_id, new_code): pass
-    def rebuild_structure(self): pass
-    def has_unknown_blocks(self): return False
-    
     def get_code_for_block(self, block_id: str) -> Optional[str]:
         """Возвращает код для блока по его ID."""
         block = self.block_service.get_new_block(block_id)
@@ -134,3 +127,53 @@ class StructureDataProvider:
         _, _, path_map, source_map = self.tree_builder.build_display_tree(self._versioned_roots, self._current_local_only)
         self._versioned_nodes_by_full_name = path_map
         self._versioned_nodes_by_source = source_map
+        
+    def get_error_blocks(self):
+        return self._error_blocks
+
+    def has_unknown_blocks(self):
+        return len(self._unknown_blocks) > 0
+
+    def fix_error_block(self, block_id: str, new_code: str):
+        # Находим блок, заменяем его код и перепарсиваем
+        block = self.block_service.get_new_block(block_id)
+        if not block:
+            return
+        # Создаём новый блок с исправленным кодом
+        new_block = Block(
+            id=block.id,
+            chat=block.chat,
+            message_pair=block.message_pair,
+            language=block.language,
+            content=new_code,
+            block_idx=block.block_idx,
+            global_index=block.global_index,
+            code_tree=None,
+            module_hint=block.module_hint
+        )
+        # Парсим заново
+        from code_structure.parsing.core.parser import PythonParser
+        parser = PythonParser()
+        try:
+            tree = parser.parse(new_block)
+            new_block = Block(
+                chat=new_block.chat,
+                message_pair=new_block.message_pair,
+                language=new_block.language,
+                content=new_block.content,
+                block_idx=new_block.block_idx,
+                global_index=new_block.global_index,
+                code_tree=tree,
+                module_hint=new_block.module_hint
+            )
+        except SyntaxError:
+            logger.error(f"Исправленный блок {block_id} всё ещё содержит ошибку")
+            return
+        # Регистрируем новый блок вместо старого
+        BlockRegistry().register(new_block)
+        # Перестраиваем структуру
+        self.rebuild_structure()
+
+    def rebuild_structure(self):
+        """Перестраивает всё дерево заново."""
+        self.load_blocks()
