@@ -1,4 +1,4 @@
-# code_structure/ui/code_structure/__init__.py
+# code_structure/dialogs/code_structure/__init__.py
 
 from .main_window_view import CodeStructureView
 from .main_window_presenter import CodeStructurePresenter

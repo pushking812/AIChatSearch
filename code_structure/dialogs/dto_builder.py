@@ -1,4 +1,4 @@
-# code_structure/ui/dto_builder.py
+# code_structure/dialogs/dto_builder.py
 
 from typing import Dict, Any, List
 from code_structure.dialogs.dto import TreeDisplayNode, FlatListItem

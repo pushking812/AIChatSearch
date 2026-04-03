@@ -1,5 +1,4 @@
-# code_structure/ui/code_structure/main_window_presenter.py
-
+# code_structure/dialogs/code_structure/main_window_presenter.py
 
 from code_structure.dialogs.dialog_interfaces import CodeStructureView
 from code_structure.facades import (
@@ -77,10 +76,24 @@ class CodeStructurePresenter:
     def on_merged_node_selected(self, node_data: TreeDisplayNode):
         code = self.data_provider.get_code_for_node(node_data)
         self.view.display_merged_code(code or "")
+        # Фильтрация плоского списка по имени функции/метода
+        if node_data.type in ('function', 'method'):
+            self.view.set_flat_filter("Узел", node_data.text)
+        else:
+            self.view.clear_flat_filter()
 
-    def on_flat_node_selected(self, block_id: str):
+    def on_flat_node_selected(self, block_id: str, lines_str: str):
         code = self.data_provider.get_code_for_block(block_id)
-        self.view.display_code(code or "")
+        start_line = None
+        end_line = None
+        if lines_str and '-' in lines_str:
+            parts = lines_str.split('-')
+            try:
+                start_line = int(parts[0])
+                end_line = int(parts[1]) if len(parts) > 1 else start_line
+            except ValueError:
+                pass
+        self.view.display_code(code or "", start_line=start_line, end_line=end_line)
 
     # ---------- Фильтр "Только локальные импорты" ----------
     def on_local_only_toggled(self, local_only: bool):

@@ -12,6 +12,8 @@ from code_structure.dialogs.dto import (
 from code_structure.parsing.core.tree_builder import TreeBuilderNew
 from code_structure.module_resolution.services.versioned_tree_builder import VersionedTreeBuilder
 from code_structure.models.versioned_node import VersionedNode
+from code_structure.models.block import Block                     # добавлен импорт
+from code_structure.models.registry import BlockRegistry          # добавлен импорт
 
 import logging
 from code_structure.utils.logger import get_logger
@@ -31,9 +33,15 @@ class StructureDataProvider:
         self._versioned_roots: Dict[str, VersionedNode] = {}
         self._versioned_nodes_by_full_name: Dict[str, VersionedNode] = {}
         self._versioned_nodes_by_source: Dict[Tuple[str, int, int], VersionedNode] = {}
-        self._all_code_blocks: List['Block'] = []
+        self._all_code_blocks: List[Block] = []
         self._languages: List[str] = []
         self._current_local_only: bool = True
+        self._flat_items: List[FlatListItem] = []
+
+    def _rebuild_flat_items(self):
+        """Перестраивает плоский список на основе текущих source_map и всех блоков."""
+        _, _, _, source_map = self.tree_builder.build_display_tree(self._versioned_roots, self._current_local_only)
+        self._flat_items = TreeBuilderNew.build_flat_list_from_blocks(self._all_code_blocks, source_map)
 
     def load_blocks(self) -> None:
         self.block_service.load_from_items(self.items)
@@ -55,24 +63,26 @@ class StructureDataProvider:
 
         logger.info(f"Построено модулей: {len(self._versioned_roots)}, неразрешённых: {len(unknown)}, ошибок: {len(self._error_blocks)}")
 
-        # Построение DTO
+        # Построение DTO и плоского списка
         _, _, path_map, source_map = self.tree_builder.build_display_tree(self._versioned_roots, self._current_local_only)
         self._versioned_nodes_by_full_name = path_map
         self._versioned_nodes_by_source = source_map
+        self._flat_items = TreeBuilderNew.build_flat_list_from_blocks(self._all_code_blocks, source_map)
 
     def get_initial_data(self) -> CodeStructureInitDTO:
-        tree_root, flat_items, _, _ = self.tree_builder.build_display_tree(self._versioned_roots, self._current_local_only)
+        tree_root, _, _, _ = self.tree_builder.build_display_tree(self._versioned_roots, self._current_local_only)
         return CodeStructureInitDTO(
             languages=self._languages,
             tree=tree_root,
-            flat_items=flat_items,
-            has_unknown_blocks=False
+            flat_items=self._flat_items,
+            has_unknown_blocks=len(self._unknown_blocks) > 0
         )
 
     def refresh(self, local_only: bool) -> CodeStructureRefreshDTO:
         self._current_local_only = local_only
-        tree_root, flat_items, _, _ = self.tree_builder.build_display_tree(self._versioned_roots, local_only)
-        return CodeStructureRefreshDTO(tree=tree_root, flat_items=flat_items)
+        tree_root, _, _, _ = self.tree_builder.build_display_tree(self._versioned_roots, local_only)
+        self._rebuild_flat_items()   # <-- добавлено: обновляем плоский список
+        return CodeStructureRefreshDTO(tree=tree_root, flat_items=self._flat_items)
 
     def get_code_for_node(self, node_data: TreeDisplayNode) -> Optional[str]:
         if node_data.type == 'version' and node_data.block_id:
@@ -111,7 +121,6 @@ class StructureDataProvider:
         return ""
 
     def get_code_for_block(self, block_id: str) -> Optional[str]:
-        """Возвращает код для блока по его ID."""
         block = self.block_service.get_new_block(block_id)
         if block:
             return block.content
@@ -126,6 +135,7 @@ class StructureDataProvider:
         _, _, path_map, source_map = self.tree_builder.build_display_tree(self._versioned_roots, self._current_local_only)
         self._versioned_nodes_by_full_name = path_map
         self._versioned_nodes_by_source = source_map
+        self._rebuild_flat_items()   # <-- добавлено: обновляем плоский список
         
     def get_error_blocks(self):
         return self._error_blocks
@@ -134,11 +144,9 @@ class StructureDataProvider:
         return len(self._unknown_blocks) > 0
 
     def fix_error_block(self, block_id: str, new_code: str):
-        # Находим блок, заменяем его код и перепарсиваем
         block = self.block_service.get_new_block(block_id)
         if not block:
             return
-        # Создаём новый блок с исправленным кодом
         new_block = Block(
             id=block.id,
             chat=block.chat,
@@ -150,7 +158,6 @@ class StructureDataProvider:
             code_tree=None,
             module_hint=block.module_hint
         )
-        # Парсим заново
         from code_structure.parsing.core.parser import PythonParser
         parser = PythonParser()
         try:
@@ -168,11 +175,8 @@ class StructureDataProvider:
         except SyntaxError:
             logger.error(f"Исправленный блок {block_id} всё ещё содержит ошибку")
             return
-        # Регистрируем новый блок вместо старого
         BlockRegistry().register(new_block)
-        # Перестраиваем структуру
         self.rebuild_structure()
 
     def rebuild_structure(self):
-        """Перестраивает всё дерево заново."""
         self.load_blocks()

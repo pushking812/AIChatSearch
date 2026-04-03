@@ -1,3 +1,5 @@
+# code_structure/dialogs/dialog_interfaces.py
+
 """
 Интерфейсы для представлений (View) в архитектуре MVP.
 
@@ -185,4 +187,19 @@ class CodeStructureView(ABC):
     @abstractmethod
     def destroy(self):
         """Закрывает главное окно."""
+        pass
+
+    # ---------- Дополнительные методы для фильтрации плоского списка ----------
+    @abstractmethod
+    def set_flat_filter(self, column: str, value: str):
+        """
+        Устанавливает фильтр для плоского списка.
+        column: название колонки ("Узел", "Модуль", "Класс", "Стратегия")
+        value: значение для фильтрации (подстрока)
+        """
+        pass
+
+    @abstractmethod
+    def clear_flat_filter(self):
+        """Сбрасывает фильтр плоского списка."""
         pass

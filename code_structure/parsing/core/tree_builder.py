@@ -78,13 +78,11 @@ class TreeBuilderNew:
     ) -> Tuple[Optional[TreeDisplayNode], Dict[str, VersionedNode], Dict[Tuple[str, int, int], VersionedNode]]:
         logger.debug(f"Rendering node {vnode.name} type={vnode.node_type} with {len(vnode.children)} children")
 
-        # Защита от None в имени
         name = vnode.name if vnode.name is not None else "?"
         full_name = vnode.full_path if vnode.full_path is not None else name
 
         path_map[full_name] = vnode
 
-        # Сохраняем все источники в source_map
         for version in vnode.versions:
             for src in version.sources:
                 key = (src.block_id, src.start_line, src.end_line)
@@ -102,12 +100,10 @@ class TreeBuilderNew:
         )
 
         if vnode.node_type in ('function', 'method', 'code_block', 'import'):
-            # Добавляем версии как детей
             for i, version in enumerate(vnode.versions, 1):
                 version_node = TreeBuilderNew._version_to_node(version, i, vnode)
                 node.children.append(version_node)
 
-            # Добавляем запись в плоский список для последней версии
             if vnode.versions:
                 latest = vnode.versions[-1]
                 src = latest.sources[-1]
@@ -122,6 +118,12 @@ class TreeBuilderNew:
                     if vnode.parent and vnode.parent.node_type == 'class':
                         class_name = vnode.parent.name
 
+                # Для метода модуль берём из module_hint блока (без класса)
+                module = block.module_hint if block and block.module_hint else ''
+                if vnode.node_type == 'method' and block and block.module_hint:
+                    # module уже содержит только имя модуля, так как block.module_hint не включает класс
+                    pass
+
                 local = vnode.local_path if hasattr(vnode, 'local_path') else name
                 item = FlatListItem(
                     block_id=src.block_id,
@@ -129,15 +131,14 @@ class TreeBuilderNew:
                     node_path=local,
                     parent_path=parent_path,
                     lines=f"{src.start_line}-{src.end_line}",
-                    module=vnode.full_path.rsplit('.', 1)[0] if '.' in vnode.full_path else '',
+                    module=module,
                     class_name=class_name,
-                    strategy=''
+                    strategy=block.assignment_strategy if block else ''
                 )
                 flat_items.append(item)
 
         if vnode.node_type in ('module', 'class', 'package'):
             current_path = f"{parent_path}.{name}" if parent_path else name
-            logger.debug(f"Processing children of {vnode.name} (type={vnode.node_type})")
             for child in vnode.children:
                 child_node, path_map, source_map = TreeBuilderNew._versioned_to_node(
                     child, local_only, flat_items, path_map, source_map, current_path
@@ -145,7 +146,6 @@ class TreeBuilderNew:
                 if child_node:
                     node.children.append(child_node)
 
-        logger.debug(f"Created node {node.text} type={node.type} with {len(node.children)} children")
         return node, path_map, source_map
 
     @staticmethod
@@ -222,7 +222,15 @@ class TreeBuilderNew:
 
         if vnode:
             if vnode.node_type in ('function', 'method', 'code_block', 'import'):
-                module = vnode.full_path.rsplit('.', 1)[0] if '.' in vnode.full_path else ''
+                # Для методов не добавляем имя класса в модуль
+                if vnode.node_type == 'method':
+                    # Ищем модуль-родитель
+                    temp = vnode.parent
+                    while temp and temp.node_type not in ('module', 'package'):
+                        temp = temp.parent
+                    module = temp.full_path if temp else ''
+                else:
+                    module = vnode.full_path.rsplit('.', 1)[0] if '.' in vnode.full_path else ''
             else:
                 module = vnode.full_path
             if vnode.node_type == 'method' and vnode.parent and vnode.parent.node_type == 'class':

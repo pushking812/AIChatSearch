@@ -1,4 +1,4 @@
-# code_structure/ui/module_assignment/module_assignment_presenter.py
+# code_structure/dialogs/module_assignment/module_assignment_presenter.py
 
 import re
 import logging

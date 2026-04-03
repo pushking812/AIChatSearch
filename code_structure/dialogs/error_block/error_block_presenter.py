@@ -1,4 +1,4 @@
-# code_structure/ui/error_block/error_block_presenter.py
+# code_structure/dialogs/error_block/error_block_presenter.py
 
 import logging
 from typing import Optional

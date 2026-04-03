@@ -1,11 +1,11 @@
-# code_structure/ui/code_structure/main_window_view.py
+# code_structure/dialogs/code_structure/main_window_view.py
 
 import tkinter as tk
 from tkinter import ttk, messagebox
 from chlorophyll import CodeView
 import pygments.lexers
 from pygments.util import ClassNotFound
-from typing import List
+from typing import List, Optional
 
 from code_structure.dialogs.dialog_interfaces import CodeStructureView
 from code_structure.dialogs.dto import TreeDisplayNode, FlatListItem
@@ -21,7 +21,10 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
 
         self.presenter = None
         
-        self._right_item_to_data = {} 
+        self._right_item_to_data = {}
+        self._all_flat_items: List[FlatListItem] = []   # для фильтрации
+        self._current_filter_column = "Узел"
+        self._current_filter_text = ""
 
         # Верхняя панель с элементами управления
         top_frame = ttk.Frame(self)
@@ -62,6 +65,28 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
         self.create_button = ttk.Button(control_frame, text="Создать проект", command=self._on_create_project)
         self.create_button.pack(side=tk.LEFT, padx=5)
 
+        # Панель фильтрации плоского списка
+        filter_frame = ttk.Frame(self)
+        filter_frame.pack(fill=tk.X, padx=5, pady=2)
+
+        ttk.Label(filter_frame, text="Фильтр плоского списка:").pack(side=tk.LEFT, padx=5)
+        self.filter_column_combo = ttk.Combobox(
+            filter_frame,
+            values=["Узел", "Модуль", "Класс", "Стратегия"],
+            state="readonly",
+            width=15
+        )
+        self.filter_column_combo.current(0)
+        self.filter_column_combo.pack(side=tk.LEFT, padx=5)
+        self.filter_column_combo.bind("<<ComboboxSelected>>", self._on_filter_changed)
+
+        self.filter_entry = ttk.Entry(filter_frame, width=20)
+        self.filter_entry.pack(side=tk.LEFT, padx=5)
+        self.filter_entry.bind("<KeyRelease>", self._on_filter_changed)
+
+        self.clear_filter_button = ttk.Button(filter_frame, text="X", width=3, command=self._clear_filter)
+        self.clear_filter_button.pack(side=tk.LEFT, padx=5)
+
         # Главный горизонтальный PanedWindow
         self.main_paned = tk.PanedWindow(self, orient=tk.HORIZONTAL, sashrelief=tk.RAISED, sashwidth=6)
         self.main_paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -99,9 +124,12 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
         self.flat_tree.column("class", width=150, minwidth=120)
         self.flat_tree.column("strategy", width=100, minwidth=80)
 
-        flat_scroll = ttk.Scrollbar(flat_frame, orient=tk.VERTICAL, command=self.flat_tree.yview)
-        flat_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-        self.flat_tree.configure(yscrollcommand=flat_scroll.set)
+        # Скроллбары для плоского списка
+        flat_scroll_y = ttk.Scrollbar(flat_frame, orient=tk.VERTICAL, command=self.flat_tree.yview)
+        flat_scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
+        flat_scroll_x = ttk.Scrollbar(flat_frame, orient=tk.HORIZONTAL, command=self.flat_tree.xview)
+        flat_scroll_x.pack(side=tk.BOTTOM, fill=tk.X)
+        self.flat_tree.configure(yscrollcommand=flat_scroll_y.set, xscrollcommand=flat_scroll_x.set)
         self.flat_tree.bind("<<TreeviewSelect>>", self._on_flat_tree_select)
 
         # Текстовое поле для кода
@@ -151,9 +179,12 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
         self.merged_tree.column("sources", width=200, minwidth=120, stretch=True)
         self.merged_tree.column("full_name", width=0, stretch=False)
 
-        merged_tree_scroll = ttk.Scrollbar(right_tree_frame, orient=tk.VERTICAL, command=self.merged_tree.yview)
-        merged_tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-        self.merged_tree.configure(yscrollcommand=merged_tree_scroll.set)
+        # Скроллбары для сводного дерева
+        merged_scroll_y = ttk.Scrollbar(right_tree_frame, orient=tk.VERTICAL, command=self.merged_tree.yview)
+        merged_scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
+        merged_scroll_x = ttk.Scrollbar(right_tree_frame, orient=tk.HORIZONTAL, command=self.merged_tree.xview)
+        merged_scroll_x.pack(side=tk.BOTTOM, fill=tk.X)
+        self.merged_tree.configure(yscrollcommand=merged_scroll_y.set, xscrollcommand=merged_scroll_x.set)
         self.merged_tree.bind("<<TreeviewSelect>>", self._on_right_tree_select)
 
         right_code_frame = ttk.Frame(right_vertical)
@@ -174,16 +205,11 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
         )
         self.merged_code.grid(row=0, column=0, sticky="nsew")
 
+        # Вычисление минимальной ширины окна
         self.update_idletasks()
-        min_width = (self.type_combo.winfo_reqwidth() +
-                     self.local_only_check.winfo_reqwidth() +
-                     self.module_button.winfo_reqwidth() +
-                     self.right_level_combo.winfo_reqwidth() +
-                     self.right_expand_button.winfo_reqwidth() +
-                     self.save_button.winfo_reqwidth() +
-                     self.load_button.winfo_reqwidth() +
-                     self.create_button.winfo_reqwidth() +
-                     200)
+        control_width = sum(w.winfo_reqwidth() for w in control_frame.winfo_children()) + 50
+        filter_width = sum(w.winfo_reqwidth() for w in filter_frame.winfo_children()) + 50
+        min_width = max(control_width, filter_width, 800)
         self.minsize(min_width, 550)
 
     # ---- Методы для управления правым деревом ----
@@ -208,7 +234,6 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
             self._expand_to_level_right(child, current_level + 1, target_level)
 
     def clear_merged_tree(self):
-        # Проверяем, существует ли виджет и не был ли он уничтожен
         if not self.merged_tree.winfo_exists():
             return
         for item in self.merged_tree.get_children():
@@ -239,11 +264,32 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
         for child in node.children:
             self._add_merged_node(item, child)
 
-    # ---- Методы для плоского списка ----
+    # ---- Методы для плоского списка с фильтрацией ----
     def set_flat_list(self, items: List[FlatListItem]):
+        self._all_flat_items = items
+        self._apply_flat_filter()
+
+    def _apply_flat_filter(self):
+        """Применяет текущий фильтр к плоскому списку."""
         for item in self.flat_tree.get_children():
             self.flat_tree.delete(item)
-        for i, data in enumerate(items):
+
+        filtered = self._all_flat_items
+        if self._current_filter_text.strip():
+            col_map = {
+                "Узел": "node_path",
+                "Модуль": "module",
+                "Класс": "class_name",
+                "Стратегия": "strategy"
+            }
+            attr = col_map.get(self._current_filter_column, "node_path")
+            text_lower = self._current_filter_text.lower()
+            filtered = [
+                item for item in self._all_flat_items
+                if text_lower in getattr(item, attr, "").lower()
+            ]
+
+        for i, data in enumerate(filtered):
             self.flat_tree.insert(
                 "", tk.END,
                 text=str(i),
@@ -258,6 +304,31 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
                 ),
                 tags=(data.block_id,)
             )
+
+    def _on_filter_changed(self, event=None):
+        self._current_filter_column = self.filter_column_combo.get()
+        self._current_filter_text = self.filter_entry.get()
+        self._apply_flat_filter()
+
+    def _clear_filter(self):
+        self.filter_entry.delete(0, tk.END)
+        self.filter_column_combo.current(0)
+        self._current_filter_column = "Узел"
+        self._current_filter_text = ""
+        self._apply_flat_filter()
+
+    def set_flat_filter(self, column: str, value: str):
+        """Устанавливает фильтр извне (например, при выборе узла в merged_tree)."""
+        if column in ["Узел", "Модуль", "Класс", "Стратегия"]:
+            self.filter_column_combo.set(column)
+            self.filter_entry.delete(0, tk.END)
+            self.filter_entry.insert(0, value)
+            self._current_filter_column = column
+            self._current_filter_text = value
+            self._apply_flat_filter()
+
+    def clear_flat_filter(self):
+        self._clear_filter()
 
     # ---- Методы для работы с комбобоксами ----
     def set_type_combo_values(self, values):
@@ -285,7 +356,7 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
     def show_error(self, message: str):
         messagebox.showerror("Ошибка", message, parent=self)
 
-    def display_code(self, code: str, language: str = "python"):
+    def display_code(self, code: str, language: str = "python", start_line: Optional[int] = None, end_line: Optional[int] = None):
         self.code_text.delete(1.0, tk.END)
         if not code.strip():
             return
@@ -293,10 +364,16 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
             self.code_text.lexer = pygments.lexers.PythonLexer
         else:
             try:
-                self.merged_code.lexer = pygments.lexers.get_lexer_by_name(language.lower())
+                self.code_text.lexer = pygments.lexers.get_lexer_by_name(language.lower())
             except ClassNotFound:
-                pass 
+                pass
         self.code_text.insert(1.0, code)
+        if start_line is not None:
+            # Прокрутка к указанной строке
+            line_start = f"{start_line}.0"
+            self.code_text.see(line_start)
+            self.code_text.mark_set("insert", line_start)
+            self.code_text.focus_set()
 
     def display_merged_code(self, code: str, language: str = "python"):
         self.merged_code.delete(1.0, tk.END)
@@ -344,8 +421,10 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
         tags = self.flat_tree.item(item, 'tags')
         if tags:
             block_id = tags[0]
+            values = self.flat_tree.item(item, 'values')
+            lines_str = values[3] if len(values) > 3 else ""
             if self.presenter:
-                self.presenter.on_flat_node_selected(block_id)
+                self.presenter.on_flat_node_selected(block_id, lines_str)
 
     def _on_right_tree_select(self, event):
         selected = self.merged_tree.selection()

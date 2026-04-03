@@ -1,4 +1,4 @@
-# code_structure/ui/error_block/error_block_dialog.py
+# code_structure/dialogs/error_block/error_block_dialog.py
 
 import tkinter as tk
 
