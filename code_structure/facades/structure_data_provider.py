@@ -12,8 +12,8 @@ from code_structure.dialogs.dto import (
 from code_structure.parsing.core.tree_builder import TreeBuilderNew
 from code_structure.module_resolution.services.versioned_tree_builder import VersionedTreeBuilder
 from code_structure.models.versioned_node import VersionedNode
-from code_structure.models.block import Block                     # добавлен импорт
-from code_structure.models.registry import BlockRegistry          # добавлен импорт
+from code_structure.models.block import Block
+from code_structure.models.registry import BlockRegistry
 
 import logging
 from code_structure.utils.logger import get_logger
@@ -46,9 +46,7 @@ class StructureDataProvider:
     def load_blocks(self) -> None:
         self.block_service.load_from_items(self.items)
         all_blocks = self.block_service.get_new_blocks()
-        self._all_code_blocks = [b for b in all_blocks if b.language in ('python', 'py')]
-        self._languages = list(set(b.language for b in self._all_code_blocks))
-
+        
         text_blocks_by_pair = self.block_service.get_text_blocks_by_pair()
         full_texts_by_pair = self.block_service.get_full_texts_by_pair()
 
@@ -60,6 +58,11 @@ class StructureDataProvider:
         )
         self._unknown_blocks = unknown
         self._error_blocks = self.block_service.get_error_blocks()
+
+        # После построения дерева обновляем список блоков (внутри builder могли создаваться новые блоки)
+        all_blocks = self.block_service.get_new_blocks()
+        self._all_code_blocks = [b for b in all_blocks if b.language in ('python', 'py')]
+        self._languages = list(set(b.language for b in self._all_code_blocks))
 
         logger.info(f"Построено модулей: {len(self._versioned_roots)}, неразрешённых: {len(unknown)}, ошибок: {len(self._error_blocks)}")
 
@@ -81,7 +84,7 @@ class StructureDataProvider:
     def refresh(self, local_only: bool) -> CodeStructureRefreshDTO:
         self._current_local_only = local_only
         tree_root, _, _, _ = self.tree_builder.build_display_tree(self._versioned_roots, local_only)
-        self._rebuild_flat_items()   # <-- добавлено: обновляем плоский список
+        self._rebuild_flat_items()
         return CodeStructureRefreshDTO(tree=tree_root, flat_items=self._flat_items)
 
     def get_code_for_node(self, node_data: TreeDisplayNode) -> Optional[str]:
@@ -135,7 +138,7 @@ class StructureDataProvider:
         _, _, path_map, source_map = self.tree_builder.build_display_tree(self._versioned_roots, self._current_local_only)
         self._versioned_nodes_by_full_name = path_map
         self._versioned_nodes_by_source = source_map
-        self._rebuild_flat_items()   # <-- добавлено: обновляем плоский список
+        self._rebuild_flat_items()
         
     def get_error_blocks(self):
         return self._error_blocks

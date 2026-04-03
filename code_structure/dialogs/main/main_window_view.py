@@ -22,7 +22,7 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
         self.presenter = None
         
         self._right_item_to_data = {}
-        self._all_flat_items: List[FlatListItem] = []   # для фильтрации
+        self._all_flat_items: List[FlatListItem] = []
         self._current_filter_column = "Узел"
         self._current_filter_text = ""
 
@@ -369,7 +369,6 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
                 pass
         self.code_text.insert(1.0, code)
         if start_line is not None:
-            # Прокрутка к указанной строке
             line_start = f"{start_line}.0"
             self.code_text.see(line_start)
             self.code_text.mark_set("insert", line_start)
@@ -433,4 +432,4 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
         item = selected[0]
         node_data = self._right_item_to_data.get(item)
         if node_data and self.presenter:
-            self.presenter.on_merged_node_selected(node_data)
+            self.presenter.on_merged_node_selected(node_data, self._right_item_to_data)

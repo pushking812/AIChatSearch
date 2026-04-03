@@ -104,38 +104,9 @@ class TreeBuilderNew:
                 version_node = TreeBuilderNew._version_to_node(version, i, vnode)
                 node.children.append(version_node)
 
-            if vnode.versions:
-                latest = vnode.versions[-1]
-                src = latest.sources[-1]
-                block = BlockRegistry().get(src.block_id)
-                if block:
-                    block_name = block.display_name
-                else:
-                    block_name = src.block_id
-
-                class_name = '-'
-                if vnode.node_type == 'method':
-                    if vnode.parent and vnode.parent.node_type == 'class':
-                        class_name = vnode.parent.name
-
-                # Для метода модуль берём из module_hint блока (без класса)
-                module = block.module_hint if block and block.module_hint else ''
-                if vnode.node_type == 'method' and block and block.module_hint:
-                    # module уже содержит только имя модуля, так как block.module_hint не включает класс
-                    pass
-
-                local = vnode.local_path if hasattr(vnode, 'local_path') else name
-                item = FlatListItem(
-                    block_id=src.block_id,
-                    block_name=block_name,
-                    node_path=local,
-                    parent_path=parent_path,
-                    lines=f"{src.start_line}-{src.end_line}",
-                    module=module,
-                    class_name=class_name,
-                    strategy=block.assignment_strategy if block else ''
-                )
-                flat_items.append(item)
+            # Добавление записи в плоский список делается в _collect_flat_items_from_block,
+            # а не здесь, чтобы избежать дублирования.
+            # Оставляем только добавление версий.
 
         if vnode.node_type in ('module', 'class', 'package'):
             current_path = f"{parent_path}.{name}" if parent_path else name
@@ -212,6 +183,8 @@ class TreeBuilderNew:
         source_parent = ""
         if isinstance(node, MethodNode) and node.parent and isinstance(node.parent, ClassNode):
             source_parent = node.parent.name if node.parent.name is not None else ""
+        elif isinstance(node, CodeBlockNode) and node.parent and isinstance(node.parent, ClassNode):
+            source_parent = node.parent.name if node.parent.name is not None else ""
 
         key = (block.id, node.start_line, node.end_line)
         vnode = source_map.get(key)
@@ -221,28 +194,51 @@ class TreeBuilderNew:
         strategy = ""
 
         if vnode:
-            if vnode.node_type in ('function', 'method', 'code_block', 'import'):
-                # Для методов не добавляем имя класса в модуль
-                if vnode.node_type == 'method':
-                    # Ищем модуль-родитель
-                    temp = vnode.parent
-                    while temp and temp.node_type not in ('module', 'package'):
-                        temp = temp.parent
-                    module = temp.full_path if temp else ''
-                else:
-                    module = vnode.full_path.rsplit('.', 1)[0] if '.' in vnode.full_path else ''
+            # Определяем module и class_name в зависимости от типа узла
+            if vnode.node_type in ('method', 'code_block'):
+                # Для методов и блоков кода: module = модуль (без класса), class_name = имя класса
+                # Ищем родительский класс
+                parent_class = None
+                temp = vnode.parent
+                while temp:
+                    if temp.node_type == 'class':
+                        parent_class = temp
+                        break
+                    temp = temp.parent
+                if parent_class:
+                    class_name = parent_class.name if parent_class.name else "-"
+                # Ищем родительский модуль
+                temp_mod = vnode.parent
+                while temp_mod:
+                    if temp_mod.node_type in ('module', 'package'):
+                        module = temp_mod.full_path
+                        break
+                    temp_mod = temp_mod.parent
+                if not module:
+                    module = block.module_hint or ''
+            elif vnode.node_type == 'function':
+                module = vnode.full_path.rsplit('.', 1)[0] if '.' in vnode.full_path else ''
+                class_name = '-'
             else:
                 module = vnode.full_path
-            if vnode.node_type == 'method' and vnode.parent and vnode.parent.node_type == 'class':
-                class_name = vnode.parent.name if vnode.parent.name is not None else "-"
+                class_name = '-'
             strategy = block.assignment_strategy or ""
         else:
+            # Нет версионированного узла – используем подсказки из блока
             if block.module_hint:
                 module = block.module_hint
                 strategy = block.assignment_strategy or ""
-                class_name = '-'
+                # Определяем класс, если узел является методом или блоком кода внутри класса
+                if isinstance(node, MethodNode) and node.parent and isinstance(node.parent, ClassNode):
+                    class_name = node.parent.name if node.parent.name else "-"
+                elif isinstance(node, CodeBlockNode) and node.parent and isinstance(node.parent, ClassNode):
+                    class_name = node.parent.name if node.parent.name else "-"
+                else:
+                    class_name = '-'
             else:
                 strategy = "Неназначенный блок"
+                module = ""
+                class_name = '-'
 
         flat_item = FlatListItem(
             block_id=block.id,

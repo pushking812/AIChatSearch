@@ -73,12 +73,27 @@ class CodeStructurePresenter:
             self._show_module_dialog()
 
     # ---------- Обработка выбора узлов ----------
-    def on_merged_node_selected(self, node_data: TreeDisplayNode):
+    def on_merged_node_selected(self, node_data: TreeDisplayNode, item_to_data: dict = None):
         code = self.data_provider.get_code_for_node(node_data)
         self.view.display_merged_code(code or "")
+        
         # Фильтрация плоского списка по имени функции/метода
+        filter_name = None
         if node_data.type in ('function', 'method'):
-            self.view.set_flat_filter("Узел", node_data.text)
+            filter_name = node_data.text
+        elif node_data.type == 'version' and item_to_data:
+            # Найти родительский узел (функцию/метод)
+            for item, nd in item_to_data.items():
+                if nd == node_data:
+                    parent_item = self.view.merged_tree.parent(item)
+                    if parent_item and parent_item in item_to_data:
+                        parent_node = item_to_data[parent_item]
+                        if parent_node.type in ('function', 'method'):
+                            filter_name = parent_node.text
+                    break
+        
+        if filter_name:
+            self.view.set_flat_filter("Узел", filter_name)
         else:
             self.view.clear_flat_filter()
 

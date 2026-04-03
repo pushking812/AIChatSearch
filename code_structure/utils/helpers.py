@@ -4,11 +4,12 @@ import ast
 import sys
 import logging
 import re
-from typing import Optional
 import textwrap
+from typing import Optional
 
 from code_structure.utils.logger import get_logger
-logger = get_logger(__name__, level = logging.DEBUG)
+logger = get_logger(__name__, level=logging.DEBUG)
+
 
 class DocstringRemover(ast.NodeTransformer):
     @staticmethod
@@ -31,6 +32,13 @@ class DocstringRemover(ast.NodeTransformer):
     visit_AsyncFunctionDef = _remove_docstring
 
 
+def _normalize_quotes(code: str) -> str:
+    """
+    Заменяет двойные кавычки на одинарные в строковых литералах (упрощённо).
+    Для целей сравнения версий этого достаточно.
+    """
+    return code.replace('"', "'")
+
 
 def _legacy_clean_code(code: str) -> str:
     """
@@ -50,27 +58,21 @@ def _legacy_clean_code(code: str) -> str:
     docstring_char = None
 
     for line in lines:
-        # Сохраняем отступ после выравнивания
         stripped = line.lstrip()
         indent = line[:len(line)-len(stripped)]
 
-        # Обработка docstring
         if not in_docstring:
             if stripped.startswith('"""') or stripped.startswith("'''"):
-                # Проверяем, не закрывается ли на той же строке
                 if (stripped.count('"""') == 1 and stripped.endswith('"""')) or \
                    (stripped.count("'''") == 1 and stripped.endswith("'''")):
-                    # Однострочный docstring – пропускаем строку
                     continue
                 else:
                     in_docstring = True
                     docstring_char = '"""' if stripped.startswith('"""') else "'''"
-                    # Если открытие и закрытие в одной строке (например, """text""")
                     if stripped.count(docstring_char) == 2:
                         in_docstring = False
                     continue
         else:
-            # Внутри docstring, ищем закрытие
             if docstring_char in stripped:
                 in_docstring = False
                 rest = stripped.split(docstring_char, 1)[1]
@@ -82,18 +84,18 @@ def _legacy_clean_code(code: str) -> str:
             else:
                 continue
 
-        # Удаление комментариев (всё после #, не внутри строк – упрощённо)
         if '#' in stripped:
             stripped = stripped.split('#', 1)[0]
             line = indent + stripped
 
-        # Удаляем пустые строки
         if stripped.strip() == "":
             continue
 
         result_lines.append(line)
 
-    return '\n'.join(result_lines)
+    result = '\n'.join(result_lines)
+    result = _normalize_quotes(result)
+    return result
 
 
 def clean_code(code: str, keep_empty_lines: bool = False) -> str:
@@ -107,8 +109,10 @@ def clean_code(code: str, keep_empty_lines: bool = False) -> str:
             return _legacy_clean_code(code)
         if not keep_empty_lines:
             lines = [line for line in new_code.splitlines() if line.strip() != '']
-            return '\n'.join(lines)
-        return new_code
+            new_code = '\n'.join(lines)
+        # ast.unparse в Python 3.9+ выводит строки в одинарных кавычках, но для единообразия
+        # всё равно нормализуем кавычки (на случай будущих изменений)
+        return _normalize_quotes(new_code)
     except (SyntaxError, TabError, IndentationError):
         logger.debug("Синтаксическая ошибка, используется простая очистка")
         return _legacy_clean_code(code)
