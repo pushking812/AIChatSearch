@@ -5,7 +5,7 @@ import sys
 import os
 from typing import Dict, Optional
 
-# Глобальный файл для логов (если None – используется "_all.log" при use_global_file=True)
+# Глобальный файл для логов (если None – используется "_all.log" при one_file=True)
 GLOBAL_LOG_FILE: Optional[str] = "_all.log"
 # Общая директория для всех логов (применяется к относительным путям)
 LOG_DIR: Optional[str] = ".logs"
@@ -25,9 +25,10 @@ def _ensure_log_directory(file_path: str) -> None:
 def get_logger(
     name: str,
     level: int = logging.DEBUG,
-    log_to_file: bool = True,
+    to_file: bool = True,
     file_path: Optional[str] = None,
-    use_global_file: bool = False,
+    one_file: bool = False,
+    append_file: bool = False
 ) -> logging.Logger:
     logger = logging.getLogger(name)
     logger.setLevel(level)
@@ -40,12 +41,12 @@ def get_logger(
         console_handler.setFormatter(console_formatter)
         logger.addHandler(console_handler)
 
-    if not log_to_file:
+    if not to_file:
         return logger
 
     # --- Определяем целевой файл ---
     target: Optional[str] = None
-    if use_global_file:
+    if one_file:
         target = GLOBAL_LOG_FILE if GLOBAL_LOG_FILE is not None else "_all.log"
     elif file_path is not None:
         target = file_path
@@ -66,7 +67,9 @@ def get_logger(
 
     # Получаем или создаём FileHandler (один на файл, уровень обработчика = DEBUG)
     if abs_target not in _file_handlers:
-        file_handler = logging.FileHandler(abs_target, encoding='utf-8')
+        file_handler = logging.FileHandler(
+            abs_target, mode='a' if append_file else 'w', encoding='utf-8'
+        )
         file_handler.setLevel(logging.DEBUG)   # обработчик пропускает всё
         file_formatter = logging.Formatter(
             '%(asctime)s - %(name)s - %(levelname)s - %(message)s'

@@ -1,4 +1,4 @@
-# code_structure/dialogs/code_structure/main_window_view.py
+# code_structure/ui/code_structure/main_window_view.py
 
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -20,13 +20,12 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
         self.grab_set()
 
         self.presenter = None
-        
         self._right_item_to_data = {}
         self._all_flat_items: List[FlatListItem] = []
         self._current_filter_column = "Узел"
         self._current_filter_text = ""
 
-        # Верхняя панель с элементами управления
+        # --- Верхняя панель с элементами управления ---
         top_frame = ttk.Frame(self)
         top_frame.pack(fill=tk.X, padx=5, pady=5)
 
@@ -87,52 +86,61 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
         self.clear_filter_button = ttk.Button(filter_frame, text="X", width=3, command=self._clear_filter)
         self.clear_filter_button.pack(side=tk.LEFT, padx=5)
 
-        # Главный горизонтальный PanedWindow
+        # --- Главный горизонтальный PanedWindow ---
         self.main_paned = tk.PanedWindow(self, orient=tk.HORIZONTAL, sashrelief=tk.RAISED, sashwidth=6)
         self.main_paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # Левая вертикальная панель (плоский список + код)
+        # --- Левая вертикальная панель (плоский список + код) ---
         left_vertical = tk.PanedWindow(self.main_paned, orient=tk.VERTICAL, sashrelief=tk.RAISED, sashwidth=6)
         self.main_paned.add(left_vertical, width=600, minsize=400)
 
-        # Плоский список
-        flat_frame = ttk.Frame(left_vertical)
-        left_vertical.add(flat_frame, height=350, minsize=200)
+        # Контейнер для плоского списка
+        flat_container = ttk.Frame(left_vertical)
+        left_vertical.add(flat_container, height=350, minsize=200)
+        flat_container.grid_rowconfigure(0, weight=1)
+        flat_container.grid_columnconfigure(0, weight=1)
 
         self.flat_tree = ttk.Treeview(
-            flat_frame,
+            flat_container,
             columns=("block_name", "node_path", "parent_path", "lines", "module", "class", "strategy"),
             show="tree headings"
         )
-        self.flat_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        flat_v_scroll = ttk.Scrollbar(flat_container, orient=tk.VERTICAL, command=self.flat_tree.yview)
+        flat_h_scroll = ttk.Scrollbar(flat_container, orient=tk.HORIZONTAL, command=self.flat_tree.xview)
+        self.flat_tree.configure(yscrollcommand=flat_v_scroll.set, xscrollcommand=flat_h_scroll.set)
 
+        self.flat_tree.grid(row=0, column=0, sticky="nsew")
+        flat_v_scroll.grid(row=0, column=1, sticky="ns")
+        flat_h_scroll.grid(row=1, column=0, sticky="ew")
+
+        # Настройка колонок: разрешаем изменение ширины, задаём минимальную ширину
         self.flat_tree.heading("#0", text="ID")
+        self.flat_tree.column("#0", width=0, stretch=False)  # ID не нужен
+
         self.flat_tree.heading("block_name", text="Блок")
+        self.flat_tree.column("block_name", minwidth=50, stretch=True)
+
         self.flat_tree.heading("node_path", text="Узел")
+        self.flat_tree.column("node_path", minwidth=50, stretch=True)
+
         self.flat_tree.heading("parent_path", text="Родитель")
+        self.flat_tree.column("parent_path", minwidth=50, stretch=True)
+
         self.flat_tree.heading("lines", text="Строки")
+        self.flat_tree.column("lines", minwidth=50, stretch=True)
+
         self.flat_tree.heading("module", text="Модуль")
+        self.flat_tree.column("module", minwidth=50, stretch=True)
+
         self.flat_tree.heading("class", text="Класс")
+        self.flat_tree.column("class", minwidth=50, stretch=True)
+
         self.flat_tree.heading("strategy", text="Стратегия")
+        self.flat_tree.column("strategy", minwidth=50, stretch=True)
 
-        self.flat_tree.column("#0", width=0, stretch=False)
-        self.flat_tree.column("block_name", width=200, minwidth=150)
-        self.flat_tree.column("node_path", width=200, minwidth=150)
-        self.flat_tree.column("parent_path", width=200, minwidth=150)
-        self.flat_tree.column("lines", width=80, minwidth=60)
-        self.flat_tree.column("module", width=150, minwidth=120)
-        self.flat_tree.column("class", width=150, minwidth=120)
-        self.flat_tree.column("strategy", width=100, minwidth=80)
-
-        # Скроллбары для плоского списка
-        flat_scroll_y = ttk.Scrollbar(flat_frame, orient=tk.VERTICAL, command=self.flat_tree.yview)
-        flat_scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
-        flat_scroll_x = ttk.Scrollbar(flat_frame, orient=tk.HORIZONTAL, command=self.flat_tree.xview)
-        flat_scroll_x.pack(side=tk.BOTTOM, fill=tk.X)
-        self.flat_tree.configure(yscrollcommand=flat_scroll_y.set, xscrollcommand=flat_scroll_x.set)
         self.flat_tree.bind("<<TreeviewSelect>>", self._on_flat_tree_select)
 
-        # Текстовое поле для кода
+        # Текстовое поле для кода (левое)
         left_code_frame = ttk.Frame(left_vertical)
         left_vertical.add(left_code_frame, height=300, minsize=150)
         left_code_frame.grid_rowconfigure(0, weight=1)
@@ -151,42 +159,51 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
         )
         self.code_text.grid(row=0, column=0, sticky="nsew")
 
-        # Правая вертикальная панель (дерево модулей)
+        # --- Правая вертикальная панель (сводное дерево + код) ---
         right_vertical = tk.PanedWindow(self.main_paned, orient=tk.VERTICAL, sashrelief=tk.RAISED, sashwidth=6)
         self.main_paned.add(right_vertical, width=700, minsize=400)
 
-        right_tree_frame = ttk.Frame(right_vertical)
-        right_vertical.add(right_tree_frame, height=350, minsize=200)
+        # Контейнер для сводного дерева
+        merged_container = ttk.Frame(right_vertical)
+        right_vertical.add(merged_container, height=350, minsize=200)
+        merged_container.grid_rowconfigure(0, weight=1)
+        merged_container.grid_columnconfigure(0, weight=1)
 
         self.merged_tree = ttk.Treeview(
-            right_tree_frame,
+            merged_container,
             columns=("type", "signature", "version", "sources", "full_name"),
             show="tree headings"
         )
-        self.merged_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        merged_v_scroll = ttk.Scrollbar(merged_container, orient=tk.VERTICAL, command=self.merged_tree.yview)
+        merged_h_scroll = ttk.Scrollbar(merged_container, orient=tk.HORIZONTAL, command=self.merged_tree.xview)
+        self.merged_tree.configure(yscrollcommand=merged_v_scroll.set, xscrollcommand=merged_h_scroll.set)
 
+        self.merged_tree.grid(row=0, column=0, sticky="nsew")
+        merged_v_scroll.grid(row=0, column=1, sticky="ns")
+        merged_h_scroll.grid(row=1, column=0, sticky="ew")
+
+        # Настройка колонок сводного дерева
         self.merged_tree.heading("#0", text="Имя")
+        self.merged_tree.column("#0", minwidth=50, stretch=True)
+
         self.merged_tree.heading("type", text="Тип")
+        self.merged_tree.column("type", minwidth=50, stretch=True)
+
         self.merged_tree.heading("signature", text="Сигнатура")
+        self.merged_tree.column("signature", minwidth=50, stretch=True)
+
         self.merged_tree.heading("version", text="Версия")
+        self.merged_tree.column("version", minwidth=50, stretch=True)
+
         self.merged_tree.heading("sources", text="Последнее упоминание")
+        self.merged_tree.column("sources", minwidth=50, stretch=True)
+
         self.merged_tree.heading("full_name", text="Полное имя")
+        self.merged_tree.column("full_name", width=0, stretch=False)  # скрытая колонка
 
-        self.merged_tree.column("#0", width=250, minwidth=150, stretch=True)
-        self.merged_tree.column("type", width=80, minwidth=60, stretch=False)
-        self.merged_tree.column("signature", width=200, minwidth=120, stretch=True)
-        self.merged_tree.column("version", width=80, minwidth=60, stretch=False)
-        self.merged_tree.column("sources", width=200, minwidth=120, stretch=True)
-        self.merged_tree.column("full_name", width=0, stretch=False)
-
-        # Скроллбары для сводного дерева
-        merged_scroll_y = ttk.Scrollbar(right_tree_frame, orient=tk.VERTICAL, command=self.merged_tree.yview)
-        merged_scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
-        merged_scroll_x = ttk.Scrollbar(right_tree_frame, orient=tk.HORIZONTAL, command=self.merged_tree.xview)
-        merged_scroll_x.pack(side=tk.BOTTOM, fill=tk.X)
-        self.merged_tree.configure(yscrollcommand=merged_scroll_y.set, xscrollcommand=merged_scroll_x.set)
         self.merged_tree.bind("<<TreeviewSelect>>", self._on_right_tree_select)
 
+        # Текстовое поле для кода (правое)
         right_code_frame = ttk.Frame(right_vertical)
         right_vertical.add(right_code_frame, height=300, minsize=150)
         right_code_frame.grid_rowconfigure(0, weight=1)
@@ -205,14 +222,16 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
         )
         self.merged_code.grid(row=0, column=0, sticky="nsew")
 
-        # Вычисление минимальной ширины окна
+        # Минимальная ширина окна
         self.update_idletasks()
         control_width = sum(w.winfo_reqwidth() for w in control_frame.winfo_children()) + 50
         filter_width = sum(w.winfo_reqwidth() for w in filter_frame.winfo_children()) + 50
         min_width = max(control_width, filter_width, 800)
         self.minsize(min_width, 550)
 
-    # ---- Методы для управления правым деревом ----
+    # ------------------------------------------------------------------
+    # Все остальные методы (фильтрация, обработчики) остаются без изменений
+    # ------------------------------------------------------------------
     def _on_right_expand_level(self):
         try:
             level = int(self.right_level_combo.get())
@@ -264,13 +283,11 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
         for child in node.children:
             self._add_merged_node(item, child)
 
-    # ---- Методы для плоского списка с фильтрацией ----
     def set_flat_list(self, items: List[FlatListItem]):
         self._all_flat_items = items
         self._apply_flat_filter()
 
     def _apply_flat_filter(self):
-        """Применяет текущий фильтр к плоскому списку."""
         for item in self.flat_tree.get_children():
             self.flat_tree.delete(item)
 
@@ -318,7 +335,6 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
         self._apply_flat_filter()
 
     def set_flat_filter(self, column: str, value: str):
-        """Устанавливает фильтр извне (например, при выборе узла в merged_tree)."""
         if column in ["Узел", "Модуль", "Класс", "Стратегия"]:
             self.filter_column_combo.set(column)
             self.filter_entry.delete(0, tk.END)
@@ -330,7 +346,6 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
     def clear_flat_filter(self):
         self._clear_filter()
 
-    # ---- Методы для работы с комбобоксами ----
     def set_type_combo_values(self, values):
         self.type_combo['values'] = values
         if values:
@@ -387,7 +402,6 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
                 pass
         self.merged_code.insert(1.0, code)
 
-    # ---- Обработчики событий ----
     def _on_type_selected(self, event):
         if self.presenter:
             self.presenter.on_type_selected(event)
