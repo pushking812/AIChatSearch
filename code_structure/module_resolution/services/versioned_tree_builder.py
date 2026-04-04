@@ -32,6 +32,7 @@ class VersionedTreeBuilder:
         self.full_texts_by_pair: Dict[str, str] = {}
         self._block_imports: Dict[str, List[ImportInfo]] = {}
 
+    # ---------- Основной публичный метод ----------
     def build_from_blocks(
         self,
         blocks: List[Block],
@@ -196,43 +197,111 @@ class VersionedTreeBuilder:
             return next(iter(candidates))
         return None
 
-    # ---------- Сбор данных из CodeNode ----------
+    # ---------- Сбор данных из CodeNode (основной изменённый метод) ----------
     def _collect_from_code_node(self, code_node: CodeNode, module_name: str, block: Block, class_hint: Optional[str] = None):
         if code_node is None:
             return
 
-        logger.debug(f"Collect from code_node: type={code_node.node_type}, name={code_node.name}, module_name={module_name}, class_hint={class_hint}")
+        logger.debug(f"Collect [block={block.id}]: node={code_node.name} type={type(code_node).__name__} module={module_name} class_hint={class_hint}")
+        
         for child in code_node.children:
+            logger.debug(f"  Child [block={block.id}]: {getattr(child, 'name', '?')} type={type(child).__name__} parent_class_hint={class_hint}")
+            
             if isinstance(child, ClassNode):
                 class_path = f"{module_name}.{child.name}"
                 self.identifier_tree.add_path(class_path)
                 self._node_type_map[class_path] = 'class'
                 self._collect_from_code_node(child, class_path, block, child.name)
+                
             elif isinstance(child, MethodNode):
                 method_path = f"{module_name}.{child.name}"
                 self.identifier_tree.add_path(method_path)
                 self._node_type_map[method_path] = 'method'
                 self._add_version(method_path, child, block)
+                logger.debug(f"    -> Добавлен метод {method_path} из блока {block.id}")
+                
             elif isinstance(child, FunctionNode) and not isinstance(child, MethodNode):
+                logger.debug(f"    -> FunctionNode {child.name}, class_hint={class_hint}, block={block.id}")
                 if class_hint:
                     method_path = f"{module_name}.{class_hint}.{child.name}"
                     self.identifier_tree.add_path(method_path)
                     self._node_type_map[method_path] = 'method'
                     self._add_version(method_path, child, block)
+                    logger.debug(f"       -> Преобразована в метод {method_path} (class_hint)")
                 else:
-                    func_path = f"{module_name}.{child.name}"
-                    self.identifier_tree.add_path(func_path)
-                    self._node_type_map[func_path] = 'function'
-                    self._add_version(func_path, child, block)
+                    # Проверяем, является ли функция методом по наличию self в сигнатуре
+                    if self._has_self_parameter(child):
+                        # Пытаемся извлечь имя класса из module_name (последняя компонента)
+                        parts = module_name.split('.')
+                        if parts and parts[-1] and parts[-1][0].isupper():
+                            class_name = parts[-1]
+                            class_path = module_name  # полный путь к классу
+                            # Убеждаемся, что класс зарегистрирован
+                            if class_path not in self._node_type_map:
+                                self.identifier_tree.add_path(class_path)
+                                self._node_type_map[class_path] = 'class'
+                                logger.debug(f"       -> Автоматически создан класс {class_path}")
+                            method_path = f"{class_path}.{child.name}"
+                            # Если метод уже существует (например, из другого блока), не перезаписываем тип
+                            if method_path in self._node_type_map and self._node_type_map[method_path] == 'method':
+                                logger.debug(f"       -> Метод {method_path} уже существует, добавляем версию")
+                                self._add_version(method_path, child, block)
+                            else:
+                                self.identifier_tree.add_path(method_path)
+                                self._node_type_map[method_path] = 'method'
+                                self._add_version(method_path, child, block)
+                                logger.debug(f"       -> Функция с self преобразована в метод {method_path}")
+                        else:
+                            # Не удалось определить класс – добавляем как функцию
+                            func_path = f"{module_name}.{child.name}"
+                            if func_path in self._node_type_map and self._node_type_map[func_path] == 'method':
+                                logger.debug(f"       -> Путь {func_path} уже метод, добавляем версию")
+                                self._add_version(func_path, child, block)
+                            else:
+                                self.identifier_tree.add_path(func_path)
+                                self._node_type_map[func_path] = 'function'
+                                self._add_version(func_path, child, block)
+                                logger.debug(f"       -> Добавлена функция {func_path}")
+                    else:
+                        # Обычная функция без self
+                        func_path = f"{module_name}.{child.name}"
+                        if func_path in self._node_type_map and self._node_type_map[func_path] == 'method':
+                            logger.debug(f"       -> Путь {func_path} уже метод, добавляем версию")
+                            self._add_version(func_path, child, block)
+                        else:
+                            self.identifier_tree.add_path(func_path)
+                            self._node_type_map[func_path] = 'function'
+                            self._add_version(func_path, child, block)
+                            logger.debug(f"       -> Добавлена функция {func_path}")
+                
             elif isinstance(child, CodeBlockNode):
                 block_path = f"{module_name}._code_block"
                 self.identifier_tree.add_path(block_path)
                 self._node_type_map[block_path] = 'code_block'
                 self._add_version(block_path, child, block)
+                
             elif isinstance(child, ImportNode):
                 self._process_import_statement(child.statement, module_name, block)
+                
             else:
+                # Другие типы узлов (например, ModuleNode, CommentNode) – идём глубже
                 self._collect_from_code_node(child, module_name, block, class_hint)
+
+    def _has_self_parameter(self, func_node: FunctionNode) -> bool:
+        """
+        Проверяет, имеет ли функция первый параметр self.
+        Использует сигнатуру FunctionNode.
+        """
+        signature = getattr(func_node, 'signature', '')
+        if not signature:
+            return False
+        # Извлекаем первый параметр из сигнатуры
+        # Сигнатура имеет вид: "self, other, value=10" или "self: int = None"
+        match = re.match(r'^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:[=:,]|$)', signature)
+        if match:
+            first_param = match.group(1)
+            return first_param == 'self'
+        return False
 
     def _add_version(self, path: str, code_node: CodeNode, block: Block):
         import difflib
@@ -308,6 +377,15 @@ class VersionedTreeBuilder:
             node = all_nodes.get(path)
             if node:
                 node.versions = versions
+                # Проверка: если узел должен быть методом, но стал функцией
+                if node.node_type == 'function' and '.' in path:
+                    parent_path = '.'.join(path.split('.')[:-1])
+                    parent_node = all_nodes.get(parent_path)
+                    if parent_node and parent_node.node_type == 'class':
+                        logger.warning(
+                            f"Узел {path} имеет тип 'function', но его родитель {parent_path} - класс. "
+                            f"Должен быть 'method'. Возможно, ошибка в _node_type_map."
+                        )
             else:
                 logger.warning(f"Версии для пути {path}, но узел не найден в дереве")
         self._mark_imported_nodes(all_nodes)
@@ -325,6 +403,8 @@ class VersionedTreeBuilder:
             node_type = self._node_type_map.get(full_path)
             if node_type is None:
                 node_type = "package" if tree_node.children else "module"
+
+            logger.debug(f"Создание узла {full_path} с типом {node_type} (из карты: {self._node_type_map.get(full_path, 'не задан')})")
 
             node = self._create_versioned_node(tree_node.name, node_type)
             all_nodes[full_path] = node
