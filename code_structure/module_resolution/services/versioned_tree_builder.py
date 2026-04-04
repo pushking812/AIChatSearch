@@ -169,7 +169,6 @@ class VersionedTreeBuilder:
                     if new_block.code_tree:
                         self._collect_from_code_node(new_block.code_tree, module, new_block)
                         self._add_imports_from_block(new_block)
-                        self._process_relative_imports_for_block(new_block)
                     changed = True
             unknown = [b for b in unknown if b.module_hint is None]
             iteration += 1
@@ -208,7 +207,6 @@ class VersionedTreeBuilder:
                 class_path = f"{module_name}.{child.name}"
                 self.identifier_tree.add_path(class_path)
                 self._node_type_map[class_path] = 'class'
-                # self._add_version(class_path, child, block)
                 self._collect_from_code_node(child, class_path, block, child.name)
             elif isinstance(child, MethodNode):
                 method_path = f"{module_name}.{child.name}"
@@ -217,7 +215,6 @@ class VersionedTreeBuilder:
                 self._add_version(method_path, child, block)
             elif isinstance(child, FunctionNode) and not isinstance(child, MethodNode):
                 if class_hint:
-                    # Функция является методом класса (из текстовой подсказки)
                     method_path = f"{module_name}.{class_hint}.{child.name}"
                     self.identifier_tree.add_path(method_path)
                     self._node_type_map[method_path] = 'method'
@@ -237,9 +234,8 @@ class VersionedTreeBuilder:
             else:
                 self._collect_from_code_node(child, module_name, block, class_hint)
 
-
     def _add_version(self, path: str, code_node: CodeNode, block: Block):
-        import difflib  # в начало файла
+        import difflib
         raw_code = code_node.get_raw_code()
         norm = clean_code(raw_code)
         src = SourceRef(block.id, code_node.start_line, code_node.end_line, block.timestamp)
@@ -264,7 +260,7 @@ class VersionedTreeBuilder:
                     tofile='new',
                     lineterm=''
                 )
-                diff_lines = list(diff)[:30]  # первые 30 строк diff
+                diff_lines = list(diff)[:30]
                 if diff_lines:
                     diff_text = '\n'.join(diff_lines)
                     logger.debug(f"  Diff with version {i+1}:\n{diff_text}")
@@ -273,7 +269,7 @@ class VersionedTreeBuilder:
 
     # ---------- Импорты ----------
     def _add_imports_from_block(self, block: Block):
-        if not block.code_tree or not block.module_hint:
+        if not block.module_hint:
             return
         imports = extract_imports_from_block(block.content, block.module_hint)
         self._block_imports[block.id] = imports
@@ -281,17 +277,7 @@ class VersionedTreeBuilder:
             self.identifier_tree.add_path(imp.target_fullname)
             self._imported_paths.add(imp.target_fullname)
 
-    def _process_relative_imports_for_block(self, block: Block):
-        if block.id not in self._block_imports:
-            return
-        imports = self._block_imports[block.id]
-        for imp in imports:
-            if imp.is_relative:
-                self.identifier_tree.add_path(imp.target_fullname)
-                self._imported_paths.add(imp.target_fullname)
-
     def _collect_absolute_imports_to_tree(self):
-        # Уже делается в _add_imports_from_block
         pass
 
     def _process_import_statement(self, statement: str, current_module: str, block: Block):

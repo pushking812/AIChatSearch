@@ -5,7 +5,7 @@ import sys
 import logging
 import re
 import textwrap
-from typing import Optional
+from typing import List, Optional
 
 from code_structure.utils.logger import get_logger
 logger = get_logger(__name__, level=logging.DEBUG)
@@ -32,90 +32,121 @@ class DocstringRemover(ast.NodeTransformer):
     visit_AsyncFunctionDef = _remove_docstring
 
 
-def _normalize_quotes(code: str) -> str:
-    """
-    Заменяет двойные кавычки на одинарные в строковых литералах (упрощённо).
-    Для целей сравнения версий этого достаточно.
-    """
+def normalize_quotes(code: str) -> str:
+    """Заменяет двойные кавычки на одинарные."""
     return code.replace('"', "'")
 
 
-def _legacy_clean_code(code: str) -> str:
+def remove_trailing_whitespace(lines: List[str]) -> List[str]:
+    """Удаляет пробелы в конце каждой строки."""
+    return [line.rstrip() for line in lines]
+
+
+def remove_comments(lines: List[str]) -> List[str]:
+    """Удаляет комментарии (всё после #, не внутри строк – упрощённо)."""
+    result = []
+    for line in lines:
+        if '#' in line:
+            line = line.split('#', 1)[0]
+        result.append(line)
+    return result
+
+
+def remove_empty_lines(lines: List[str]) -> List[str]:
+    """Удаляет строки, состоящие только из пробелов."""
+    return [line for line in lines if line.strip() != '']
+
+
+def remove_docstrings_simple(lines: List[str]) -> List[str]:
     """
-    Очищает код от docstring, комментариев, пустых строк, но сохраняет внутренние отступы.
-    Сначала удаляет общий ведущий отступ (как textwrap.dedent).
+    Удаляет docstrings (многострочные и однострочные) из списка строк.
     Используется как fallback при синтаксических ошибках.
     """
-    if not code:
-        return ""
-
-    # 1. Убираем общий ведущий отступ (выравниваем код по левому краю)
-    code = textwrap.dedent(code)
-
-    lines = code.splitlines()
-    result_lines = []
+    result = []
     in_docstring = False
     docstring_char = None
-
-    for line in lines:
+    i = 0
+    while i < len(lines):
+        line = lines[i]
         stripped = line.lstrip()
-        indent = line[:len(line)-len(stripped)]
-
         if not in_docstring:
             if stripped.startswith('"""') or stripped.startswith("'''"):
-                if (stripped.count('"""') == 1 and stripped.endswith('"""')) or \
-                   (stripped.count("'''") == 1 and stripped.endswith("'''")):
+                docstring_char = '"""' if stripped.startswith('"""') else "'''"
+                # Проверяем, не закрывается ли на той же строке
+                if stripped.count(docstring_char) >= 2:
+                    i += 1
                     continue
                 else:
                     in_docstring = True
-                    docstring_char = '"""' if stripped.startswith('"""') else "'''"
-                    if stripped.count(docstring_char) == 2:
-                        in_docstring = False
+                    i += 1
                     continue
         else:
             if docstring_char in stripped:
                 in_docstring = False
-                rest = stripped.split(docstring_char, 1)[1]
-                if rest.strip():
-                    stripped = rest.lstrip()
-                    line = indent + stripped
-                else:
-                    continue
-            else:
-                continue
-
-        if '#' in stripped:
-            stripped = stripped.split('#', 1)[0]
-            line = indent + stripped
-
-        if stripped.strip() == "":
+            i += 1
             continue
-
-        result_lines.append(line)
-
-    result = '\n'.join(result_lines)
-    result = _normalize_quotes(result)
+        result.append(line)
+        i += 1
     return result
 
 
+def normalize_code_lines(
+    lines: List[str],
+    remove_comments_flag: bool = True,
+    remove_empty_lines_flag: bool = True,
+    strip_trailing: bool = True,
+    remove_docstrings_flag: bool = False
+) -> str:
+    """
+    Общая нормализация строк кода:
+    - удаляет docstrings (опционально)
+    - удаляет комментарии (опционально)
+    - удаляет пустые строки (опционально)
+    - удаляет trailing whitespace (опционально)
+    - нормализует кавычки
+    Возвращает объединённую строку.
+    """
+    if remove_docstrings_flag:
+        lines = remove_docstrings_simple(lines)
+    if strip_trailing:
+        lines = remove_trailing_whitespace(lines)
+    if remove_comments_flag:
+        lines = remove_comments(lines)
+    if remove_empty_lines_flag:
+        lines = remove_empty_lines(lines)
+    result = '\n'.join(lines)
+    return normalize_quotes(result)
+
+
 def clean_code(code: str, keep_empty_lines: bool = False) -> str:
+    """
+    Очищает код от docstring, комментариев, пустых строк, trailing whitespace,
+    нормализует кавычки.
+    """
+    if not code:
+        return ""
+
+    code = textwrap.dedent(code)
+
+    remove_docstrings_flag = False
+
     try:
         tree = ast.parse(code)
         tree = DocstringRemover().visit(tree)
         if sys.version_info >= (3, 9):
-            new_code = ast.unparse(tree)
-        else:
-            logger.warning("Версия Python ниже 3.9, используется fallback")
-            return _legacy_clean_code(code)
-        if not keep_empty_lines:
-            lines = [line for line in new_code.splitlines() if line.strip() != '']
-            new_code = '\n'.join(lines)
-        # ast.unparse в Python 3.9+ выводит строки в одинарных кавычках, но для единообразия
-        # всё равно нормализуем кавычки (на случай будущих изменений)
-        return _normalize_quotes(new_code)
-    except (SyntaxError, TabError, IndentationError):
-        logger.debug("Синтаксическая ошибка, используется простая очистка")
-        return _legacy_clean_code(code)
+            code = ast.unparse(tree)
+    except (SyntaxError, TabError, IndentationError) as e:
+        logger.debug("Обнаружена синтаксическая ошибка при очистке кода: %s", e)
+        remove_docstrings_flag = True
+
+    lines = code.splitlines()
+    return normalize_code_lines(
+        lines,
+        remove_comments_flag=True,
+        remove_empty_lines_flag=not keep_empty_lines,
+        strip_trailing=True,
+        remove_docstrings_flag=remove_docstrings_flag
+    )
 
 
 def extract_module_hint(block) -> Optional[str]:

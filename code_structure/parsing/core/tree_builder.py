@@ -104,9 +104,8 @@ class TreeBuilderNew:
                 version_node = TreeBuilderNew._version_to_node(version, i, vnode)
                 node.children.append(version_node)
 
-            # Добавление записи в плоский список делается в _collect_flat_items_from_block,
-            # а не здесь, чтобы избежать дублирования.
-            # Оставляем только добавление версий.
+            # Не добавляем плоские записи здесь, чтобы избежать дублирования.
+            # Все записи будут добавлены через build_flat_list_from_blocks.
 
         if vnode.node_type in ('module', 'class', 'package'):
             current_path = f"{parent_path}.{name}" if parent_path else name
@@ -180,6 +179,7 @@ class TreeBuilderNew:
         else:
             node_path = node.name if node.name is not None else "?"
 
+        # Родительский узел для отображения в колонке "Родитель"
         source_parent = ""
         if isinstance(node, MethodNode) and node.parent and isinstance(node.parent, ClassNode):
             source_parent = node.parent.name if node.parent.name is not None else ""
@@ -194,32 +194,53 @@ class TreeBuilderNew:
         strategy = ""
 
         if vnode:
-            # Определяем module и class_name в зависимости от типа узла
-            if vnode.node_type in ('method', 'code_block'):
-                # Для методов и блоков кода: module = модуль (без класса), class_name = имя класса
-                # Ищем родительский класс
-                parent_class = None
-                temp = vnode.parent
-                while temp:
-                    if temp.node_type == 'class':
-                        parent_class = temp
-                        break
-                    temp = temp.parent
-                if parent_class:
-                    class_name = parent_class.name if parent_class.name else "-"
-                # Ищем родительский модуль
-                temp_mod = vnode.parent
-                while temp_mod:
-                    if temp_mod.node_type in ('module', 'package'):
-                        module = temp_mod.full_path
-                        break
-                    temp_mod = temp_mod.parent
-                if not module:
+            # Получаем родительский класс (если есть)
+            parent_class = None
+            temp = vnode.parent
+            while temp:
+                if temp.node_type == 'class':
+                    parent_class = temp
+                    break
+                temp = temp.parent
+
+            # Получаем родительский модуль (верхний уровень)
+            parent_module = None
+            temp_mod = vnode.parent
+            while temp_mod:
+                if temp_mod.node_type in ('module', 'package'):
+                    parent_module = temp_mod
+                    break
+                temp_mod = temp_mod.parent
+
+            if vnode.node_type == 'method':
+                # Для метода: module = полный путь родительского модуля, class_name = имя класса
+                if parent_module:
+                    module = parent_module.full_path
+                else:
                     module = block.module_hint or ''
+                if parent_class:
+                    class_name = parent_class.name
+                else:
+                    class_name = '-'
+            elif vnode.node_type == 'code_block':
+                # Для блока кода внутри класса: аналогично методу
+                if parent_module:
+                    module = parent_module.full_path
+                else:
+                    module = block.module_hint or ''
+                if parent_class:
+                    class_name = parent_class.name
+                else:
+                    class_name = '-'
             elif vnode.node_type == 'function':
-                module = vnode.full_path.rsplit('.', 1)[0] if '.' in vnode.full_path else ''
+                # Для функции: module = полный путь родительского модуля (без класса)
+                if parent_module:
+                    module = parent_module.full_path
+                else:
+                    module = block.module_hint or ''
                 class_name = '-'
             else:
+                # Для остальных (import, class, module) – module = полный путь узла
                 module = vnode.full_path
                 class_name = '-'
             strategy = block.assignment_strategy or ""
