@@ -21,7 +21,7 @@ from code_structure.models.code_node import (
 
 import logging
 from code_structure.utils.logger import get_logger
-logger = get_logger(__name__, level=logging.WARNING)
+logger = get_logger(__name__, level=logging.DEBUG)
 
 
 class StructureDataProvider:
@@ -73,6 +73,7 @@ class StructureDataProvider:
 
         return flat_items
 
+    # code_structure/facades/structure_data_provider.py
     def _collect_flat_items_from_code_node(
         self,
         node: CodeNode,
@@ -83,7 +84,14 @@ class StructureDataProvider:
         """
         Рекурсивно обходит CodeNode и добавляет FlatListItem для каждого узла.
         Если is_root=True, то сам узел не добавляется (пропускается корневой контейнер).
+        Узлы-классы (ClassNode) не добавляются в список, но их дети обрабатываются.
         """
+        # Пропускаем добавление записи для ClassNode (но детей обрабатываем)
+        if isinstance(node, ClassNode):
+            for child in node.children:
+                self._collect_flat_items_from_code_node(child, block, flat_items, is_root=False)
+            return
+
         if not is_root:
             # Определяем отображаемое имя узла
             if isinstance(node, ImportNode):
@@ -92,7 +100,7 @@ class StructureDataProvider:
                 node_path = node.text
             elif isinstance(node, CodeBlockNode):
                 node_path = "блок кода"
-            elif isinstance(node, (FunctionNode, MethodNode, ClassNode)):
+            elif isinstance(node, (FunctionNode, MethodNode)):
                 node_path = node.name if node.name else "?"
             else:
                 node_path = node.name if node.name else "?"
@@ -101,46 +109,39 @@ class StructureDataProvider:
             key = (block.id, node.start_line, node.end_line)
             vnode = self._versioned_nodes_by_source.get(key)
 
-            # Логирование для отладки назначения класса
-            self._log_node_class_assignment(node, block, key, vnode)
+            # ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ
+            self._log_flat_item_details(node, block, key, vnode)
+
+            # Базовые значения по умолчанию
+            module = ""
+            class_name = "-"
+            strategy = block.assignment_strategy or ""
 
             if vnode:
-                # Узел привязан к версионированному дереву – берём данные из него
-                module = ""
-                class_name = "-"
-                # Ищем родительский модуль
+                # Узел привязан к версионированному дереву – извлекаем информацию из иерархии
+                # Ищем родительский модуль (верхний уровень)
                 parent_module = vnode.parent
                 while parent_module and parent_module.node_type not in ('module', 'package'):
                     parent_module = parent_module.parent
                 if parent_module:
                     module = parent_module.full_path
-
-                # Для методов и блоков кода внутри класса – ищем класс-родитель
-                if vnode.node_type == 'method':
-                    parent_class_node = vnode.parent
-                    while parent_class_node and parent_class_node.node_type != 'class':
-                        parent_class_node = parent_class_node.parent
-                    if parent_class_node:
-                        class_name = parent_class_node.name
-                    else:
-                        logger.debug(
-                            f"Метод {node.name} (vnode {vnode.full_path}) не нашёл родительский класс. "
-                            f"Родитель vnode: {vnode.parent} (тип={getattr(vnode.parent, 'node_type', None)})"
-                        )
-                elif vnode.node_type == 'code_block':
-                    parent_class_node = vnode.parent
-                    while parent_class_node and parent_class_node.node_type != 'class':
-                        parent_class_node = parent_class_node.parent
-                    if parent_class_node:
-                        class_name = parent_class_node.name
-                elif vnode.node_type == 'function':
-                    # Функции не имеют класса
-                    class_name = "-"
+                    logger.debug(f"    -> Найден родительский модуль: {module}")
                 else:
-                    # Для классов, модулей и т.д.
-                    class_name = "-"
+                    logger.debug(f"    -> Родительский модуль не найден")
 
-                strategy = block.assignment_strategy or ""
+                # Ищем родительский класс (для любого узла, который может находиться внутри класса)
+                parent_class_node = None
+                temp = vnode.parent
+                while temp:
+                    if temp.node_type == 'class':
+                        parent_class_node = temp
+                        break
+                    temp = temp.parent
+                if parent_class_node:
+                    class_name = parent_class_node.name
+                    logger.debug(f"    -> Найден родительский класс: {class_name}")
+                else:
+                    logger.debug(f"    -> Родительский класс не найден")
             else:
                 # Узел не привязан – используем информацию из блока и CodeNode
                 module = block.module_hint or ""
@@ -151,11 +152,7 @@ class StructureDataProvider:
                 elif isinstance(node, CodeBlockNode) and node.parent and isinstance(node.parent, ClassNode):
                     class_name = node.parent.name if node.parent.name else "-"
                 strategy = block.assignment_strategy or "Не назначен"
-
-                logger.debug(
-                    f"Узел {node_path} (тип {type(node).__name__}) не привязан к VersionedNode. "
-                    f"module_hint={block.module_hint}, class_name={class_name}"
-                )
+                logger.debug(f"    -> vnode не найден, использую block.module_hint={module}, class_name из CodeNode={class_name}")
 
             # Формируем строку "Родитель" (для колонки Parent)
             parent_path = ""
@@ -163,6 +160,8 @@ class StructureDataProvider:
                 parent_path = node.parent.name or ""
             elif isinstance(node, CodeBlockNode) and node.parent and isinstance(node.parent, ClassNode):
                 parent_path = node.parent.name or ""
+
+            logger.debug(f"    -> ИТОГО: module={module}, class_name={class_name}, parent_path={parent_path}, strategy={strategy}")
 
             flat_items.append(FlatListItem(
                 block_id=block.id,
@@ -175,9 +174,51 @@ class StructureDataProvider:
                 strategy=strategy
             ))
 
-        # Рекурсивный обход детей (никогда не пропускаем детей, даже для корня)
+        # Рекурсивный обход детей
         for child in node.children:
             self._collect_flat_items_from_code_node(child, block, flat_items, is_root=False)
+
+    def _log_flat_item_details(
+        self,
+        node: CodeNode,
+        block: Block,
+        key: Tuple[str, int, int],
+        vnode: Optional[VersionedNode]
+    ):
+        """Подробное логирование для диагностики."""
+        if not isinstance(node, (FunctionNode, MethodNode, CodeBlockNode)):
+            return
+
+        node_type = type(node).__name__
+        node_name = getattr(node, 'name', '?')
+        logger.info(f"=== Flat item для {node_name} ({node_type}) ===")
+        logger.info(f"Блок: {block.id}, стратегия: {block.assignment_strategy}")
+        logger.info(f"Строки: {node.start_line}-{node.end_line}")
+        logger.info(f"Ключ source_map: {key}")
+
+        if vnode:
+            logger.info(f"VersionedNode найден: {vnode.full_path} (тип={vnode.node_type})")
+            # Выводим цепочку родителей
+            parents = []
+            p = vnode.parent
+            while p:
+                parents.append(f"{p.name} ({p.node_type})")
+                p = p.parent
+            logger.info(f"Родители vnode: {' -> '.join(parents) if parents else 'нет'}")
+            # Выводим атрибуты vnode
+            logger.info(f"vnode.versions: {len(vnode.versions)}")
+            if vnode.versions:
+                src = vnode.versions[-1].sources[-1]
+                logger.info(f"Последний источник: {src.block_id}:{src.start_line}-{src.end_line}")
+        else:
+            logger.info("VersionedNode НЕ найден")
+            # Выводим parent из CodeNode
+            if node.parent:
+                logger.info(f"Родитель в CodeNode: {node.parent.name} ({type(node.parent).__name__})")
+            else:
+                logger.info("Родитель в CodeNode: None")
+
+        logger.info("=====================================")
 
     def _log_node_class_assignment(
         self,
@@ -186,7 +227,7 @@ class StructureDataProvider:
         key: Tuple[str, int, int],
         vnode: Optional[VersionedNode]
     ):
-        """Логирует процесс определения класса для узла."""
+        """Логирует процесс определения класса для узла (только для отладки)."""
         # Логируем только если узел является методом или блоком кода (потенциально внутри класса)
         if not isinstance(node, (MethodNode, CodeBlockNode)):
             return
@@ -210,39 +251,21 @@ class StructureDataProvider:
             f"родитель={vnode.parent.full_path if vnode.parent else 'None'}"
         )
 
-        # Проверяем, почему класс не определяется
-        if vnode.node_type == 'method':
-            parent_class = None
-            temp = vnode.parent
-            while temp:
-                if temp.node_type == 'class':
-                    parent_class = temp
-                    break
-                temp = temp.parent
-            if parent_class:
-                logger.debug(f"  -> Найден родительский класс для метода: {parent_class.name}")
-            else:
-                logger.warning(
-                    f"  !!! Метод {node_name} (vnode {vnode.full_path}) НЕ имеет родительского класса в VersionedNode. "
-                    f"Цепочка родителей: {self._get_parent_chain(vnode)}"
-                )
-        elif vnode.node_type == 'code_block':
-            parent_class = None
-            temp = vnode.parent
-            while temp:
-                if temp.node_type == 'class':
-                    parent_class = temp
-                    break
-                temp = temp.parent
-            if parent_class:
-                logger.debug(f"  -> Найден родительский класс для блока кода: {parent_class.name}")
-            else:
-                logger.warning(
-                    f"  !!! Блок кода (vnode {vnode.full_path}) НЕ имеет родительского класса. "
-                    f"Цепочка родителей: {self._get_parent_chain(vnode)}"
-                )
+        # Ищем родительский класс в иерархии vnode
+        parent_class = None
+        temp = vnode.parent
+        while temp:
+            if temp.node_type == 'class':
+                parent_class = temp
+                break
+            temp = temp.parent
+        if parent_class:
+            logger.debug(f"  -> Найден родительский класс: {parent_class.name}")
         else:
-            logger.debug(f"  -> Узел типа {vnode.node_type} не является методом или блоком кода, класс не ищется")
+            logger.warning(
+                f"  !!! Узел {node_name} (vnode {vnode.full_path}) НЕ имеет родительского класса. "
+                f"Цепочка родителей: {self._get_parent_chain(vnode)}"
+            )
 
     def _get_parent_chain(self, vnode: VersionedNode) -> str:
         """Возвращает строку с цепочкой родителей для отладки."""

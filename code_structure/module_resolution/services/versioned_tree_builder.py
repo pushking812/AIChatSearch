@@ -19,7 +19,7 @@ from code_structure.imports.core.import_analyzer import extract_imports_from_blo
 from code_structure.utils.helpers import extract_module_hint, clean_code
 from code_structure.utils.logger import get_logger
 
-logger = get_logger(__name__, level=logging.DEBUG)
+logger = get_logger(__name__, level=logging.WARNING)
 
 
 class VersionedTreeBuilder:
@@ -223,7 +223,14 @@ class VersionedTreeBuilder:
             elif isinstance(child, FunctionNode) and not isinstance(child, MethodNode):
                 logger.debug(f"    -> FunctionNode {child.name}, class_hint={class_hint}, block={block.id}")
                 if class_hint:
-                    method_path = f"{module_name}.{class_hint}.{child.name}"
+                    # Сначала убеждаемся, что класс существует в дереве
+                    class_path = f"{module_name}.{class_hint}"
+                    if class_path not in self._node_type_map:
+                        self.identifier_tree.add_path(class_path)
+                        self._node_type_map[class_path] = 'class'
+                        logger.debug(f"       -> Создан класс {class_path} с типом 'class'")
+                    # Добавляем метод
+                    method_path = f"{class_path}.{child.name}"
                     self.identifier_tree.add_path(method_path)
                     self._node_type_map[method_path] = 'method'
                     self._add_version(method_path, child, block)
