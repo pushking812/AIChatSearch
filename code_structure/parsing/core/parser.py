@@ -65,7 +65,14 @@ class PythonParser(CodeParser):
 
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 args_str = self._format_args(node.args, node.returns)
-                if isinstance(parent_node, ClassNode):
+                # Определяем, является ли функция методом:
+                # 1. Если родитель - класс -> точно метод
+                # 2. Иначе проверяем наличие self/cls в первом параметре
+                is_method = isinstance(parent_node, ClassNode)
+                if not is_method:
+                    if node.args.args and node.args.args[0].arg in ('self', 'cls'):
+                        is_method = True
+                if is_method:
                     func_node = MethodNode(
                         name=node.name,
                         signature=args_str,

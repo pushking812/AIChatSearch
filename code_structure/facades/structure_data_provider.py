@@ -21,7 +21,7 @@ from code_structure.models.code_node import (
 
 import logging
 from code_structure.utils.logger import get_logger
-logger = get_logger(__name__, level=logging.DEBUG)
+logger = get_logger(__name__, level=logging.WARNING)
 
 
 class StructureDataProvider:
@@ -283,6 +283,11 @@ class StructureDataProvider:
         self.block_service.load_from_items(self.items)
         all_blocks = self.block_service.get_new_blocks()
         
+        # Логирование всех загруженных блоков
+        for block in all_blocks:
+            logger.info(f"LOADED BLOCK: id={block.id}, module_hint={block.module_hint}, "
+                        f"strategy={block.assignment_strategy}, has_code_tree={block.code_tree is not None}")
+
         text_blocks_by_pair = self.block_service.get_text_blocks_by_pair()
         full_texts_by_pair = self.block_service.get_full_texts_by_pair()
 
