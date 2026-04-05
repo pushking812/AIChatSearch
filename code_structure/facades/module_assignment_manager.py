@@ -36,17 +36,19 @@ class ModuleAssignmentManager:
             ))
 
         versioned_roots = self.data_provider.get_versioned_roots()
+        logger.info(f"  versioned_roots count={len(versioned_roots)}")
+        
         known_modules_info = []
         
-        def collect_local_nodes(node: VersionedNode, path: str = ""):
+        def collect_all_nodes(node: VersionedNode, path: str = ""):
             current_path = f"{path}.{node.name}" if path else node.name
             
-            if node.name and node.name.startswith('_temp_'):
-                return
-            if getattr(node, 'is_imported', False):
-                return
+            # Логируем каждый узел для диагностики
+            logger.debug(f"Collect node: name={node.name}, type={node.node_type}, path={current_path}, is_imported={getattr(node, 'is_imported', False)}")
             
+            # Добавляем модули, классы и пакеты (все, без фильтрации по imported)
             if node.node_type in ('module', 'class', 'package'):
+                # Не фильтруем по is_imported, чтобы локальные модули точно попали
                 if node.versions:
                     code = self._render_node_code(node)
                 else:
@@ -57,16 +59,22 @@ class ModuleAssignmentManager:
                     source="",
                     code=code
                 ))
+                logger.debug(f"  Added to known_modules: {current_path}")
             
+            # Рекурсивно обходим детей
             for child in node.children:
-                collect_local_nodes(child, current_path)
+                collect_all_nodes(child, current_path)
         
-        for root in versioned_roots.values():
-            collect_local_nodes(root)
+        for root_name, root_node in versioned_roots.items():
+            logger.info(f"Processing root: {root_name}, type={root_node.node_type}")
+            collect_all_nodes(root_node)
         
+        # Сортируем по имени
         known_modules_info.sort(key=lambda m: m.name)
         
         logger.info(f"  known_modules={len(known_modules_info)}")
+        for m in known_modules_info[:20]:  # Покажем первые 20 для диагностики
+            logger.info(f"    {m.name}")
 
         root_dict, _, _, _ = self.tree_builder.build_display_tree(versioned_roots, local_only)
         module_tree = root_dict

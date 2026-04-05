@@ -21,7 +21,7 @@ from code_structure.models.code_node import (
 
 import logging
 from code_structure.utils.logger import get_logger
-logger = get_logger(__name__, level=logging.WARNING)
+logger = get_logger(__name__, level=logging.DEBUG)
 
 
 class StructureDataProvider:
@@ -205,6 +205,9 @@ class StructureDataProvider:
         self._languages = list(set(b.language for b in self._all_code_blocks))
 
         logger.info(f"Построено модулей: {len(self._versioned_roots)}, неразрешённых: {len(unknown)}, ошибок: {len(self._error_blocks)}")
+        # Выводим список корней для диагностики
+        for root_name in self._versioned_roots.keys():
+            logger.info(f"  Root module: {root_name}")
 
         # Построение DTO и плоского списка
         _, _, path_map, source_map = self.tree_builder.build_display_tree(self._versioned_roots, self._current_local_only)
