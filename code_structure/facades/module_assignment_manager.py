@@ -23,7 +23,14 @@ class ModuleAssignmentManager:
         all_blocks = self.block_service.get_new_blocks()
         logger.info(f"get_module_assignment_input: всего блоков={len(all_blocks)}")
         
-        unknown_blocks = [b for b in all_blocks if b.module_hint is None and b.language in ('python', 'py')]
+        unknown_blocks = []
+        for b in all_blocks:
+            if b.module_hint is None and b.language in ('python', 'py'):
+                if self.data_provider._is_pure_class_block(b):
+                    logger.debug(f"Блок {b.id} содержит только класс, пропускаем")
+                    continue
+                unknown_blocks.append(b)
+        
         logger.info(f"  unknown_blocks={len(unknown_blocks)}")
 
         unknown_blocks_info = []
@@ -36,48 +43,45 @@ class ModuleAssignmentManager:
             ))
 
         versioned_roots = self.data_provider.get_versioned_roots()
-        logger.info(f"  versioned_roots count={len(versioned_roots)}")
+        
+        # Получаем дерево с учётом фильтра local_only (как в главном окне)
+        root_dict, _, path_map, source_map = self.tree_builder.build_display_tree(versioned_roots, local_only)
+        module_tree = root_dict
+        
+        # Сохраняем карты для быстрого доступа (если понадобятся позже)
+        self._temp_path_map = path_map
+        self._temp_source_map = source_map
         
         known_modules_info = []
         
-        def collect_all_nodes(node: VersionedNode, path: str = ""):
-            current_path = f"{path}.{node.name}" if path else node.name
-            
-            # Логируем каждый узел для диагностики
-            logger.debug(f"Collect node: name={node.name}, type={node.node_type}, path={current_path}, is_imported={getattr(node, 'is_imported', False)}")
-            
-            # Добавляем модули, классы и пакеты (все, без фильтрации по imported)
-            if node.node_type in ('module', 'class', 'package'):
-                # Не фильтруем по is_imported, чтобы локальные модули точно попали
-                if node.versions:
-                    code = self._render_node_code(node)
+        def collect_nodes_from_tree(node: TreeDisplayNode):
+            # Добавляем модули, классы и пакеты (исключаем функции, методы, версии)
+            if node.type in ('module', 'class', 'package'):
+                # Получаем VersionedNode из path_map
+                vnode = path_map.get(node.full_name)
+                if vnode:
+                    code = self._render_node_code(vnode)
                 else:
-                    code = f"# {node.node_type.capitalize()} {node.name}\n# (нет кода)"
+                    code = f"# {node.type.capitalize()} {node.text}\n# (нет кода)"
                 
                 known_modules_info.append(KnownModuleInfo(
-                    name=current_path,
+                    name=node.full_name,
                     source="",
                     code=code
                 ))
-                logger.debug(f"  Added to known_modules: {current_path}")
             
-            # Рекурсивно обходим детей
             for child in node.children:
-                collect_all_nodes(child, current_path)
+                collect_nodes_from_tree(child)
         
-        for root_name, root_node in versioned_roots.items():
-            logger.info(f"Processing root: {root_name}, type={root_node.node_type}")
-            collect_all_nodes(root_node)
+        # Обходим дерево (пропускаем корневой узел "Все модули")
+        for child in module_tree.children:
+            collect_nodes_from_tree(child)
         
-        # Сортируем по имени
         known_modules_info.sort(key=lambda m: m.name)
         
         logger.info(f"  known_modules={len(known_modules_info)}")
-        for m in known_modules_info[:20]:  # Покажем первые 20 для диагностики
+        for m in known_modules_info[:20]:
             logger.info(f"    {m.name}")
-
-        root_dict, _, _, _ = self.tree_builder.build_display_tree(versioned_roots, local_only)
-        module_tree = root_dict
 
         return ModuleAssignmentInput(
             unknown_blocks=unknown_blocks_info,
@@ -86,14 +90,12 @@ class ModuleAssignmentManager:
         )
 
     def _get_module_code_from_tree(self, module_name: str, roots: Dict[str, VersionedNode]) -> str:
-        """Извлекает код модуля из VersionedNode дерева."""
         node = roots.get(module_name)
         if node:
             return self._render_node_code(node)
         return ""
 
     def _render_node_code(self, node: VersionedNode) -> str:
-        """Рекурсивно собирает код узла (модуля, класса, функции)."""
         if node.node_type in ('function', 'method', 'code_block', 'import'):
             return node.get_latest_code()
         elif node.node_type == 'class':
@@ -115,29 +117,21 @@ class ModuleAssignmentManager:
         return ""
 
     def apply_assignments(self, assignments: Dict[str, str]):
-        """Обновляет module_hint в блоках согласно назначениям, используя инкрементальное обновление дерева."""
         for block_id, module_name in assignments.items():
             self.data_provider.update_block_assignment(block_id, module_name, strategy="ManualAssignment")
 
     def reset_assignments(self):
-        """Сбрасывает module_hint для всех блоков с полной перестройкой структуры."""
         self.data_provider.rebuild_structure()
 
     def _get_block_description(self, block: Block) -> str:
-        """
-        Возвращает описание блока (имя класса/функции/метода или "блок_кода").
-        """
         if block.code_tree is None:
             return "синтаксическая_ошибка"
         
-        # Ищем первое определение (класс, функцию или метод)
         desc = self._find_first_definition(block.code_tree)
         
-        # Если нашли определение, возвращаем его
         if desc:
             return desc
         
-        # Если нет определений, но есть блок кода
         for child in block.code_tree.children:
             if child.node_type == "code_block":
                 return "блок_кода"
@@ -145,15 +139,7 @@ class ModuleAssignmentManager:
         return "блок_кода"
 
     def _find_first_definition(self, node) -> str:
-        """
-        Рекурсивно ищет первое определение (класс, функцию, метод).
-        Возвращает строку вида:
-        - для класса: "class_ClassName"
-        - для метода: "class_ClassName_def_methodName"
-        - для функции: "def_functionName"
-        """
         if node.node_type == "class":
-            # Ищем первый метод в классе
             for child in node.children:
                 if child.node_type == "method":
                     return f"class_{node.name}_def_{child.name}"
@@ -163,7 +149,6 @@ class ModuleAssignmentManager:
             return f"def_{node.name}"
         
         elif node.node_type == "method":
-            # Если метод найден, ищем его класс-родитель
             parent = node.parent
             while parent:
                 if parent.node_type == "class":
@@ -171,7 +156,6 @@ class ModuleAssignmentManager:
                 parent = parent.parent
             return f"def_{node.name}"
         
-        # Рекурсивный обход детей
         for child in node.children:
             res = self._find_first_definition(child)
             if res:

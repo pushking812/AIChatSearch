@@ -21,7 +21,7 @@ from code_structure.models.code_node import (
 
 import logging
 from code_structure.utils.logger import get_logger
-logger = get_logger(__name__, level=logging.DEBUG)
+logger = get_logger(__name__, level=logging.WARNING)
 
 
 class StructureDataProvider:
@@ -69,7 +69,6 @@ class StructureDataProvider:
         for block in self._all_code_blocks:
             if block.code_tree is None:
                 continue
-            # Начинаем обход с корневого узла, но сам корень не добавляем в список
             self._collect_flat_items_from_code_node(
                 block.code_tree, block, flat_items, is_root=True
             )
@@ -83,19 +82,12 @@ class StructureDataProvider:
         flat_items: List[FlatListItem],
         is_root: bool = False
     ):
-        """
-        Рекурсивно обходит CodeNode и добавляет FlatListItem для каждого узла.
-        Если is_root=True, то сам узел не добавляется (пропускается корневой контейнер).
-        Узлы-классы (ClassNode) не добавляются в список, но их дети обрабатываются.
-        """
-        # Пропускаем добавление записи для ClassNode (но детей обрабатываем)
         if isinstance(node, ClassNode):
             for child in node.children:
                 self._collect_flat_items_from_code_node(child, block, flat_items, is_root=False)
             return
 
         if not is_root:
-            # Определяем отображаемое имя узла
             if isinstance(node, ImportNode):
                 node_path = node.statement
             elif isinstance(node, CommentNode):
@@ -107,30 +99,27 @@ class StructureDataProvider:
             else:
                 node_path = node.name if node.name else "?"
 
-            # Ищем VersionedNode по источнику (block_id, start_line, end_line)
             key = (block.id, node.start_line, node.end_line)
             vnode = self._versioned_nodes_by_source.get(key)
 
-            # Базовые значения по умолчанию
             module = ""
             class_name = "-"
             
-            # ОПРЕДЕЛЯЕМ СТРАТЕГИЮ
             if block.module_hint is None:
-                strategy = "Не назначен"
+                if block.assignment_strategy == "AmbiguousMethod":
+                    strategy = "Неоднозначный метод"
+                else:
+                    strategy = "Не назначен"
             else:
                 strategy = block.assignment_strategy or "Назначен"
 
             if vnode:
-                # Узел привязан к версионированному дереву – извлекаем информацию из иерархии
-                # Ищем родительский модуль (верхний уровень)
                 parent_module = vnode.parent
                 while parent_module and parent_module.node_type not in ('module', 'package'):
                     parent_module = parent_module.parent
                 if parent_module:
                     module = parent_module.full_path
 
-                # Ищем родительский класс (для любого узла, который может находиться внутри класса)
                 parent_class_node = None
                 temp = vnode.parent
                 while temp:
@@ -141,7 +130,6 @@ class StructureDataProvider:
                 if parent_class_node:
                     class_name = parent_class_node.name
             else:
-                # Узел не привязан – используем информацию из блока и CodeNode
                 module = block.module_hint or ""
                 class_name = "-"
                 if isinstance(node, MethodNode) and node.parent and isinstance(node.parent, ClassNode):
@@ -149,7 +137,6 @@ class StructureDataProvider:
                 elif isinstance(node, CodeBlockNode) and node.parent and isinstance(node.parent, ClassNode):
                     class_name = node.parent.name if node.parent.name else "-"
 
-            # Формируем строку "Родитель" (для колонки Parent)
             parent_path = ""
             if isinstance(node, MethodNode) and node.parent and isinstance(node.parent, ClassNode):
                 parent_path = node.parent.name or ""
@@ -167,7 +154,6 @@ class StructureDataProvider:
                 strategy=strategy
             ))
 
-        # Рекурсивный обход детей
         for child in node.children:
             self._collect_flat_items_from_code_node(child, block, flat_items, is_root=False)
 
@@ -175,13 +161,11 @@ class StructureDataProvider:
     # Основные методы загрузки и обновления структуры
     # ------------------------------------------------------------------
     def load_blocks(self) -> None:
-        # Очищаем глобальный реестр перед загрузкой новых блоков
         BlockRegistry().clear()
         
         self.block_service.load_from_items(self.items)
         all_blocks = self.block_service.get_new_blocks()
         
-        # Логирование всех загруженных блоков
         for block in all_blocks:
             logger.info(f"LOADED BLOCK: id={block.id}, module_hint={block.module_hint}, "
                         f"strategy={block.assignment_strategy}, has_code_tree={block.code_tree is not None}")
@@ -199,33 +183,43 @@ class StructureDataProvider:
         self._unknown_blocks = unknown
         self._error_blocks = self.block_service.get_error_blocks()
 
-        # После построения дерева обновляем список блоков (внутри builder могли создаваться новые блоки)
         all_blocks = self.block_service.get_new_blocks()
         self._all_code_blocks = [b for b in all_blocks if b.language in ('python', 'py')]
         self._languages = list(set(b.language for b in self._all_code_blocks))
 
         logger.info(f"Построено модулей: {len(self._versioned_roots)}, неразрешённых: {len(unknown)}, ошибок: {len(self._error_blocks)}")
-        # Выводим список корней для диагностики
-        for root_name in self._versioned_roots.keys():
-            logger.info(f"  Root module: {root_name}")
 
-        # Построение DTO и плоского списка
         _, _, path_map, source_map = self.tree_builder.build_display_tree(self._versioned_roots, self._current_local_only)
         self._versioned_nodes_by_full_name = path_map
         self._versioned_nodes_by_source = source_map
         self._flat_items = self._build_flat_items_from_all_blocks()
 
+    def _is_pure_class_block(self, block: Block) -> bool:
+        """
+        Проверяет, содержит ли блок только определение класса (без кода вне класса).
+        Такие блоки не должны попадать в unknown_blocks.
+        """
+        if block.code_tree is None:
+            return False
+        
+        has_class = False
+        has_other = False
+        
+        for child in block.code_tree.children:
+            if isinstance(child, ClassNode):
+                has_class = True
+            elif isinstance(child, (FunctionNode, MethodNode, CodeBlockNode, ImportNode)):
+                has_other = True
+                break
+        
+        return has_class and not has_other
+
     def update_block_assignment(self, block_id: str, module_name: Optional[str], strategy: str = "ManualAssignment") -> None:
-        """
-        Обновляет назначение модуля для блока и инкрементально добавляет его в дерево.
-        Если module_name == None, блок добавляется как неопределённый (без привязки к модулю).
-        """
         block = self.block_service.get_new_block(block_id)
         if not block:
             logger.error(f"Блок {block_id} не найден при обновлении назначения")
             return
 
-        # Создаём новый блок с обновлённым module_hint
         new_block = Block(
             chat=block.chat,
             message_pair=block.message_pair,
@@ -241,10 +235,8 @@ class StructureDataProvider:
         
         logger.info(f"update_block_assignment: block_id={block_id}, module_name={module_name}, strategy={strategy}, has_code_tree={new_block.code_tree is not None}")
 
-        # Всегда пытаемся добавить блок в дерево (даже если module_name is None)
         if self._tree_builder_instance and new_block.code_tree:
             logger.info(f"  Инкрементальное добавление блока в дерево")
-            # Если module_name is None, используем временное имя для добавления в дерево
             effective_module = module_name if module_name is not None else f"_temp_{block_id}"
             self._tree_builder_instance._collect_from_code_node(
                 new_block.code_tree, effective_module, new_block
@@ -256,13 +248,11 @@ class StructureDataProvider:
             self.rebuild_structure()
             return
 
-        # Обновляем карты для быстрого доступа и плоский список
         _, _, path_map, source_map = self.tree_builder.build_display_tree(self._versioned_roots, self._current_local_only)
         self._versioned_nodes_by_full_name = path_map
         self._versioned_nodes_by_source = source_map
         self._flat_items = self._build_flat_items_from_all_blocks()
 
-        # Обновляем списки unknown/error и all_code_blocks
         self._unknown_blocks = [b for b in self._unknown_blocks if b.id != block_id]
         self._error_blocks = [b for b in self._error_blocks if b.id != block_id]
         self._all_code_blocks = [b for b in self._all_code_blocks if b.id != block_id]
@@ -270,10 +260,13 @@ class StructureDataProvider:
         if new_block.code_tree is not None:
             self._all_code_blocks.append(new_block)
             if new_block.module_hint is None:
-                self._unknown_blocks.append(new_block)
-                logger.info(f"  Блок {block_id} добавлен в _unknown_blocks (module_hint=None)")
+                if not self._is_pure_class_block(new_block):
+                    self._unknown_blocks.append(new_block)
+                    logger.info(f"  Блок {block_id} добавлен в _unknown_blocks (module_hint=None)")
+                else:
+                    logger.info(f"  Блок {block_id} содержит только класс, пропущен")
             else:
-                logger.info(f"  Блок {block_id} имеет module_hint={new_block.module_hint}, не добавлен в unknown")
+                logger.info(f"  Блок {block_id} имеет module_hint={new_block.module_hint}")
         else:
             self._error_blocks.append(new_block)
             logger.info(f"  Блок {block_id} добавлен в _error_blocks (нет code_tree)")
@@ -281,13 +274,13 @@ class StructureDataProvider:
         logger.info(f"  Итого: _unknown_blocks={len(self._unknown_blocks)}, _error_blocks={len(self._error_blocks)}, _all_code_blocks={len(self._all_code_blocks)}")
 
     def fix_error_block(self, block_id: str, new_code: str):
-        import textwrap
-        
         block = self.block_service.get_new_block(block_id)
         if not block:
             logger.error(f"Блок {block_id} не найден при исправлении ошибки")
             return
 
+        dedented_code = textwrap.dedent(new_code)
+        
         from code_structure.parsing.core.parser import PythonParser
         parser = PythonParser()
         try:
@@ -295,7 +288,7 @@ class StructureDataProvider:
                 chat=block.chat,
                 message_pair=block.message_pair,
                 language=block.language,
-                content=new_code,  
+                content=dedented_code,
                 block_idx=block.block_idx,
                 global_index=block.global_index,
                 code_tree=None,
@@ -306,7 +299,7 @@ class StructureDataProvider:
                 chat=temp_block.chat,
                 message_pair=temp_block.message_pair,
                 language=temp_block.language,
-                content=temp_block.content,  # очищенный код сохраняется
+                content=temp_block.content,
                 block_idx=temp_block.block_idx,
                 global_index=temp_block.global_index,
                 code_tree=tree,
@@ -348,7 +341,7 @@ class StructureDataProvider:
                     fragment = '\n'.join(lines[node_data.start_line-1:node_data.end_line])
                 else:
                     fragment = block.content
-                return fragment
+                return textwrap.dedent(fragment)
         vnode = self._versioned_nodes_by_full_name.get(node_data.full_name)
         if vnode:
             return self._render_versioned_node_code(vnode)
