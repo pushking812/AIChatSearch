@@ -9,7 +9,7 @@ Data Transfer Objects (DTO) для обмена данными между UI-с�
 """
 
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 
 # ----------------------------------------------------------------------
 # DTO для ErrorBlockDialog
@@ -23,10 +23,14 @@ class ErrorBlockInput:
         block_id: Идентификатор блока кода.
         original_code: Исходный код блока (с ошибкой).
         language: Язык программирования (например, "python").
+        chat: Объект чата (для создания фиктивного блока при валидации).
+        message_pair: Объект пары сообщений (для создания фиктивного блока).
     """
     block_id: str
     original_code: str
     language: str
+    chat: Optional[Any] = None
+    message_pair: Optional[Any] = None
 
 @dataclass
 class ErrorBlockOutput:
@@ -161,11 +165,13 @@ class CodeStructureInitDTO:
         tree: Корневой узел дерева модулей.
         flat_items: Плоский список элементов.
         has_unknown_blocks: Флаг наличия неопределённых блоков.
+        has_error_blocks: Флаг наличия блоков с синтаксическими ошибками.
     """
     languages: List[str]
     tree: TreeDisplayNode
     flat_items: List[FlatListItem]
     has_unknown_blocks: bool
+    has_error_blocks: bool = False
 
 @dataclass
 class CodeStructureRefreshDTO:

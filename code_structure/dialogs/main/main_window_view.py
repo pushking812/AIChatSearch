@@ -64,6 +64,10 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
         self.create_button = ttk.Button(control_frame, text="Создать проект", command=self._on_create_project)
         self.create_button.pack(side=tk.LEFT, padx=5)
 
+        # Новая кнопка "Исправить ошибки"
+        self.fix_errors_button = ttk.Button(control_frame, text="Исправить ошибки", command=self._on_fix_errors)
+        self.fix_errors_button.pack(side=tk.LEFT, padx=5)
+
         # Панель фильтрации плоского списка
         filter_frame = ttk.Frame(self)
         filter_frame.pack(fill=tk.X, padx=5, pady=2)
@@ -368,6 +372,10 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
         state = tk.NORMAL if enabled else tk.DISABLED
         self.module_button.config(state=state)
 
+    def set_fix_errors_button_state(self, enabled: bool):
+        state = tk.NORMAL if enabled else tk.DISABLED
+        self.fix_errors_button.config(state=state)
+
     def show_error(self, message: str):
         messagebox.showerror("Ошибка", message, parent=self)
 
@@ -408,7 +416,11 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
 
     def _on_module_button(self):
         if self.presenter:
-            self.presenter.on_reset_module_assignments()
+            self.presenter.on_open_module_dialog()
+
+    def _on_fix_errors(self):
+        if self.presenter:
+            self.presenter.on_fix_errors()
 
     def _on_save_structure(self):
         if self.presenter:

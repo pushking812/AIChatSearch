@@ -38,6 +38,11 @@ class ErrorBlockView(ABC):
         pass
 
     @abstractmethod
+    def show_error(self, message: str):
+        """Показывает сообщение об ошибке."""
+        pass
+
+    @abstractmethod
     def close(self):
         """Закрывает диалог."""
         pass
@@ -147,6 +152,11 @@ class CodeStructureView(ABC):
     @abstractmethod
     def set_module_button_state(self, enabled: bool):
         """Включает/отключает кнопку «Назначить модули»."""
+        pass
+
+    @abstractmethod
+    def set_fix_errors_button_state(self, enabled: bool):
+        """Включает/отключает кнопку «Исправить ошибки»."""
         pass
 
     @abstractmethod

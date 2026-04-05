@@ -37,11 +37,14 @@ class BlockService:
                 if not lang:
                     text_blocks_for_pair[block_idx] = mb.content
                 else:
+                    # Применяем dedent к содержимому блока
+                    dedented_content = textwrap.dedent(mb.content)
+                    
                     new_block = Block(
                         chat=chat,
                         message_pair=pair,
                         language=lang,
-                        content=mb.content,
+                        content=dedented_content,  # <-- очищенный код
                         block_idx=block_idx,
                         global_index=global_index,
                         code_tree=None,
@@ -61,7 +64,7 @@ class BlockService:
                                 module_hint=new_block.module_hint
                             )
                         except SyntaxError:
-                            # Сохраняем блок с ошибкой
+                            # Сохраняем блок с ошибкой (код уже очищен)
                             self._error_blocks.append(new_block)
                             logger.warning(f"Синтаксическая ошибка при парсинге блока {new_block.display_name}")
                         except Exception as e:

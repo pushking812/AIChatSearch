@@ -1,4 +1,4 @@
-# code_structure/dialogs/code_structure/main_window_presenter.py
+# code_structure/dialogs/main/main_window_presenter.py
 
 from code_structure.dialogs.dialog_interfaces import CodeStructureView
 from code_structure.facades import (
@@ -10,7 +10,7 @@ from code_structure.dialogs.dto import (
 
 import logging
 from code_structure.utils.logger import get_logger
-logger = get_logger(__name__, level=logging.WARNING)
+logger = get_logger(__name__, level=logging.INFO)
 
 
 class CodeStructurePresenter:
@@ -25,10 +25,11 @@ class CodeStructurePresenter:
         self.data_provider = data_provider
         self.module_manager = module_manager
         self.persistence_manager = persistence_manager
+        self._dialog_opened = False  # Флаг для предотвращения двойного открытия
 
         # Загрузка блоков и инициализация
         self.data_provider.load_blocks()
-        # Обработка ошибок (диалоги исправления)
+        # Автоматическое исправление синтаксических ошибок (последовательные диалоги)
         self._handle_error_blocks()
         # Обновление интерфейса после загрузки
         self._update_view(self.data_provider.get_initial_data())
@@ -42,11 +43,13 @@ class CodeStructurePresenter:
         self.view.set_type_combo_values(data.languages)
         self.view.set_type_combo_state(len(data.languages) > 1)
         self.view.set_module_button_state(data.has_unknown_blocks)
+        self.view.set_fix_errors_button_state(data.has_error_blocks)
+        logger.info(f"_update_view: has_error_blocks={data.has_error_blocks}")
 
-    # ---------- Обработка синтаксических ошибок ----------
     def _handle_error_blocks(self):
         error_blocks = self.data_provider.get_error_blocks()
         if not error_blocks:
+            logger.info("Нет блоков с ошибками для исправления")
             return
 
         from code_structure.dialogs import ErrorBlockDialog
@@ -54,22 +57,28 @@ class CodeStructurePresenter:
 
         for block in error_blocks:
             input_data = ErrorBlockInput(
-                block_id=block.block_id,
+                block_id=block.id,
                 original_code=block.content,
-                language=block.language
+                language=block.language,
+                chat=block.chat,
+                message_pair=block.message_pair
             )
             dialog = ErrorBlockDialog(self.view, input_data)
             self.view.wait_window(dialog)
             if dialog.result is not None:
-                self.data_provider.fix_error_block(block.block_id, dialog.result)
+                self.data_provider.fix_error_block(block.id, dialog.result)
+                logger.info(f"Блок {block.id} исправлен")
 
-        # После исправления всех ошибок перестраиваем структуру и обновляем отображение
-        self.data_provider.rebuild_structure()
-        self._update_view(self.data_provider.get_initial_data())
-
+        # Принудительно обновляем данные после всех исправлений
+        current_data = self.data_provider.get_initial_data()
+        logger.info(f"После исправления ошибок: has_unknown_blocks={current_data.has_unknown_blocks}, has_error_blocks={current_data.has_error_blocks}")
+        
+        self._update_view(current_data)
+        
     # ---------- Автоматическое открытие диалога назначения модулей ----------
     def _maybe_show_module_dialog(self):
-        if self.data_provider.has_unknown_blocks():
+        if self.data_provider.has_unknown_blocks() and not self._dialog_opened:
+            self._dialog_opened = True
             self._show_module_dialog()
 
     # ---------- Обработка выбора узлов ----------
@@ -77,12 +86,10 @@ class CodeStructurePresenter:
         code = self.data_provider.get_code_for_node(node_data)
         self.view.display_merged_code(code or "")
         
-        # Фильтрация плоского списка по имени функции/метода
         filter_name = None
         if node_data.type in ('function', 'method'):
             filter_name = node_data.text
         elif node_data.type == 'version' and item_to_data:
-            # Найти родительский узел (функцию/метод)
             for item, nd in item_to_data.items():
                 if nd == node_data:
                     parent_item = self.view.merged_tree.parent(item)
@@ -118,16 +125,15 @@ class CodeStructurePresenter:
 
     # ---------- Выбор языка ----------
     def on_type_selected(self, event):
-        # Язык пока не влияет на отображение, просто сбрасываем код
         self.view.display_code("")
 
     # ---------- Управление модулями ----------
     def on_reset_module_assignments(self):
+        """Сбрасывает все назначения модулей (для кнопки «Сбросить»)."""
         self.module_manager.reset_assignments()
         refresh_data = self.data_provider.refresh(self.view.get_local_only())
         self.view.display_merged_tree(refresh_data.tree)
         self.view.set_flat_list(refresh_data.flat_items)
-        # После сброса могут появиться неопределённые блоки, показываем диалог
         if self.data_provider.has_unknown_blocks():
             self._show_module_dialog()
 
@@ -143,8 +149,18 @@ class CodeStructurePresenter:
             self.view.display_merged_tree(refresh_data.tree)
             self.view.set_flat_list(refresh_data.flat_items)
 
+    # ---------- Исправление ошибок (кнопка) ----------
+    def on_fix_errors(self):
+        """Вызывается по кнопке «Исправить ошибки» – повторно открывает диалоги исправления."""
+        error_blocks = self.data_provider.get_error_blocks()
+        if not error_blocks:
+            self.view.show_error("Нет блоков с синтаксическими ошибками.")
+            return
+        self._handle_error_blocks()
+        self._refresh_display()
+
+    # ---------- Сохранение и загрузка структуры ----------
     def on_save_structure(self):
-        """Сохранение структуры модулей."""
         roots = self.data_provider.get_versioned_roots()
         self.persistence_manager.save_structure(roots, self.view)
 
@@ -160,7 +176,10 @@ class CodeStructurePresenter:
         messagebox.showinfo("Создание проекта", "Функция создания проекта будет реализована в следующей версии.")
         
     def _refresh_display(self):
-        """Обновляет отображение дерева и плоского списка."""
         refresh_data = self.data_provider.refresh(self.view.get_local_only())
         self.view.display_merged_tree(refresh_data.tree)
         self.view.set_flat_list(refresh_data.flat_items)
+        
+    def on_open_module_dialog(self):
+        """Открывает диалог назначения модулей (без сброса назначений)."""
+        self._show_module_dialog()

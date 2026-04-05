@@ -19,7 +19,7 @@ from code_structure.imports.core.import_analyzer import extract_imports_from_blo
 from code_structure.utils.helpers import extract_module_hint, clean_code
 from code_structure.utils.logger import get_logger
 
-logger = get_logger(__name__, level=logging.DEBUG)
+logger = get_logger(__name__, level=logging.WARNING)
 
 
 class VersionedTreeBuilder:
@@ -42,7 +42,6 @@ class VersionedTreeBuilder:
         self.full_texts_by_pair = full_texts_by_pair or {}
 
         self._assign_from_comments(blocks)
-        self._preprocess_classes(blocks)
         self._apply_text_hints(blocks)
         unknown_blocks = self._resolve_with_tree(blocks)
 
@@ -74,17 +73,6 @@ class VersionedTreeBuilder:
                     if new_block.code_tree:
                         self._collect_from_code_node(new_block.code_tree, hint, new_block)
                         self._add_imports_from_block(new_block)
-
-    # ---------- Предобработка классов ----------
-    def _preprocess_classes(self, blocks: List[Block]):
-        for block in blocks:
-            if block.module_hint is None:
-                continue
-            if not block.code_tree:
-                continue
-            classes = self._extract_class_names(block.code_tree)
-            if classes:
-                self._collect_from_code_node(block.code_tree, block.module_hint, block)
 
     # ---------- Текстовые подсказки (улучшенные) ----------
     def _extract_module_path_from_text(self, text: str) -> Optional[str]:

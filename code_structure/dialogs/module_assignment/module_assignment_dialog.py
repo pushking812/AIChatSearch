@@ -21,6 +21,7 @@ class ModuleAssignmentDialog(tk.Toplevel, ModuleAssignmentView):
         self.grab_set()
         
         self._tree_item_data = {}
+        self._modules_data = []  # <-- ДОБАВЛЕНО: для хранения списка модулей
 
         self.presenter = ModuleAssignmentPresenter(self)
         self._create_widgets()
@@ -189,12 +190,11 @@ class ModuleAssignmentDialog(tk.Toplevel, ModuleAssignmentView):
             self.block_combo.current(0)
 
     def set_modules(self, modules: List[KnownModuleInfo]):
+        self._modules_data = modules
         module_display_names = []
         for info in modules:
-            if info.source:
-                module_display_names.append(f"{info.name} (из {info.source})")
-            else:
-                module_display_names.append(info.name)
+            # Показываем только имя модуля/класса/пакета без указания типа
+            module_display_names.append(info.name)
         self.module_combo['values'] = module_display_names
         if module_display_names:
             self.module_combo.current(0)
@@ -284,8 +284,8 @@ class ModuleAssignmentDialog(tk.Toplevel, ModuleAssignmentView):
         node_data = self._tree_item_data.get(item)
         if node_data and node_data.type in ('module', 'class', 'function', 'method'):
             full_name = node_data.full_name
-            # Ищем модуль по полному имени
-            for mod in self.presenter.input.known_modules:
+            # Ищем модуль по полному имени в сохранённом списке
+            for mod in self._modules_data:
                 if mod.name == full_name:
                     self.show_module_code(mod.code)
                     break
