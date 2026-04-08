@@ -79,7 +79,23 @@ class VersionedTreeBuilder:
 
         # Построение финального дерева
         versioned_roots = self._build_versioned_from_identifier()
+        
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("=== identifier_tree после разрешения ===")
+            self._log_identifier_tree_with_types(self.identifier_tree.root, 0)
+        
         return versioned_roots, unknown_blocks, []
+
+    def _log_identifier_tree_with_types(self, node, indent=0):
+        """
+        Рекурсивно выводит identifier_tree с указанием типа узла из _node_type_map.
+        """
+        if node.name:
+            full_path = self.identifier_tree.get_full_path(node)
+            node_type = self._node_type_map.get(full_path, '?')
+            logger.info("  " * indent + f"- {node.name} [{node_type}]")
+        for child in node.children.values():
+            self._log_identifier_tree_with_types(child, indent + 1)
 
     # ---------- Сбор кандидатов ----------
     def _add_candidate(self, name: str, full_path: str):
@@ -318,23 +334,37 @@ class VersionedTreeBuilder:
         if not block.code_tree:
             return None
 
-        # Извлекаем ТОЛЬКО функции (классы игнорируем)
         functions = self._extract_function_names(block.code_tree)
+        classes = self._extract_class_names(block.code_tree)
 
-        if not functions:
+        # Приоритет: сначала функции
+        if functions:
+            candidates = set()
+            for name in functions:
+                module = self.identifier_tree.find_module_for_name(name)
+                if module:
+                    candidates.add(module)
+                    logger.debug(f"  Function {name} -> module {module}")
+                else:
+                    logger.debug(f"  Function {name} -> not found")
+            if len(candidates) == 1:
+                return next(iter(candidates))
+            # Если функции не дали однозначного модуля, не пробуем классы
             return None
 
-        candidates = set()
-        for name in functions:
-            module = self.identifier_tree.find_module_for_name(name)
-            if module:
-                candidates.add(module)
-                logger.debug(f"  Function {name} -> module {module}")
-            else:
-                logger.debug(f"  Function {name} -> not found")
+        # Если функций нет, но есть классы – разрешаем по классам
+        if classes:
+            candidates = set()
+            for name in classes:
+                module = self.identifier_tree.find_module_for_name(name)
+                if module:
+                    candidates.add(module)
+                    logger.debug(f"  Class {name} -> module {module}")
+                else:
+                    logger.debug(f"  Class {name} -> not found")
+            if len(candidates) == 1:
+                return next(iter(candidates))
 
-        if len(candidates) == 1:
-            return next(iter(candidates))
         return None
 
     # ---------- Обработка узлов кода (упрощённая) ----------
