@@ -10,7 +10,6 @@ from code_structure.facades import (
 )
 
 
-
 class CodeStructureController:
     def __init__(self, parent, items: List[Tuple[Chat, MessagePair]]):
         data_provider = StructureDataProvider(items)
@@ -19,7 +18,7 @@ class CodeStructureController:
             data_provider.block_service,
             data_provider.import_service
         )
-        dialog_factory = TkinterDialogFactory()   # создаём фабрику
+        dialog_factory = TkinterDialogFactory()
 
         self.view = CodeStructureView(parent)
         self.presenter = CodeStructurePresenter(
@@ -27,6 +26,6 @@ class CodeStructureController:
             data_provider,
             module_manager,
             persistence_manager,
-            dialog_factory   # передаём фабрику
+            dialog_factory
         )
         self.view.set_presenter(self.presenter)

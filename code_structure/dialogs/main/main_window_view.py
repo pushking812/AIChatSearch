@@ -24,6 +24,9 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
         self._all_flat_items: List[FlatListItem] = []
         self._current_filter_column = "Узел"
         self._current_filter_text = ""
+        
+        default_font = ("Segoe UI", 9)
+        self.option_add("*Font", default_font)
 
         # --- Верхняя панель с элементами управления ---
         top_frame = ttk.Frame(self)
@@ -217,7 +220,7 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
             right_code_frame,
             lexer=pygments.lexers.PythonLexer,
             color_scheme=None,
-            font=("Courier New", 10),
+            # font=("Courier New", 10),
             wrap=tk.NONE,
             autohide_scrollbar=False,
             linenums_border=1,

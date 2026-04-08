@@ -25,28 +25,31 @@ class ErrorBlocksDialog(tk.Toplevel, ErrorBlocksView):
         self.result = None
 
     def _create_widgets(self):
-        # Настройка стиля для единообразия шрифтов
-        default_font = ("Segoe UI", 10)
+        default_font = ("Segoe UI", 9)
         self.option_add("*Font", default_font)
+        
+        style = ttk.Style()
+        style.configure(".", font=("Segoe UI", 9))   # глобально для всех ttk виджетов
+        style.configure("TLabel", font=("Segoe UI", 9))
+        style.configure("TButton", font=("Segoe UI", 9))
+        style.configure("TCombobox", font=("Segoe UI", 9))
 
-        # Главный контейнер с отступами
         main_frame = ttk.Frame(self, padding="5")
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Горизонтальный PanedWindow для растягивания
         paned = tk.PanedWindow(main_frame, orient=tk.HORIZONTAL, sashrelief=tk.RAISED, sashwidth=6, bd=0)
         paned.pack(fill=tk.BOTH, expand=True)
 
-        # --- Левая панель: список блоков ---
+        # Левая панель: список блоков
         left_frame = ttk.Frame(paned)
         paned.add(left_frame, width=300, minsize=200)
         left_frame.pack_propagate(False)
         left_frame.rowconfigure(1, weight=1)
         left_frame.columnconfigure(0, weight=1)
 
-        ttk.Label(left_frame, text="Блоки с синтаксическими ошибками:", font=default_font).grid(row=0, column=0, sticky=tk.W, pady=(0, 5))
+        ttk.Label(left_frame, text="Блоки с синтаксическими ошибками:").grid(row=0, column=0, sticky=tk.W, pady=(0, 5))
 
-        self.listbox = tk.Listbox(left_frame, font=("Courier New", 10))
+        self.listbox = tk.Listbox(left_frame)
         self.listbox.grid(row=1, column=0, sticky="nsew")
         self.listbox.bind("<<ListboxSelect>>", self._on_block_selected)
 
@@ -54,19 +57,19 @@ class ErrorBlocksDialog(tk.Toplevel, ErrorBlocksView):
         scrollbar.grid(row=1, column=1, sticky="ns")
         self.listbox.config(yscrollcommand=scrollbar.set)
 
-        # --- Правая панель: текстовый редактор ---
+        # Правая панель: текстовый редактор
         right_frame = ttk.Frame(paned)
         paned.add(right_frame, width=600, minsize=400)
         right_frame.rowconfigure(0, weight=1)
         right_frame.columnconfigure(0, weight=1)
 
-        ttk.Label(right_frame, text="Код выбранного блока (можно редактировать):", font=default_font).grid(row=0, column=0, sticky=tk.W, pady=(0, 5))
+        ttk.Label(right_frame, text="Код выбранного блока (можно редактировать):").grid(row=0, column=0, sticky=tk.W, pady=(0, 5))
 
-        self.text = tk.Text(right_frame, wrap=tk.NONE, font=("Courier New", 10))
+        self.text = tk.Text(right_frame, wrap=tk.NONE)
         self.text.grid(row=1, column=0, sticky="nsew")
         self.text.bind("<KeyRelease>", self._on_text_changed)
 
-        # --- Кнопки внизу ---
+        # Кнопки
         btn_frame = ttk.Frame(main_frame)
         btn_frame.pack(fill=tk.X, pady=(10, 0))
 
@@ -92,12 +95,10 @@ class ErrorBlocksDialog(tk.Toplevel, ErrorBlocksView):
             self.listbox.insert(tk.END, display_name)
             self._block_ids.append(block.block_id)
 
-        # Если список не пуст, выделяем первый элемент
         if blocks:
             self.listbox.selection_set(0)
             self._on_block_selected()
         else:
-            # Если блоков нет, отключаем кнопки
             self.delete_button.config(state=tk.DISABLED)
             self.apply_button.config(state=tk.DISABLED)
 
@@ -129,7 +130,6 @@ class ErrorBlocksDialog(tk.Toplevel, ErrorBlocksView):
 
     def _on_block_selected(self, event=None):
         block_id = self.get_selected_block_id()
-        # Включаем кнопку "Удалить" только если есть выделенный блок
         if block_id:
             self.delete_button.config(state=tk.NORMAL)
             self.presenter.on_block_selected(block_id)
@@ -144,7 +144,6 @@ class ErrorBlocksDialog(tk.Toplevel, ErrorBlocksView):
 
     def _delete(self):
         self.presenter.on_delete()
-        # После удаления может не остаться выделения
         if not self.listbox.curselection():
             self.delete_button.config(state=tk.DISABLED)
 

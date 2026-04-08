@@ -1,9 +1,5 @@
 # code_structure/dialogs/dto.py
 
-"""
-Data Transfer Objects (DTO) для обмена данными между UI-слоем и бизнес-логикой.
-"""
-
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Any, Tuple
 

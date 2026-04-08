@@ -169,22 +169,15 @@ class StructureDataProvider:
     # Основные методы загрузки и обновления
     # ------------------------------------------------------------------
     def load_blocks(self, resolved_ambiguities: Optional[Dict[str, str]] = None) -> List[AmbiguityInfo]:
-        """
-        Загружает блоки. Если есть неоднозначности и resolved_ambiguities=None, возвращает их список.
-        При повторном вызове с resolved_ambiguities использует уже загруженные блоки, не перечитывая исходные данные.
-        """
-        # При первом вызове загружаем блоки из items и сохраняем их
         if not self._initial_blocks:
             BlockRegistry().clear()
             self.block_service.load_from_items(self.items)
             self._initial_blocks = self.block_service.get_new_blocks()
         else:
-            # Восстанавливаем реестр из сохранённых блоков (чтобы не терять назначенные module_hint)
             BlockRegistry().clear()
             for block in self._initial_blocks:
                 BlockRegistry().register(block)
 
-        # Получаем актуальные блоки (после восстановления реестра)
         all_blocks = self.block_service.get_new_blocks()
         text_blocks_by_pair = self.block_service.get_text_blocks_by_pair()
         full_texts_by_pair = self.block_service.get_full_texts_by_pair()
@@ -201,20 +194,14 @@ class StructureDataProvider:
         if candidates:
             return candidates
 
-        # После успешного построения обновляем сохранённые блоки (они могли измениться в процессе)
         updated_blocks = self.block_service.get_new_blocks()
         self._initial_blocks = updated_blocks
 
         self._versioned_roots = roots
-        # В unknown_blocks попадают только блоки с code_tree (без синтаксических ошибок)
         self._unknown_blocks = [b for b in unknown if b.code_tree is not None]
-        # Обновляем ошибки из сервиса (они могли измениться, если были удаления)
         self._error_blocks = self.block_service.get_error_blocks()
         self._all_code_blocks = [b for b in updated_blocks if b.language in ('python', 'py')]
         self._languages = list(set(b.language for b in self._all_code_blocks))
-
-        # Диагностический вывод (можно убрать после отладки)
-        logger.info(f"load_blocks: errors in service = {len(self.block_service.get_error_blocks())}, self._error_blocks = {len(self._error_blocks)}")
 
         logger.info(f"Построено модулей: {len(self._versioned_roots)}, неразрешённых: {len(self._unknown_blocks)}, ошибок: {len(self._error_blocks)}")
 

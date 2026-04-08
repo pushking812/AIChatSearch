@@ -24,6 +24,9 @@ class AmbiguityDialog(tk.Toplevel, AmbiguityView):
         self.result = None
 
     def _create_widgets(self):
+        default_font = ("Segoe UI", 9)
+        self.option_add("*Font", default_font)
+        
         main_frame = ttk.Frame(self)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 

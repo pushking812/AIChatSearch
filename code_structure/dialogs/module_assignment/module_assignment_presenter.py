@@ -10,9 +10,7 @@ from code_structure.dialogs.dto import (
     ModuleAssignmentInput, ModuleAssignmentOutput
 )
 
-from code_structure.utils.logger import get_logger
-
-logger = get_logger(__name__, level=logging.WARNING)
+logger = logging.getLogger(__name__)
 
 
 class ModuleAssignmentPresenter:
@@ -103,13 +101,16 @@ class ModuleAssignmentPresenter:
         action = self.view.get_action_mode()
 
         if action == "delete":
-            self.deleted_blocks.append(self.current_block_id)
+            if self.current_block_index >= len(self.input.unknown_blocks):
+                return
+
+            deleted_id = self.current_block_id
+            self.deleted_blocks.append(deleted_id)
             del self.input.unknown_blocks[self.current_block_index]
-            if self.current_block_id in self.assignments:
-                del self.assignments[self.current_block_id]
+            if deleted_id in self.assignments:
+                del self.assignments[deleted_id]
             self.changed = True
 
-            # Если не осталось блоков – закрываем диалог с результатом (без сообщения)
             if not self.input.unknown_blocks:
                 self.view.close(ModuleAssignmentOutput(
                     assignments=self.assignments,
@@ -118,16 +119,14 @@ class ModuleAssignmentPresenter:
                 ))
                 return
 
-            # Выбираем предшествующий блок (или первый, если удалён первый)
-            if self.current_block_index >= len(self.input.unknown_blocks):
-                self.current_block_index = len(self.input.unknown_blocks) - 1
-            # Если удалён не последний, current_block_index уже указывает на следующий,
-            # но мы хотим предшествующий. Исправим:
-            if self.current_block_index > 0:
-                self.current_block_index -= 1
+            new_index = max(0, self.current_block_index - 1)
+            if new_index >= len(self.input.unknown_blocks):
+                new_index = 0
+            self.current_block_index = new_index
             self.current_block_id = self.input.unknown_blocks[self.current_block_index].id
 
             self._refresh_view()
+            self.view.block_combo.current(self.current_block_index)
             self._check_changes()
             self.view.enable_ok_button(True)
             return
@@ -135,7 +134,6 @@ class ModuleAssignmentPresenter:
         # --- create_new ---
         if action == "create_new":
             new_name = self.view.get_new_module_name().strip()
-
             if not new_name or not re.match(r'^[a-z_]+(\.[a-z_]+)*$', new_name):
                 return
             if any(m.name == new_name for m in self.input.known_modules):
@@ -153,7 +151,6 @@ class ModuleAssignmentPresenter:
             self.input.module_tree = self._add_module_to_tree(self.input.module_tree, new_name)
             self.assignments[self.current_block_id] = new_name
             self.changed = True
-            # Обновляем метку назначения сразу
             self.view.update_assignment_label(new_name)
             self._refresh_view()
         else:  # assign_existing
@@ -163,7 +160,6 @@ class ModuleAssignmentPresenter:
             selected_module = selected.split(' (из ')[0] if ' (из ' in selected else selected
             self.assignments[self.current_block_id] = selected_module
             self.changed = True
-            # Обновляем метку назначения сразу
             self.view.update_assignment_label(selected_module)
 
         self.current_applied = self.assignments[self.current_block_id]

@@ -15,7 +15,7 @@ class ErrorBlocksPresenter:
     def __init__(self, view: ErrorBlocksView):
         self.view = view
         self.blocks: List[ErrorBlockInfo] = []
-        self.fixed: Dict[str, str] = {}      # block_id -> new_code
+        self.fixed: Dict[str, str] = {}
         self.deleted: List[str] = []
         self.current_block_id: Optional[str] = None
         self.parser = PythonParser()
@@ -40,7 +40,6 @@ class ErrorBlocksPresenter:
     def on_text_changed(self, new_code: str):
         if not self.current_block_id:
             return
-        # Найти оригинальный код
         original = ""
         for b in self.blocks:
             if b.block_id == self.current_block_id:
@@ -72,7 +71,6 @@ class ErrorBlocksPresenter:
         if not self.current_block_id:
             return
         new_code = self.view.get_modified_code()
-        # Найти блок
         block = None
         for b in self.blocks:
             if b.block_id == self.current_block_id:
@@ -86,14 +84,12 @@ class ErrorBlocksPresenter:
             return
         self.fixed[self.current_block_id] = new_code
         self.view.enable_apply_button(False)
-        # Обновить оригинальный код в списке для дальнейших сравнений
         block.original_code = new_code
 
     def on_delete(self):
         if not self.current_block_id:
             return
         self.deleted.append(self.current_block_id)
-        # Удалить из списка
         self.blocks = [b for b in self.blocks if b.block_id != self.current_block_id]
         self.view.set_blocks(self.blocks)
         if self.blocks:

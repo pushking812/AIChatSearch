@@ -31,6 +31,9 @@ class ModuleAssignmentDialog(tk.Toplevel, ModuleAssignmentView):
         self.result = None
 
     def _create_widgets(self):
+        default_font = ("Segoe UI", 9)
+        self.option_add("*Font", default_font)
+
         main_frame = ttk.Frame(self)
         main_frame.pack(fill=tk.BOTH, expand=True)
         main_frame.rowconfigure(0, weight=1)
@@ -96,7 +99,7 @@ class ModuleAssignmentDialog(tk.Toplevel, ModuleAssignmentView):
         block_frame = ttk.LabelFrame(right_paned, text="Код выбранного блока")
         block_frame.rowconfigure(0, weight=1)
         block_frame.columnconfigure(0, weight=1)
-        self.block_text = tk.Text(block_frame, wrap=tk.NONE, font=("Courier New", 10))
+        self.block_text = tk.Text(block_frame, wrap=tk.NONE)
         block_scroll_y = ttk.Scrollbar(block_frame, orient=tk.VERTICAL, command=self.block_text.yview)
         block_scroll_x = ttk.Scrollbar(block_frame, orient=tk.HORIZONTAL, command=self.block_text.xview)
         self.block_text.configure(yscrollcommand=block_scroll_y.set, xscrollcommand=block_scroll_x.set)
@@ -108,7 +111,7 @@ class ModuleAssignmentDialog(tk.Toplevel, ModuleAssignmentView):
         module_frame = ttk.LabelFrame(right_paned, text="Код выбранного модуля")
         module_frame.rowconfigure(0, weight=1)
         module_frame.columnconfigure(0, weight=1)
-        self.module_text = tk.Text(module_frame, wrap=tk.NONE, font=("Courier New", 10))
+        self.module_text = tk.Text(module_frame, wrap=tk.NONE)
         module_scroll_y = ttk.Scrollbar(module_frame, orient=tk.VERTICAL, command=self.module_text.yview)
         module_scroll_x = ttk.Scrollbar(module_frame, orient=tk.HORIZONTAL, command=self.module_text.xview)
         self.module_text.configure(yscrollcommand=module_scroll_y.set, xscrollcommand=module_scroll_x.set)
@@ -291,7 +294,6 @@ class ModuleAssignmentDialog(tk.Toplevel, ModuleAssignmentView):
         self.presenter.on_new_module_name_changed(self.get_new_module_name())
 
     def _apply(self):
-        # Принудительно генерируем событие выбора, чтобы обновить текущий блок
         self.block_combo.event_generate("<<ComboboxSelected>>")
         self.presenter.on_apply()
 
