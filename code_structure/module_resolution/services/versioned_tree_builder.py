@@ -256,6 +256,10 @@ class VersionedTreeBuilder:
 
     # ---------- Разрешение с помощью дерева ----------
     def _resolve_with_tree(self, blocks: List[Block]) -> List[Block]:
+        """
+        Итеративно разрешает блоки, используя уже построенное дерево идентификаторов.
+        Возвращает список блоков, оставшихся неразрешёнными (unknown).
+        """
         unknown = [b for b in blocks if b.module_hint is None]
         logger.info(f"Resolve with tree: initial unknown blocks count={len(unknown)}")
         changed = True
@@ -302,16 +306,17 @@ class VersionedTreeBuilder:
                 logger.warning("Resolve iteration limit reached")
                 break
 
-        # Диагностика нераспознанных блоков (оставляем для отладки)
+        # Диагностика нераспознанных блоков (после всех итераций)
         unresolved = [b for b in blocks if b.module_hint is None and b.code_tree is not None]
-        if unresolved:
+        if unresolved and logger.isEnabledFor(logging.INFO):
             logger.info("=== Нераспознанные блоки (unknown) ===")
             for block in unresolved:
-                functions = self._extract_function_names(block.code_tree)
                 classes = self._extract_class_names(block.code_tree)
+                functions = self._extract_function_names(block.code_tree)
                 logger.info(f"Блок: {block.id}")
-                logger.info(f"  Классы: {classes}")
-                logger.info(f"  Функции/методы: {functions}")
+                logger.info(f"  Имена классов: {classes if classes else '(нет)'}")
+                logger.info(f"  Имена функций/методов: {functions if functions else '(нет)'}")
+
                 for name in functions:
                     path = self.identifier_tree.find_module_for_name(name)
                     if path:
@@ -326,6 +331,9 @@ class VersionedTreeBuilder:
                         logger.info(f"    Класс '{name}' -> путь: {path} (тип: {node_type})")
                     else:
                         logger.info(f"    Класс '{name}' -> не найден")
+
+                if not classes and not functions:
+                    logger.info("  В блоке нет ни классов, ни функций (возможно, только импорты или комментарии)")
             logger.info("=== Конец списка нераспознанных блоков ===")
 
         return unknown
