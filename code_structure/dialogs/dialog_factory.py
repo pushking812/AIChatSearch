@@ -2,11 +2,12 @@
 
 from abc import ABC, abstractmethod
 from typing import Any, List
-from code_structure.dialogs.dto import ErrorBlockInput, ModuleAssignmentInput, AmbiguityInfo
+from code_structure.dialogs.dto import ErrorBlocksInput, ModuleAssignmentInput, AmbiguityInfo
+
 
 class DialogFactory(ABC):
     @abstractmethod
-    def create_error_block_dialog(self, parent, input_data: ErrorBlockInput) -> Any:
+    def create_error_blocks_dialog(self, parent, input_data: ErrorBlocksInput) -> Any:
         pass
 
     @abstractmethod

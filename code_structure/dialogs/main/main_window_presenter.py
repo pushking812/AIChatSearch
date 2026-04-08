@@ -5,7 +5,7 @@ from code_structure.facades import (
     StructureDataProvider, ModuleAssignmentManager, PersistenceManager
 )
 from code_structure.dialogs.dto import (
-    CodeStructureInitDTO, TreeDisplayNode, AmbiguityInfo
+    CodeStructureInitDTO, TreeDisplayNode, AmbiguityInfo, ErrorBlockInfo, ErrorBlocksInput
 )
 
 import logging
@@ -34,10 +34,8 @@ class CodeStructurePresenter:
         if ambiguities:
             resolved = self._resolve_ambiguities(ambiguities)
             if resolved is None:
-                # Пользователь отменил, закрываем окно
                 self.view.destroy()
                 return
-            # Повторная загрузка с разрешёнными путями
             self.data_provider.load_blocks(resolved)
 
         self._handle_error_blocks()
@@ -45,7 +43,6 @@ class CodeStructurePresenter:
         self._maybe_show_module_dialog()
 
     def _resolve_ambiguities(self, ambiguities: list[AmbiguityInfo]):
-        """Показывает диалог разрешения неоднозначностей и возвращает выбранные пути."""
         dialog = self.dialog_factory.create_ambiguity_dialog(self.view, ambiguities)
         self.view.wait_window(dialog)
         return dialog.result
@@ -65,25 +62,24 @@ class CodeStructurePresenter:
             logger.info("Нет блоков с ошибками для исправления")
             return
 
-        from code_structure.dialogs.dto import ErrorBlockInput
-
+        blocks_info = []
         for block in error_blocks:
-            input_data = ErrorBlockInput(
+            blocks_info.append(ErrorBlockInfo(
                 block_id=block.id,
                 original_code=block.content,
                 language=block.language,
                 chat=block.chat,
                 message_pair=block.message_pair
-            )
-            dialog = self.dialog_factory.create_error_block_dialog(self.view, input_data)
-            self.view.wait_window(dialog)
-            if dialog.result is not None:
-                self.data_provider.fix_error_block(block.id, dialog.result)
-                logger.info(f"Блок {block.id} исправлен")
-
-        current_data = self.data_provider.get_initial_data()
-        logger.info(f"После исправления ошибок: has_unknown_blocks={current_data.has_unknown_blocks}, has_error_blocks={current_data.has_error_blocks}")
-        self._update_view(current_data)
+            ))
+        input_data = ErrorBlocksInput(blocks=blocks_info)
+        dialog = self.dialog_factory.create_error_blocks_dialog(self.view, input_data)
+        self.view.wait_window(dialog)
+        if dialog.result:
+            for block_id, new_code in dialog.result.fixed_blocks:
+                self.data_provider.fix_error_block(block_id, new_code)
+            for block_id in dialog.result.deleted_block_ids:
+                self.data_provider.mark_block_as_deleted(block_id)
+            self._refresh_display()
 
     def _maybe_show_module_dialog(self):
         if self.data_provider.has_unknown_blocks() and not self._dialog_opened:

@@ -2,12 +2,13 @@
 
 from typing import List, Tuple
 from aichat_search.model import Chat, MessagePair
-from code_structure.dialogs.main import CodeStructureView
+from code_structure.dialogs.main.main_window_view import CodeStructureView
 from code_structure.dialogs.main.main_window_presenter import CodeStructurePresenter
 from code_structure.dialogs.tkinter_dialog_factory import TkinterDialogFactory
 from code_structure.facades import (
     StructureDataProvider, ModuleAssignmentManager, PersistenceManager
 )
+
 
 
 class CodeStructureController:

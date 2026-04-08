@@ -9,32 +9,8 @@ from typing import List, Optional, Dict
 
 from .dto import (
     UnknownBlockInfo, KnownModuleInfo, TreeDisplayNode,
-    FlatListItem, AmbiguityInfo
+    FlatListItem, AmbiguityInfo, ErrorBlockInfo, ErrorBlocksInput, ErrorBlocksOutput
 )
-
-# ----------------------------------------------------------------------
-# Интерфейс для ErrorBlockDialog
-# ----------------------------------------------------------------------
-class ErrorBlockView(ABC):
-    @abstractmethod
-    def show_code(self, code: str):
-        pass
-
-    @abstractmethod
-    def get_modified_code(self) -> str:
-        pass
-
-    @abstractmethod
-    def enable_apply_button(self, enabled: bool):
-        pass
-
-    @abstractmethod
-    def show_error(self, message: str):
-        pass
-
-    @abstractmethod
-    def close(self):
-        pass
 
 # ----------------------------------------------------------------------
 # Интерфейс для ModuleAssignmentDialog
@@ -178,6 +154,38 @@ class AmbiguityView(ABC):
 
     @abstractmethod
     def close(self, result: Optional[Dict[str, str]]):
+        pass
+
+    @abstractmethod
+    def show_error(self, message: str):
+        pass
+
+# ----------------------------------------------------------------------
+# Интерфейс для единого диалога исправления ошибок
+# ----------------------------------------------------------------------
+class ErrorBlocksView(ABC):
+    @abstractmethod
+    def set_blocks(self, blocks: List[ErrorBlockInfo]):
+        pass
+
+    @abstractmethod
+    def get_selected_block_id(self) -> Optional[str]:
+        pass
+
+    @abstractmethod
+    def show_block_code(self, code: str):
+        pass
+
+    @abstractmethod
+    def get_modified_code(self) -> str:
+        pass
+
+    @abstractmethod
+    def enable_apply_button(self, enabled: bool):
+        pass
+
+    @abstractmethod
+    def close(self, result: Optional[ErrorBlocksOutput]):
         pass
 
     @abstractmethod
