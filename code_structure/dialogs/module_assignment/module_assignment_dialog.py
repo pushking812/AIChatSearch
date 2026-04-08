@@ -291,6 +291,8 @@ class ModuleAssignmentDialog(tk.Toplevel, ModuleAssignmentView):
         self.presenter.on_new_module_name_changed(self.get_new_module_name())
 
     def _apply(self):
+        # Принудительно генерируем событие выбора, чтобы обновить текущий блок
+        self.block_combo.event_generate("<<ComboboxSelected>>")
         self.presenter.on_apply()
 
     def _ok(self):

@@ -378,9 +378,9 @@ class VersionedTreeBuilder:
     # ---------- Обработка узлов кода (упрощённая) ----------
     def _attach_method_to_class(self, method_node: Union[MethodNode, FunctionNode], module_name: str, block: Block) -> bool:
         """Пытается привязать метод (или функцию с self/cls) к существующему классу.
-        Возвращает True, если привязка произошла, иначе False.
+        Возвращает True, если привязка произошла (или создана _ambiguous функция), иначе False.
         """
-        # ШАГ 1: поиск родительского класса в синтаксическом дереве (если метод определён внутри класса в этом же блоке)
+        # ШАГ 1: поиск родительского класса в синтаксическом дереве
         parent_class_node = None
         temp = method_node.parent
         while temp:
@@ -422,8 +422,7 @@ class VersionedTreeBuilder:
             self.identifier_tree.add_path(func_path)
             self._node_type_map[func_path] = 'function'
             self._add_version(func_path, method_node, block)
-            if hasattr(block, 'assignment_strategy'):
-                block.assignment_strategy = "AmbiguousMethod"
+            # Не меняем стратегию блока (блок заморожен)
             return True
         return False
 
@@ -476,7 +475,13 @@ class VersionedTreeBuilder:
                 self._add_version(method_path, child, block)
             else:
                 # Метод без явного класса – пытаемся привязать к существующему классу
-                self._attach_method_to_class(child, module_name, block)
+                if not self._attach_method_to_class(child, module_name, block):
+                    # Не удалось привязать – добавляем как функцию
+                    func_path = f"{module_name}.{child.name}"
+                    self.identifier_tree.add_path(func_path)
+                    self._node_type_map[func_path] = 'function'
+                    self._add_version(func_path, child, block)
+                    logger.info(f"    Method {child.name} added as function (no parent class found)")
 
         # 3. FunctionNode
         for child in function_children:

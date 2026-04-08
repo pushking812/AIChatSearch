@@ -109,13 +109,22 @@ class ModuleAssignmentPresenter:
                 del self.assignments[self.current_block_id]
             self.changed = True
 
+            # Если не осталось блоков – закрываем диалог с результатом (без сообщения)
             if not self.input.unknown_blocks:
-                self.view.show_error("Все блоки удалены. Диалог будет закрыт.")
-                self.view.close()
+                self.view.close(ModuleAssignmentOutput(
+                    assignments=self.assignments,
+                    updated_module_tree=self.input.module_tree,
+                    deleted_block_ids=self.deleted_blocks
+                ))
                 return
 
+            # Выбираем предшествующий блок (или первый, если удалён первый)
             if self.current_block_index >= len(self.input.unknown_blocks):
                 self.current_block_index = len(self.input.unknown_blocks) - 1
+            # Если удалён не последний, current_block_index уже указывает на следующий,
+            # но мы хотим предшествующий. Исправим:
+            if self.current_block_index > 0:
+                self.current_block_index -= 1
             self.current_block_id = self.input.unknown_blocks[self.current_block_index].id
 
             self._refresh_view()
@@ -144,6 +153,8 @@ class ModuleAssignmentPresenter:
             self.input.module_tree = self._add_module_to_tree(self.input.module_tree, new_name)
             self.assignments[self.current_block_id] = new_name
             self.changed = True
+            # Обновляем метку назначения сразу
+            self.view.update_assignment_label(new_name)
             self._refresh_view()
         else:  # assign_existing
             selected = self.view.get_selected_module()
@@ -152,11 +163,12 @@ class ModuleAssignmentPresenter:
             selected_module = selected.split(' (из ')[0] if ' (из ' in selected else selected
             self.assignments[self.current_block_id] = selected_module
             self.changed = True
+            # Обновляем метку назначения сразу
+            self.view.update_assignment_label(selected_module)
 
         self.current_applied = self.assignments[self.current_block_id]
         self.view.enable_apply_button(False)
         self.view.enable_ok_button(True)
-        self.view.update_assignment_label(self.current_applied)
 
         if self.current_block_index + 1 < len(self.input.unknown_blocks):
             self.current_block_index += 1

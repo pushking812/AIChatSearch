@@ -206,11 +206,15 @@ class StructureDataProvider:
         self._initial_blocks = updated_blocks
 
         self._versioned_roots = roots
-        # Убираем фильтрацию чистых классов – все unknown блоки попадают в диалог
-        self._unknown_blocks = unknown
+        # В unknown_blocks попадают только блоки с code_tree (без синтаксических ошибок)
+        self._unknown_blocks = [b for b in unknown if b.code_tree is not None]
+        # Обновляем ошибки из сервиса (они могли измениться, если были удаления)
         self._error_blocks = self.block_service.get_error_blocks()
         self._all_code_blocks = [b for b in updated_blocks if b.language in ('python', 'py')]
         self._languages = list(set(b.language for b in self._all_code_blocks))
+
+        # Диагностический вывод (можно убрать после отладки)
+        logger.info(f"load_blocks: errors in service = {len(self.block_service.get_error_blocks())}, self._error_blocks = {len(self._error_blocks)}")
 
         logger.info(f"Построено модулей: {len(self._versioned_roots)}, неразрешённых: {len(self._unknown_blocks)}, ошибок: {len(self._error_blocks)}")
 
