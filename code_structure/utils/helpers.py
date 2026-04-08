@@ -159,7 +159,7 @@ def extract_module_hint(block) -> Optional[str]:
         non_empty_count += 1
         if non_empty_count > 10:
             break
-        match = re.search(r'#\s*([\w/\\]+(?:\.\w+)?)', stripped)
+        match = re.search(r'#\s*([a-z_]+(?:[\/.\\][a-z_]+)*\.py)', stripped)
         if match:
             path = match.group(1)
             if '/' not in path and '\\' not in path and '.' not in path:

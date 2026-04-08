@@ -7,7 +7,7 @@ from aichat_search.model import Chat, MessagePair
 from code_structure.block_processing.services.block_service import BlockService
 from code_structure.imports.services.import_service import ImportService
 from code_structure.dialogs.dto import (
-    TreeDisplayNode, FlatListItem, CodeStructureInitDTO, CodeStructureRefreshDTO
+    TreeDisplayNode, FlatListItem, CodeStructureInitDTO, CodeStructureRefreshDTO, AmbiguityInfo
 )
 from code_structure.parsing.core.tree_builder import TreeBuilderNew
 from code_structure.module_resolution.services.versioned_tree_builder import VersionedTreeBuilder
@@ -32,8 +32,8 @@ class StructureDataProvider:
         self.tree_builder = TreeBuilderNew()
         self._unknown_blocks: List[Block] = []
         self._error_blocks: List[Block] = []
+        self._deleted_blocks: List[Block] = []
 
-        # Внутреннее состояние
         self._versioned_roots: Dict[str, VersionedNode] = {}
         self._versioned_nodes_by_full_name: Dict[str, VersionedNode] = {}
         self._versioned_nodes_by_source: Dict[Tuple[str, int, int], VersionedNode] = {}
@@ -42,18 +42,19 @@ class StructureDataProvider:
         self._current_local_only: bool = True
         self._flat_items: List[FlatListItem] = []
 
-        # Сохраняем экземпляр построителя дерева после загрузки
         self._tree_builder_instance: Optional[VersionedTreeBuilder] = None
+        self._initial_blocks: List[Block] = []   # для сохранения состояния при повторных вызовах
 
     # ------------------------------------------------------------------
     # Построение плоского списка из всех блоков (включая неопределённые и ошибки)
     # ------------------------------------------------------------------
     def _build_flat_items_from_all_blocks(self) -> List[FlatListItem]:
-        """Строит плоский список из ВСЕХ блоков, включая неопределённые и с ошибками."""
         flat_items = []
 
-        # 1. Блоки с синтаксическими ошибками (code_tree отсутствует)
+        # 1. Блоки с синтаксическими ошибками (включая удалённые)
         for block in self._error_blocks:
+            is_deleted = block in self._deleted_blocks
+            strategy = "Удалён" if is_deleted else "Синтаксическая ошибка"
             flat_items.append(FlatListItem(
                 block_id=block.id,
                 block_name=block.display_name,
@@ -62,17 +63,19 @@ class StructureDataProvider:
                 lines="",
                 module="",
                 class_name="-",
-                strategy="Синтаксическая ошибка"
+                strategy=strategy,
+                language=block.language
             ))
 
-        # 2. Все блоки, у которых есть code_tree (включая неопределённые)
-        for block in self._all_code_blocks:
+        # 2. Все блоки с code_tree (включая удалённые)
+        sorted_blocks = sorted(self._all_code_blocks, key=lambda b: b.global_index)
+        for block in sorted_blocks:
             if block.code_tree is None:
                 continue
+            is_deleted = block in self._deleted_blocks
             self._collect_flat_items_from_code_node(
-                block.code_tree, block, flat_items, is_root=True
+                block.code_tree, block, flat_items, is_root=True, is_deleted=is_deleted
             )
-
         return flat_items
 
     def _collect_flat_items_from_code_node(
@@ -80,11 +83,12 @@ class StructureDataProvider:
         node: CodeNode,
         block: Block,
         flat_items: List[FlatListItem],
-        is_root: bool = False
+        is_root: bool = False,
+        is_deleted: bool = False
     ):
         if isinstance(node, ClassNode):
             for child in node.children:
-                self._collect_flat_items_from_code_node(child, block, flat_items, is_root=False)
+                self._collect_flat_items_from_code_node(child, block, flat_items, is_root=False, is_deleted=is_deleted)
             return
 
         if not is_root:
@@ -104,14 +108,17 @@ class StructureDataProvider:
 
             module = ""
             class_name = "-"
-            
-            if block.module_hint is None:
-                if block.assignment_strategy == "AmbiguousMethod":
-                    strategy = "Неоднозначный метод"
-                else:
-                    strategy = "Не назначен"
+
+            if is_deleted:
+                strategy = "Удалён"
             else:
-                strategy = block.assignment_strategy or "Назначен"
+                if block.module_hint is None:
+                    if block.assignment_strategy == "AmbiguousMethod":
+                        strategy = "Неоднозначный метод"
+                    else:
+                        strategy = "Не назначен"
+                else:
+                    strategy = block.assignment_strategy or "Назначен"
 
             if vnode:
                 parent_module = vnode.parent
@@ -151,68 +158,67 @@ class StructureDataProvider:
                 lines=f"{node.start_line}-{node.end_line}",
                 module=module,
                 class_name=class_name,
-                strategy=strategy
+                strategy=strategy,
+                language=block.language
             ))
 
         for child in node.children:
-            self._collect_flat_items_from_code_node(child, block, flat_items, is_root=False)
+            self._collect_flat_items_from_code_node(child, block, flat_items, is_root=False, is_deleted=is_deleted)
 
     # ------------------------------------------------------------------
-    # Основные методы загрузки и обновления структуры
+    # Основные методы загрузки и обновления
     # ------------------------------------------------------------------
-    def load_blocks(self) -> None:
-        BlockRegistry().clear()
-        
-        self.block_service.load_from_items(self.items)
+    def load_blocks(self, resolved_ambiguities: Optional[Dict[str, str]] = None) -> List[AmbiguityInfo]:
+        """
+        Загружает блоки. Если есть неоднозначности и resolved_ambiguities=None, возвращает их список.
+        При повторном вызове с resolved_ambiguities использует уже загруженные блоки, не перечитывая исходные данные.
+        """
+        # При первом вызове загружаем блоки из items и сохраняем их
+        if not self._initial_blocks:
+            BlockRegistry().clear()
+            self.block_service.load_from_items(self.items)
+            self._initial_blocks = self.block_service.get_new_blocks()
+        else:
+            # Восстанавливаем реестр из сохранённых блоков (чтобы не терять назначенные module_hint)
+            BlockRegistry().clear()
+            for block in self._initial_blocks:
+                BlockRegistry().register(block)
+
+        # Получаем актуальные блоки (после восстановления реестра)
         all_blocks = self.block_service.get_new_blocks()
-        
-        for block in all_blocks:
-            logger.info(f"LOADED BLOCK: id={block.id}, module_hint={block.module_hint}, "
-                        f"strategy={block.assignment_strategy}, has_code_tree={block.code_tree is not None}")
-
         text_blocks_by_pair = self.block_service.get_text_blocks_by_pair()
         full_texts_by_pair = self.block_service.get_full_texts_by_pair()
 
         builder = VersionedTreeBuilder()
         self._tree_builder_instance = builder
-        self._versioned_roots, unknown = builder.build_from_blocks(
+
+        roots, unknown, candidates = builder.build_from_blocks(
             all_blocks,
             text_blocks_by_pair=text_blocks_by_pair,
-            full_texts_by_pair=full_texts_by_pair
+            full_texts_by_pair=full_texts_by_pair,
+            resolved_ambiguities=resolved_ambiguities
         )
+        if candidates:
+            return candidates
+
+        # После успешного построения обновляем сохранённые блоки (они могли измениться в процессе)
+        updated_blocks = self.block_service.get_new_blocks()
+        self._initial_blocks = updated_blocks
+
+        self._versioned_roots = roots
+        # Убираем фильтрацию чистых классов – все unknown блоки попадают в диалог
         self._unknown_blocks = unknown
         self._error_blocks = self.block_service.get_error_blocks()
-
-        all_blocks = self.block_service.get_new_blocks()
-        self._all_code_blocks = [b for b in all_blocks if b.language in ('python', 'py')]
+        self._all_code_blocks = [b for b in updated_blocks if b.language in ('python', 'py')]
         self._languages = list(set(b.language for b in self._all_code_blocks))
 
-        logger.info(f"Построено модулей: {len(self._versioned_roots)}, неразрешённых: {len(unknown)}, ошибок: {len(self._error_blocks)}")
+        logger.info(f"Построено модулей: {len(self._versioned_roots)}, неразрешённых: {len(self._unknown_blocks)}, ошибок: {len(self._error_blocks)}")
 
         _, _, path_map, source_map = self.tree_builder.build_display_tree(self._versioned_roots, self._current_local_only)
         self._versioned_nodes_by_full_name = path_map
         self._versioned_nodes_by_source = source_map
         self._flat_items = self._build_flat_items_from_all_blocks()
-
-    def _is_pure_class_block(self, block: Block) -> bool:
-        """
-        Проверяет, содержит ли блок только определение класса (без кода вне класса).
-        Такие блоки не должны попадать в unknown_blocks.
-        """
-        if block.code_tree is None:
-            return False
-        
-        has_class = False
-        has_other = False
-        
-        for child in block.code_tree.children:
-            if isinstance(child, ClassNode):
-                has_class = True
-            elif isinstance(child, (FunctionNode, MethodNode, CodeBlockNode, ImportNode)):
-                has_other = True
-                break
-        
-        return has_class and not has_other
+        return []
 
     def update_block_assignment(self, block_id: str, module_name: Optional[str], strategy: str = "ManualAssignment") -> None:
         block = self.block_service.get_new_block(block_id)
@@ -232,7 +238,7 @@ class StructureDataProvider:
             assignment_strategy=strategy if module_name is not None else None
         )
         BlockRegistry().register(new_block)
-        
+
         logger.info(f"update_block_assignment: block_id={block_id}, module_name={module_name}, strategy={strategy}, has_code_tree={new_block.code_tree is not None}")
 
         if self._tree_builder_instance and new_block.code_tree:
@@ -256,21 +262,19 @@ class StructureDataProvider:
         self._unknown_blocks = [b for b in self._unknown_blocks if b.id != block_id]
         self._error_blocks = [b for b in self._error_blocks if b.id != block_id]
         self._all_code_blocks = [b for b in self._all_code_blocks if b.id != block_id]
-        
+
         if new_block.code_tree is not None:
             self._all_code_blocks.append(new_block)
             if new_block.module_hint is None:
-                if not self._is_pure_class_block(new_block):
-                    self._unknown_blocks.append(new_block)
-                    logger.info(f"  Блок {block_id} добавлен в _unknown_blocks (module_hint=None)")
-                else:
-                    logger.info(f"  Блок {block_id} содержит только класс, пропущен")
+                # Всегда добавляем в unknown (без фильтрации чистых классов)
+                self._unknown_blocks.append(new_block)
+                logger.info(f"  Блок {block_id} добавлен в _unknown_blocks (module_hint=None)")
             else:
                 logger.info(f"  Блок {block_id} имеет module_hint={new_block.module_hint}")
         else:
             self._error_blocks.append(new_block)
             logger.info(f"  Блок {block_id} добавлен в _error_blocks (нет code_tree)")
-        
+
         logger.info(f"  Итого: _unknown_blocks={len(self._unknown_blocks)}, _error_blocks={len(self._error_blocks)}, _all_code_blocks={len(self._all_code_blocks)}")
 
     def fix_error_block(self, block_id: str, new_code: str):
@@ -280,7 +284,7 @@ class StructureDataProvider:
             return
 
         dedented_code = textwrap.dedent(new_code)
-        
+
         from code_structure.parsing.core.parser import PythonParser
         parser = PythonParser()
         try:
@@ -317,7 +321,8 @@ class StructureDataProvider:
 
     def get_initial_data(self) -> CodeStructureInitDTO:
         tree_root, _, _, _ = self.tree_builder.build_display_tree(self._versioned_roots, self._current_local_only)
-        has_error_blocks = len(self._error_blocks) > 0
+        active_error_blocks = [b for b in self._error_blocks if b not in self._deleted_blocks]
+        has_error_blocks = len(active_error_blocks) > 0
         return CodeStructureInitDTO(
             languages=self._languages,
             tree=tree_root,
@@ -373,7 +378,7 @@ class StructureDataProvider:
         if block:
             return block.content
         return None
-        
+
     def get_versioned_roots(self) -> Dict[str, VersionedNode]:
         return self._versioned_roots
 
@@ -383,12 +388,29 @@ class StructureDataProvider:
         self._versioned_nodes_by_full_name = path_map
         self._versioned_nodes_by_source = source_map
         self._flat_items = self._build_flat_items_from_all_blocks()
-        
+
     def get_error_blocks(self):
-        return self._error_blocks
+        return [b for b in self._error_blocks if b not in self._deleted_blocks]
 
     def has_unknown_blocks(self):
         return len(self._unknown_blocks) > 0
 
     def rebuild_structure(self):
         self.load_blocks()
+
+    def get_unknown_blocks(self) -> List[Block]:
+        return self._unknown_blocks.copy()
+
+    def mark_block_as_deleted(self, block_id: str) -> bool:
+        block = self.block_service.get_new_block(block_id)
+        if not block:
+            return False
+
+        self._unknown_blocks = [b for b in self._unknown_blocks if b.id != block_id]
+        self._error_blocks = [b for b in self._error_blocks if b.id != block_id]
+
+        if block not in self._deleted_blocks:
+            self._deleted_blocks.append(block)
+
+        self._flat_items = self._build_flat_items_from_all_blocks()
+        return True

@@ -2,6 +2,9 @@
 
 from typing import Dict, List, Optional
 
+import logging
+from code_structure.utils.logger import get_logger
+logger = get_logger(__name__, level=logging.DEBUG)
 
 class IdentifierNode:
     """Узел иерархического дерева идентификаторов."""
@@ -51,8 +54,8 @@ class IdentifierTree:
         return '.'.join(reversed(parts))
 
     def find_module_for_name(self, name: str) -> Optional[str]:
-        """Ищет узел с заданным именем и возвращает полный путь его родительского модуля."""
         nodes = self._find_nodes_by_name(self.root, name)
+        logger.debug(f"find_module_for_name({name}) -> found {len(nodes)} nodes: {[self.get_full_path(n) for n in nodes]}")
         if len(nodes) == 1:
             parent = nodes[0].parent
             if parent is None:

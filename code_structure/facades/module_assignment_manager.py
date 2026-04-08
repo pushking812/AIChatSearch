@@ -7,6 +7,7 @@ from code_structure.parsing.core.tree_builder import TreeBuilderNew
 from code_structure.models.block import Block
 from code_structure.models.registry import BlockRegistry
 from code_structure.models.versioned_node import VersionedNode
+from code_structure.models.code_node import ClassNode
 from code_structure.facades.structure_data_provider import StructureDataProvider
 from code_structure.utils.logger import get_logger
 
@@ -20,19 +21,9 @@ class ModuleAssignmentManager:
         self.tree_builder = TreeBuilderNew()
 
     def get_module_assignment_input(self, local_only: bool) -> ModuleAssignmentInput:
-        all_blocks = self.block_service.get_new_blocks()
-        logger.info(f"get_module_assignment_input: всего блоков={len(all_blocks)}")
+        unknown_blocks = self.data_provider.get_unknown_blocks()
+        logger.info(f"get_module_assignment_input: unknown_blocks={len(unknown_blocks)}")
         
-        unknown_blocks = []
-        for b in all_blocks:
-            if b.module_hint is None and b.language in ('python', 'py'):
-                if self.data_provider._is_pure_class_block(b):
-                    logger.debug(f"Блок {b.id} содержит только класс, пропускаем")
-                    continue
-                unknown_blocks.append(b)
-        
-        logger.info(f"  unknown_blocks={len(unknown_blocks)}")
-
         unknown_blocks_info = []
         for block in unknown_blocks:
             display_name = f"{block.display_name} – {self._get_block_description(block)}"
@@ -43,45 +34,27 @@ class ModuleAssignmentManager:
             ))
 
         versioned_roots = self.data_provider.get_versioned_roots()
-        
-        # Получаем дерево с учётом фильтра local_only (как в главном окне)
         root_dict, _, path_map, source_map = self.tree_builder.build_display_tree(versioned_roots, local_only)
         module_tree = root_dict
         
-        # Сохраняем карты для быстрого доступа (если понадобятся позже)
-        self._temp_path_map = path_map
-        self._temp_source_map = source_map
-        
         known_modules_info = []
-        
         def collect_nodes_from_tree(node: TreeDisplayNode):
-            # Добавляем модули, классы и пакеты (исключаем функции, методы, версии)
             if node.type in ('module', 'class', 'package'):
-                # Получаем VersionedNode из path_map
                 vnode = path_map.get(node.full_name)
                 if vnode:
                     code = self._render_node_code(vnode)
                 else:
                     code = f"# {node.type.capitalize()} {node.text}\n# (нет кода)"
-                
                 known_modules_info.append(KnownModuleInfo(
                     name=node.full_name,
                     source="",
                     code=code
                 ))
-            
             for child in node.children:
                 collect_nodes_from_tree(child)
-        
-        # Обходим дерево (пропускаем корневой узел "Все модули")
         for child in module_tree.children:
             collect_nodes_from_tree(child)
-        
         known_modules_info.sort(key=lambda m: m.name)
-        
-        logger.info(f"  known_modules={len(known_modules_info)}")
-        for m in known_modules_info[:20]:
-            logger.info(f"    {m.name}")
 
         return ModuleAssignmentInput(
             unknown_blocks=unknown_blocks_info,
@@ -89,11 +62,13 @@ class ModuleAssignmentManager:
             module_tree=module_tree
         )
 
-    def _get_module_code_from_tree(self, module_name: str, roots: Dict[str, VersionedNode]) -> str:
-        node = roots.get(module_name)
-        if node:
-            return self._render_node_code(node)
-        return ""
+    def apply_assignments(self, assignments: Dict[str, str], deleted_block_ids: List[str] = None):
+        if deleted_block_ids is None:
+            deleted_block_ids = []
+        for block_id, module_name in assignments.items():
+            self.data_provider.update_block_assignment(block_id, module_name, strategy="ManualAssignment")
+        for block_id in deleted_block_ids:
+            self.data_provider.mark_block_as_deleted(block_id)
 
     def _render_node_code(self, node: VersionedNode) -> str:
         if node.node_type in ('function', 'method', 'code_block', 'import'):
@@ -116,26 +91,34 @@ class ModuleAssignmentManager:
             return "# Пакет (не содержит кода)"
         return ""
 
-    def apply_assignments(self, assignments: Dict[str, str]):
-        for block_id, module_name in assignments.items():
-            self.data_provider.update_block_assignment(block_id, module_name, strategy="ManualAssignment")
-
-    def reset_assignments(self):
-        self.data_provider.rebuild_structure()
-
     def _get_block_description(self, block: Block) -> str:
+        """
+        Возвращает описание блока для отображения в диалоге.
+        Если блок содержит класс, возвращает имя класса.
+        Иначе – имя первой функции/метода или "блок_кода".
+        """
         if block.code_tree is None:
             return "синтаксическая_ошибка"
-        
+
+        # Проверяем, есть ли в блоке класс
+        has_class = any(isinstance(child, ClassNode) for child in block.code_tree.children)
+        if has_class:
+            # Находим первый класс
+            for child in block.code_tree.children:
+                if isinstance(child, ClassNode):
+                    return f"class_{child.name}"
+            return "class_?"
+
+        # Если нет класса, ищем первую функцию/метод
         desc = self._find_first_definition(block.code_tree)
-        
         if desc:
             return desc
-        
+
+        # Если нет определений, проверяем блоки кода
         for child in block.code_tree.children:
             if child.node_type == "code_block":
                 return "блок_кода"
-        
+
         return "блок_кода"
 
     def _find_first_definition(self, node) -> str:

@@ -41,6 +41,7 @@ class VersionedNode:
         self.children: List['VersionedNode'] = []
         self.parent: Optional['VersionedNode'] = None
         self.is_imported: bool = False
+        self.is_local: bool = False
 
     def add_version_info(self, version_info: VersionInfo):
         for v in self.versions:

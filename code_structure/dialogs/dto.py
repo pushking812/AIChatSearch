@@ -58,6 +58,7 @@ class UnknownBlockInfo:
     id: str
     display_name: str
     content: str
+    candidates: List[str] = field(default_factory=list)
 
 @dataclass
 class KnownModuleInfo:
@@ -124,9 +125,11 @@ class ModuleAssignmentOutput:
     Attributes:
         assignments: Словарь {block_id: module_name}.
         updated_module_tree: Обновлённое дерево модулей (если создавались новые).
+        deleted_block_ids: Список идентификаторов блоков, удалённых пользователем.
     """
     assignments: Dict[str, str]
     updated_module_tree: TreeDisplayNode
+    deleted_block_ids: List[str] = field(default_factory=list)
 
 # ----------------------------------------------------------------------
 # DTO для главного окна
@@ -154,6 +157,7 @@ class FlatListItem:
     module: str
     class_name: str
     strategy: str
+    language: str = "python"
 
 @dataclass
 class CodeStructureInitDTO:
@@ -184,3 +188,13 @@ class CodeStructureRefreshDTO:
     """
     tree: TreeDisplayNode
     flat_items: List[FlatListItem]
+    
+    
+# ----------------------------------------------------------------------
+# DTO для диалога разрешения неоднозначностей
+# ----------------------------------------------------------------------
+@dataclass
+class AmbiguityInfo:
+    name: str
+    candidates: List[str]
+    context: Optional[str] = None

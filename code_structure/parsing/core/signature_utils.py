@@ -118,7 +118,7 @@ def detect_method_likelihood(code_fragment: str) -> Dict[str, bool]:
         flags['has_class_usage'] = True
     
     # 2. Обращение к атрибутам класса (Classname.attr)
-    if re.search(r'\b[A-Z][a-zA-Z0-9]*\.', code_fragment):
+    if re.search(r'\b[A-Z][a-zA-Z]*\.', code_fragment):
         flags['is_method_context'] = True
     
     # 3. Декораторы, характерные для методов

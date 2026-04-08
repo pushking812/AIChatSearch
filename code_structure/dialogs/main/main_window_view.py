@@ -379,7 +379,8 @@ class CodeStructureView(tk.Toplevel, CodeStructureView):
     def show_error(self, message: str):
         messagebox.showerror("Ошибка", message, parent=self)
 
-    def display_code(self, code: str, language: str = "python", start_line: Optional[int] = None, end_line: Optional[int] = None):
+    def display_code(self, code: str, language: str, start_line: Optional[int], end_line: Optional[int]):
+        """Отображает код в левой панели с возможностью выделения строк."""
         self.code_text.delete(1.0, tk.END)
         if not code.strip():
             return

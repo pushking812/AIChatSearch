@@ -15,13 +15,13 @@ class ModuleAssignmentDialog(tk.Toplevel, ModuleAssignmentView):
     def __init__(self, parent, input_data: ModuleAssignmentInput):
         super().__init__(parent)
         self.title("Назначение модулей")
-        self.geometry("1200x800")
-        self.minsize(1200, 800)
+        self.geometry("1200x600")
+        self.minsize(600, 600)
         self.transient(parent)
         self.grab_set()
         
         self._tree_item_data = {}
-        self._modules_data = []  # <-- ДОБАВЛЕНО: для хранения списка модулей
+        self._modules_data = []
 
         self.presenter = ModuleAssignmentPresenter(self)
         self._create_widgets()
@@ -31,54 +31,38 @@ class ModuleAssignmentDialog(tk.Toplevel, ModuleAssignmentView):
         self.result = None
 
     def _create_widgets(self):
-        # Создаём canvas для прокрутки
-        self.canvas = tk.Canvas(self, borderwidth=0, highlightthickness=0)
-        self.scrollbar = ttk.Scrollbar(self, orient=tk.VERTICAL, command=self.canvas.yview)
-        self.scrollable_frame = ttk.Frame(self.canvas)
-        self.scrollable_frame.columnconfigure(0, weight=1)
+        main_frame = ttk.Frame(self)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        main_frame.rowconfigure(0, weight=1)
+        main_frame.rowconfigure(1, weight=0)
+        main_frame.columnconfigure(0, weight=1)
 
-        self.scrollable_frame.bind(
-            "<Configure>",
-            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-        )
-        self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw", tags=("inner_frame",))
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
-        self.canvas.bind("<Configure>", self._on_canvas_configure)
-        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        content_frame = ttk.Frame(main_frame)
+        content_frame.grid(row=0, column=0, sticky="nsew")
+        content_frame.columnconfigure(0, weight=1)
+        content_frame.rowconfigure(1, weight=1)
 
-        self._create_content_widgets()
-
-    def _on_canvas_configure(self, event):
-        self.canvas.itemconfig("inner_frame", width=event.width)
-
-    def _create_content_widgets(self):
-        # Верхняя панель
-        top_frame = ttk.Frame(self.scrollable_frame)
+        top_frame = ttk.Frame(content_frame)
         top_frame.grid(row=0, column=0, sticky="ew", pady=5, padx=10)
         top_frame.columnconfigure(1, weight=1)
         top_frame.columnconfigure(3, weight=1)
 
         ttk.Label(top_frame, text="Неопределённый блок:").grid(row=0, column=0, sticky=tk.W, padx=5)
-        self.block_combo = ttk.Combobox(top_frame, state="readonly", width=60)
-        self.block_combo.grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
+        self.block_combo = ttk.Combobox(top_frame, state="readonly")
+        self.block_combo.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
         self.block_combo.bind("<<ComboboxSelected>>", self._on_block_selected)
 
         ttk.Label(top_frame, text="Назначить модулю:").grid(row=0, column=2, sticky=tk.W, padx=(20, 5))
-        self.module_combo = ttk.Combobox(top_frame, state="readonly", width=60)
-        self.module_combo.grid(row=0, column=3, padx=5, pady=5, sticky=tk.W)
+        self.module_combo = ttk.Combobox(top_frame, state="readonly")
+        self.module_combo.grid(row=0, column=3, padx=5, pady=5, sticky="ew")
+        self.module_combo.bind("<<ComboboxSelected>>", self._on_module_selected)
 
-        self.assigned_label = ttk.Label(top_frame, text="", foreground="blue")
-        self.assigned_label.grid(row=0, column=4, padx=10, sticky=tk.W)
-
-        # Панель с двумя колонками
-        columns_frame = ttk.Frame(self.scrollable_frame)
+        columns_frame = ttk.Frame(content_frame)
         columns_frame.grid(row=1, column=0, sticky="nsew", pady=10, padx=10)
         columns_frame.columnconfigure(0, weight=1)
         columns_frame.columnconfigure(1, weight=1)
         columns_frame.rowconfigure(0, weight=1)
 
-        # Левая колонка - дерево модулей
         left_frame = ttk.LabelFrame(columns_frame, text="Структура модулей (до назначения)")
         left_frame.grid(row=0, column=0, sticky="nsew", padx=5)
         left_frame.rowconfigure(0, weight=1)
@@ -106,18 +90,12 @@ class ModuleAssignmentDialog(tk.Toplevel, ModuleAssignmentView):
         self.module_tree.configure(yscrollcommand=tree_scroll.set)
         self.module_tree.bind("<<TreeviewSelect>>", self._on_tree_select)
 
-        # Правая колонка - код
-        right_frame = ttk.Frame(columns_frame)
-        right_frame.grid(row=0, column=1, sticky="nsew", padx=5)
-        right_frame.columnconfigure(0, weight=1)
-        right_frame.rowconfigure(0, weight=1)
-        right_frame.rowconfigure(1, weight=1)
+        right_paned = ttk.PanedWindow(columns_frame, orient=tk.VERTICAL)
+        right_paned.grid(row=0, column=1, sticky="nsew", padx=5)
 
-        block_frame = ttk.LabelFrame(right_frame, text="Код выбранного блока")
-        block_frame.grid(row=0, column=0, sticky="nsew", pady=(0, 5))
+        block_frame = ttk.LabelFrame(right_paned, text="Код выбранного блока")
         block_frame.rowconfigure(0, weight=1)
         block_frame.columnconfigure(0, weight=1)
-
         self.block_text = tk.Text(block_frame, wrap=tk.NONE, font=("Courier New", 10))
         block_scroll_y = ttk.Scrollbar(block_frame, orient=tk.VERTICAL, command=self.block_text.yview)
         block_scroll_x = ttk.Scrollbar(block_frame, orient=tk.HORIZONTAL, command=self.block_text.xview)
@@ -125,12 +103,11 @@ class ModuleAssignmentDialog(tk.Toplevel, ModuleAssignmentView):
         self.block_text.grid(row=0, column=0, sticky="nsew")
         block_scroll_y.grid(row=0, column=1, sticky="ns")
         block_scroll_x.grid(row=1, column=0, sticky="ew")
+        right_paned.add(block_frame, weight=1)
 
-        module_frame = ttk.LabelFrame(right_frame, text="Код выбранного модуля (пример)")
-        module_frame.grid(row=1, column=0, sticky="nsew", pady=(5, 0))
+        module_frame = ttk.LabelFrame(right_paned, text="Код выбранного модуля")
         module_frame.rowconfigure(0, weight=1)
         module_frame.columnconfigure(0, weight=1)
-
         self.module_text = tk.Text(module_frame, wrap=tk.NONE, font=("Courier New", 10))
         module_scroll_y = ttk.Scrollbar(module_frame, orient=tk.VERTICAL, command=self.module_text.yview)
         module_scroll_x = ttk.Scrollbar(module_frame, orient=tk.HORIZONTAL, command=self.module_text.xview)
@@ -138,40 +115,60 @@ class ModuleAssignmentDialog(tk.Toplevel, ModuleAssignmentView):
         self.module_text.grid(row=0, column=0, sticky="nsew")
         module_scroll_y.grid(row=0, column=1, sticky="ns")
         module_scroll_x.grid(row=1, column=0, sticky="ew")
+        right_paned.add(module_frame, weight=1)
 
-        # Панель с радиокнопками
-        action_frame = ttk.LabelFrame(self.scrollable_frame, text="Действие")
-        action_frame.grid(row=2, column=0, sticky="w", pady=10, padx=10)
+        action_row_frame = ttk.Frame(content_frame)
+        action_row_frame.grid(row=2, column=0, sticky="ew", pady=10, padx=10)
+        action_row_frame.columnconfigure(0, weight=1)
+        action_row_frame.columnconfigure(1, weight=0)
+
+        action_frame = ttk.LabelFrame(action_row_frame, text="Действие")
+        action_frame.grid(row=0, column=0, sticky="ew")
+        action_frame.columnconfigure(0, weight=1)
+        action_frame.columnconfigure(1, weight=0)
 
         self.action_var = tk.StringVar(value="assign_existing")
+        rb_frame = ttk.Frame(action_frame)
+        rb_frame.grid(row=0, column=0, sticky="w")
+
         ttk.Radiobutton(
-            action_frame,
+            rb_frame,
             text="Создать новый модуль с указанным именем",
             variable=self.action_var,
             value="create_new",
             command=self._on_action_change
         ).pack(anchor=tk.W, padx=20, pady=2)
+
         ttk.Radiobutton(
-            action_frame,
+            rb_frame,
             text="Добавить блок в выбранный модуль",
             variable=self.action_var,
             value="assign_existing",
             command=self._on_action_change
         ).pack(anchor=tk.W, padx=20, pady=2)
 
-        # Поле для ввода нового имени модуля
-        new_module_frame = ttk.Frame(self.scrollable_frame)
-        new_module_frame.grid(row=2, column=0, sticky="e", pady=10, padx=10)
+        ttk.Radiobutton(
+            rb_frame,
+            text="Удалить выбранный блок",
+            variable=self.action_var,
+            value="delete",
+            command=self._on_action_change
+        ).pack(anchor=tk.W, padx=20, pady=2)
 
+        self.assigned_label = ttk.Label(action_frame, text="", foreground="blue")
+        self.assigned_label.grid(row=0, column=1, sticky="e", padx=(20, 10))
+
+        new_module_frame = ttk.Frame(action_row_frame)
+        new_module_frame.grid(row=0, column=1, sticky="e", padx=(20, 0))
         ttk.Label(new_module_frame, text="Имя нового модуля (с точками):").pack(anchor=tk.W, padx=5)
         self.new_module_entry = ttk.Entry(new_module_frame, width=40)
         self.new_module_entry.pack(anchor=tk.W, padx=5, pady=(0, 5))
         self.new_module_entry.config(state="disabled")
         self.new_module_entry.bind("<KeyRelease>", self._on_new_module_changed)
 
-        # Кнопки
-        button_frame = ttk.Frame(self.scrollable_frame)
-        button_frame.grid(row=3, column=0, sticky="ew", pady=10, padx=10)
+        button_frame = ttk.Frame(main_frame)
+        button_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=10)
+        button_frame.columnconfigure(0, weight=1)
 
         self.apply_button = ttk.Button(button_frame, text="Применить", command=self._apply, state="disabled")
         self.apply_button.pack(side=tk.LEFT, padx=5)
@@ -191,10 +188,7 @@ class ModuleAssignmentDialog(tk.Toplevel, ModuleAssignmentView):
 
     def set_modules(self, modules: List[KnownModuleInfo]):
         self._modules_data = modules
-        module_display_names = []
-        for info in modules:
-            # Показываем только имя модуля/класса/пакета без указания типа
-            module_display_names.append(info.name)
+        module_display_names = [info.name for info in modules]
         self.module_combo['values'] = module_display_names
         if module_display_names:
             self.module_combo.current(0)
@@ -206,16 +200,10 @@ class ModuleAssignmentDialog(tk.Toplevel, ModuleAssignmentView):
         self._add_tree_node("", tree_data)
 
     def _add_tree_node(self, parent: str, node: TreeDisplayNode):
-        text = node.text
         item = self.module_tree.insert(
             parent, tk.END,
-            text=text,
-            values=(
-                node.type,
-                node.signature,
-                node.version,
-                node.sources
-            )
+            text=node.text,
+            values=(node.type, node.signature, node.version, node.sources)
         )
         self._tree_item_data[item] = node
         for child in node.children:
@@ -246,12 +234,14 @@ class ModuleAssignmentDialog(tk.Toplevel, ModuleAssignmentView):
         if mode == "create_new":
             self.module_combo.config(state="disabled")
             self.new_module_entry.config(state="normal")
+        elif mode == "delete":
+            self.module_combo.config(state="disabled")
+            self.new_module_entry.config(state="disabled")
         else:
             self.module_combo.config(state="readonly")
             self.new_module_entry.config(state="disabled")
 
     def get_selected_block_id(self) -> Optional[str]:
-        """Возвращает ID выбранного блока."""
         if not self.presenter.input:
             return None
         selected_idx = self.block_combo.current()
@@ -276,6 +266,11 @@ class ModuleAssignmentDialog(tk.Toplevel, ModuleAssignmentView):
         if block_id:
             self.presenter.on_block_selected(block_id)
 
+    def _on_module_selected(self, event=None):
+        module_name = self.get_selected_module()
+        if module_name:
+            self.presenter.on_module_selected(module_name)
+
     def _on_tree_select(self, event):
         selected = self.module_tree.selection()
         if not selected:
@@ -284,7 +279,6 @@ class ModuleAssignmentDialog(tk.Toplevel, ModuleAssignmentView):
         node_data = self._tree_item_data.get(item)
         if node_data and node_data.type in ('module', 'class', 'function', 'method'):
             full_name = node_data.full_name
-            # Ищем модуль по полному имени в сохранённом списке
             for mod in self._modules_data:
                 if mod.name == full_name:
                     self.show_module_code(mod.code)
