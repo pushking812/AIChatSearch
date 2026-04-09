@@ -158,10 +158,9 @@ class VersionedTreeBuilder:
             if block.module_hint is None:
                 hint = extract_module_hint(block)
                 if hint:
-                    last_segment = hint.split('.')[-1]
-                    candidates = self._candidate_paths.get(last_segment, set())
-                    if not candidates or (len(candidates) == 1 and hint in candidates):
-                        new_block = Block(
+                    # Комментарий-подсказка – назначаем сразу
+                    logger.info(f"Comment hint: assigning module '{hint}' to block {block.id}")
+                    new_block = Block(
                             chat=block.chat,
                             message_pair=block.message_pair,
                             language=block.language,
@@ -172,12 +171,12 @@ class VersionedTreeBuilder:
                             module_hint=hint,
                             assignment_strategy="CommentHint"
                         )
-                        BlockRegistry().register(new_block)
-                        idx = blocks.index(block)
-                        blocks[idx] = new_block
-                        if new_block.code_tree:
-                            self._collect_from_code_node(new_block.code_tree, hint, new_block)
-                            self._add_imports_from_block(new_block)
+                    BlockRegistry().register(new_block)
+                    idx = blocks.index(block)
+                    blocks[idx] = new_block
+                    if new_block.code_tree:
+                        self._collect_from_code_node(new_block.code_tree, hint, new_block)
+                        self._add_imports_from_block(new_block)
 
     # ---------- Текстовые подсказки ----------
     def _extract_module_path_from_text(self, text: str) -> Optional[str]:
@@ -232,27 +231,26 @@ class VersionedTreeBuilder:
                     class_name = None
 
             if module:
-                last_segment = module.split('.')[-1]
-                candidates = self._candidate_paths.get(last_segment, set())
-                if not candidates or (len(candidates) == 1 and module in candidates):
-                    logger.info(f"Text hint: assigning module '{module}' to block {block.id}")
-                    new_block = Block(
-                        chat=block.chat,
-                        message_pair=block.message_pair,
-                        language=block.language,
-                        content=block.content,
-                        block_idx=block.block_idx,
-                        global_index=block.global_index,
-                        code_tree=block.code_tree,
-                        module_hint=module,
-                        assignment_strategy="TextHint"
-                    )
-                    BlockRegistry().register(new_block)
-                    idx = blocks.index(block)
-                    blocks[idx] = new_block
-                    if new_block.code_tree:
-                        self._collect_from_code_node(new_block.code_tree, module, new_block, class_hint=class_name)
-                        self._add_imports_from_block(new_block)
+                # Текстовая подсказка имеет наивысший приоритет – назначаем сразу
+                logger.info(f"Text hint: assigning module '{module}' to block {block.id}")
+                new_block = Block(
+                    chat=block.chat,
+                    message_pair=block.message_pair,
+                    language=block.language,
+                    content=block.content,
+                    block_idx=block.block_idx,
+                    global_index=block.global_index,
+                    code_tree=block.code_tree,
+                    module_hint=module,
+                    assignment_strategy="TextHint"
+                )
+                BlockRegistry().register(new_block)
+                idx = blocks.index(block)
+                blocks[idx] = new_block
+                if new_block.code_tree:
+                    self._collect_from_code_node(new_block.code_tree, module, new_block, class_hint=class_name)
+                    self._add_imports_from_block(new_block)
+                continue  # или просто обновить блок и перейти к следующему
 
     # ---------- Разрешение с помощью дерева ----------
     def _resolve_with_tree(self, blocks: List[Block]) -> List[Block]:
