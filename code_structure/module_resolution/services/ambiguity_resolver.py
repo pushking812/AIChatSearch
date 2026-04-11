@@ -18,21 +18,16 @@ class AmbiguityResolver:
             if '.' not in identifier and identifier and identifier[0].isupper():
                 class_identifiers.add(identifier)
 
-        logger.info(f"  === _build_filtered_ambiguity_list: всего идентификаторов: {len(self.candidate_paths)} ===")
-        filtered = []
+        filtered_result = []
         for identifier, paths in self.candidate_paths.items():
             is_method = '.' in identifier and identifier.split('.')[0][0].isupper()
             if is_method:
                 class_name = identifier.split('.')[0]
-                if class_name in class_identifiers:
-                    logger.debug(f"  Пропускаем метод '{identifier}' (класс '{class_name}' уже в списке)")
-                    continue
-                else:
-                    filtered.append(AmbiguityInfo(name=identifier, candidates=sorted(paths)))
+                if class_name not in class_identifiers or any(p.startswith('__pending__') for p in paths):
+                    filtered_result.append(AmbiguityInfo(name=identifier, candidates=sorted(paths)))
             else:
-                filtered.append(AmbiguityInfo(name=identifier, candidates=sorted(paths)))
-        logger.info(f"  После фильтрации: {len(filtered)} идентификаторов")
-        return filtered
+                filtered_result.append(AmbiguityInfo(name=identifier, candidates=sorted(paths)))
+        return filtered_result
 
     @staticmethod
     def apply_resolved_paths_to_blocks(blocks: List[Block], resolved_paths: Dict[str, str], assign_and_replace):

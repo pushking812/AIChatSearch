@@ -129,7 +129,7 @@ class BlockResolver:
                 logger.debug(f"  Метод-сирота '{method_name}' не привязан к классу, остаётся функцией")
 
     def resolve_pending_method_hints(self, pending_hints: List[Tuple[str, str, str]], candidate_paths: Dict[str, Set[str]], blocks: List[Block], assign_and_replace):
-        logger.info("  === Разрешение отложенных подсказок методов ===")
+        logger.info("=== Разрешение отложенных подсказок методов ===")
         for class_name, method_name, block_id in pending_hints:
             if class_name in self.resolved_paths:
                 class_full_path = self.resolved_paths[class_name]
@@ -142,21 +142,7 @@ class BlockResolver:
                 else:
                     candidate_paths[identifier] = {full_path}
                 logger.info(f"  Подсказка метода: {identifier} -> {full_path}")
-
-                # Удаляем старый путь функции, если он есть
-                for i, blk in enumerate(blocks):
-                    if blk.id == block_id:
-                        if blk.module_hint:
-                            old_path = f"{blk.module_hint}.{method_name}"
-                            keys_to_remove = [k for k, v in self.resolved_paths.items() if v == old_path]
-                            for k in keys_to_remove:
-                                del self.resolved_paths[k]
-                                logger.debug(f"  Удалён старый путь функции: {k} -> {old_path}")
-                        if blk.module_hint is None:
-                            module_path = '.'.join(class_full_path.split('.')[:-1])
-                            assign_and_replace(blk, module_path, "PendingMethodHint", blocks, i)
-                            logger.info(f"    Назначен module_hint {module_path} блоку {blk.id}")
-                        break
+                # НЕ назначаем module_hint блоку – это будет сделано после выбора пользователем в диалоге
             else:
                 logger.debug(f"  Класс {class_name} ещё не разрешён, временный путь для {method_name} остаётся")
 
