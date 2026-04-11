@@ -43,6 +43,8 @@ class StructureDataProvider:
         self._flat_items: List[FlatListItem] = []
 
         self._tree_builder_instance: Optional[VersionedTreeBuilder] = None
+        
+        self._blocks_loaded = False 
 
     # ------------------------------------------------------------------
     # Построение плоского списка из всех блоков (включая неопределённые и ошибки)
@@ -96,70 +98,150 @@ class StructureDataProvider:
             elif isinstance(node, CommentNode):
                 node_path = node.text
             elif isinstance(node, CodeBlockNode):
-                node_path = "блок кода"
+                # Пропускаем CodeBlockNode, который находится внутри метода или функции
+                if isinstance(node.parent, (FunctionNode, MethodNode)):
+                    # Не добавляем запись, но обрабатываем детей (например, комментарии внутри метода)
+                    pass
+                else:
+                    node_path = "блок кода"
+                    key = (block.id, node.start_line, node.end_line)
+                    vnode = self._versioned_nodes_by_source.get(key)
+                    module = ""
+                    class_name = "-"
+                    if is_deleted:
+                        strategy = "Удалён"
+                    else:
+                        if block.module_hint is None:
+                            strategy = block.assignment_strategy or "Не назначен"
+                        else:
+                            strategy = block.assignment_strategy or "Назначен"
+                    if vnode:
+                        parent_module = vnode.parent
+                        while parent_module and parent_module.node_type not in ('module', 'package'):
+                            parent_module = parent_module.parent
+                        if parent_module:
+                            module = parent_module.full_path
+                        parent_class_node = None
+                        temp = vnode.parent
+                        while temp:
+                            if temp.node_type == 'class':
+                                parent_class_node = temp
+                                break
+                            temp = temp.parent
+                        if parent_class_node:
+                            class_name = parent_class_node.name
+                    else:
+                        module = block.module_hint or ""
+                        if isinstance(node, MethodNode) and node.parent and isinstance(node.parent, ClassNode):
+                            class_name = node.parent.name if node.parent.name else "-"
+                        elif isinstance(node, CodeBlockNode) and node.parent and isinstance(node.parent, ClassNode):
+                            class_name = node.parent.name if node.parent.name else "-"
+                    parent_path = ""
+                    if isinstance(node, MethodNode) and node.parent and isinstance(node.parent, ClassNode):
+                        parent_path = node.parent.name or ""
+                    elif isinstance(node, CodeBlockNode) and node.parent and isinstance(node.parent, ClassNode):
+                        parent_path = node.parent.name or ""
+                    flat_items.append(FlatListItem(
+                        block_id=block.id,
+                        block_name=block.display_name,
+                        node_path=node_path,
+                        parent_path=parent_path,
+                        lines=f"{node.start_line}-{node.end_line}",
+                        module=module,
+                        class_name=class_name,
+                        strategy=strategy,
+                        language=block.language
+                    ))
             elif isinstance(node, (FunctionNode, MethodNode)):
                 node_path = node.name if node.name else "?"
+                key = (block.id, node.start_line, node.end_line)
+                vnode = self._versioned_nodes_by_source.get(key)
+                module = ""
+                class_name = "-"
+                if is_deleted:
+                    strategy = "Удалён"
+                else:
+                    if block.module_hint is None:
+                        strategy = block.assignment_strategy or "Не назначен"
+                    else:
+                        strategy = block.assignment_strategy or "Назначен"
+                if vnode:
+                    parent_module = vnode.parent
+                    while parent_module and parent_module.node_type not in ('module', 'package'):
+                        parent_module = parent_module.parent
+                    if parent_module:
+                        module = parent_module.full_path
+                    parent_class_node = None
+                    temp = vnode.parent
+                    while temp:
+                        if temp.node_type == 'class':
+                            parent_class_node = temp
+                            break
+                        temp = temp.parent
+                    if parent_class_node:
+                        class_name = parent_class_node.name
+                else:
+                    module = block.module_hint or ""
+                    if isinstance(node, MethodNode) and node.parent and isinstance(node.parent, ClassNode):
+                        class_name = node.parent.name if node.parent.name else "-"
+                    elif isinstance(node, CodeBlockNode) and node.parent and isinstance(node.parent, ClassNode):
+                        class_name = node.parent.name if node.parent.name else "-"
+                parent_path = ""
+                if isinstance(node, MethodNode) and node.parent and isinstance(node.parent, ClassNode):
+                    parent_path = node.parent.name or ""
+                flat_items.append(FlatListItem(
+                    block_id=block.id,
+                    block_name=block.display_name,
+                    node_path=node_path,
+                    parent_path=parent_path,
+                    lines=f"{node.start_line}-{node.end_line}",
+                    module=module,
+                    class_name=class_name,
+                    strategy=strategy,
+                    language=block.language
+                ))
             else:
                 node_path = node.name if node.name else "?"
-
-            key = (block.id, node.start_line, node.end_line)
-            vnode = self._versioned_nodes_by_source.get(key)
-
-            module = ""
-            class_name = "-"
-
-            if is_deleted:
-                strategy = "Удалён"
-            else:
-                if block.module_hint is None:
-                    if block.assignment_strategy == "AmbiguousMethod":
-                        strategy = "Неоднозначный метод"
-                    else:
-                        strategy = "Не назначен"
-                else:
-                    strategy = block.assignment_strategy or "Назначен"
-
-            if vnode:
-                parent_module = vnode.parent
-                while parent_module and parent_module.node_type not in ('module', 'package'):
-                    parent_module = parent_module.parent
-                if parent_module:
-                    module = parent_module.full_path
-
-                parent_class_node = None
-                temp = vnode.parent
-                while temp:
-                    if temp.node_type == 'class':
-                        parent_class_node = temp
-                        break
-                    temp = temp.parent
-                if parent_class_node:
-                    class_name = parent_class_node.name
-            else:
-                module = block.module_hint or ""
+                key = (block.id, node.start_line, node.end_line)
+                vnode = self._versioned_nodes_by_source.get(key)
+                module = ""
                 class_name = "-"
-                if isinstance(node, MethodNode) and node.parent and isinstance(node.parent, ClassNode):
-                    class_name = node.parent.name if node.parent.name else "-"
-                elif isinstance(node, CodeBlockNode) and node.parent and isinstance(node.parent, ClassNode):
-                    class_name = node.parent.name if node.parent.name else "-"
-
-            parent_path = ""
-            if isinstance(node, MethodNode) and node.parent and isinstance(node.parent, ClassNode):
-                parent_path = node.parent.name or ""
-            elif isinstance(node, CodeBlockNode) and node.parent and isinstance(node.parent, ClassNode):
-                parent_path = node.parent.name or ""
-
-            flat_items.append(FlatListItem(
-                block_id=block.id,
-                block_name=block.display_name,
-                node_path=node_path,
-                parent_path=parent_path,
-                lines=f"{node.start_line}-{node.end_line}",
-                module=module,
-                class_name=class_name,
-                strategy=strategy,
-                language=block.language
-            ))
+                if is_deleted:
+                    strategy = "Удалён"
+                else:
+                    if block.module_hint is None:
+                        strategy = block.assignment_strategy or "Не назначен"
+                    else:
+                        strategy = block.assignment_strategy or "Назначен"
+                if vnode:
+                    parent_module = vnode.parent
+                    while parent_module and parent_module.node_type not in ('module', 'package'):
+                        parent_module = parent_module.parent
+                    if parent_module:
+                        module = parent_module.full_path
+                    parent_class_node = None
+                    temp = vnode.parent
+                    while temp:
+                        if temp.node_type == 'class':
+                            parent_class_node = temp
+                            break
+                        temp = temp.parent
+                    if parent_class_node:
+                        class_name = parent_class_node.name
+                else:
+                    module = block.module_hint or ""
+                parent_path = ""
+                flat_items.append(FlatListItem(
+                    block_id=block.id,
+                    block_name=block.display_name,
+                    node_path=node_path,
+                    parent_path=parent_path,
+                    lines=f"{node.start_line}-{node.end_line}",
+                    module=module,
+                    class_name=class_name,
+                    strategy=strategy,
+                    language=block.language
+                ))
 
         for child in node.children:
             self._collect_flat_items_from_code_node(child, block, flat_items, is_root=False, is_deleted=is_deleted)
@@ -168,9 +250,18 @@ class StructureDataProvider:
     # Основные методы загрузки и обновления
     # ------------------------------------------------------------------
     def load_blocks(self, resolved_ambiguities: Optional[Dict[str, str]] = None) -> List[AmbiguityInfo]:
-        # Полная перезагрузка блоков из сервиса
-        BlockRegistry().clear()
-        self.block_service.load_from_items(self.items)
+        """
+        Загружает блоки из BlockService, строит дерево модулей.
+        При первом вызове блоки загружаются из сервиса.
+        При последующих вызовах (например, после ручного назначения модулей)
+        используется уже загруженный реестр блоков.
+        """
+        # Загружаем блоки только один раз (при первом вызове)
+        if not self._blocks_loaded:
+            BlockRegistry().clear()
+            self.block_service.load_from_items(self.items)
+            self._blocks_loaded = True
+
         all_blocks = self.block_service.get_new_blocks()
         text_blocks_by_pair = self.block_service.get_text_blocks_by_pair()
         full_texts_by_pair = self.block_service.get_full_texts_by_pair()
@@ -182,9 +273,10 @@ class StructureDataProvider:
             all_blocks,
             text_blocks_by_pair=text_blocks_by_pair,
             full_texts_by_pair=full_texts_by_pair,
-            resolved_ambiguities=resolved_ambiguities
+            resolved_ambiguities=resolved_ambiguities   # None или словарь
         )
         if candidates:
+            # Если есть неоднозначности (и resolved_ambiguities не передан), возвращаем их
             return candidates
 
         self._versioned_roots = roots
@@ -343,7 +435,7 @@ class StructureDataProvider:
 
     def rebuild_structure(self):
         # Полная перестройка без кэширования
-        self.load_blocks()
+        self.load_blocks(resolved_ambiguities={})
 
     def get_unknown_blocks(self) -> List[Block]:
         return self._unknown_blocks.copy()
