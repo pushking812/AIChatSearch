@@ -6,6 +6,7 @@ import logging
 from code_structure.utils.logger import get_logger
 logger = get_logger(__name__, level=logging.DEBUG)
 
+
 class IdentifierNode:
     """Узел иерархического дерева идентификаторов."""
     def __init__(self, name: str):
@@ -23,7 +24,6 @@ class IdentifierTree:
         self.root = IdentifierNode("")
 
     def add_path(self, path: str) -> IdentifierNode:
-        """Добавляет цепочку узлов по пути и возвращает последний узел."""
         parts = path.split('.')
         current = self.root
         for part in parts:
@@ -35,7 +35,6 @@ class IdentifierTree:
         return current
 
     def get_node(self, path: str) -> Optional[IdentifierNode]:
-        """Возвращает узел по полному пути или None, если путь не существует."""
         parts = path.split('.')
         current = self.root
         for part in parts:
@@ -45,7 +44,6 @@ class IdentifierTree:
         return current
 
     def get_full_path(self, node: IdentifierNode) -> str:
-        """Возвращает полное имя узла, начиная от корня."""
         parts = []
         cur = node
         while cur and cur.name:
@@ -64,13 +62,22 @@ class IdentifierTree:
         return None
 
     def _find_nodes_by_name(self, node: IdentifierNode, name: str) -> List[IdentifierNode]:
-        """Рекурсивно находит все узлы с заданным именем."""
         result = []
         if node.name == name:
             result.append(node)
         for child in node.children.values():
             result.extend(self._find_nodes_by_name(child, name))
         return result
+
+    def get_all_nodes(self) -> List[IdentifierNode]:
+        result = []
+        self._collect_nodes(self.root, result)
+        return result
+
+    def _collect_nodes(self, node: IdentifierNode, result: List[IdentifierNode]):
+        for child in node.children.values():
+            result.append(child)
+            self._collect_nodes(child, result)
 
     def __repr__(self) -> str:
         def _format(node: IdentifierNode, indent: int = 0) -> str:

@@ -18,8 +18,9 @@ from code_structure.models.code_node import (
     CommentNode
 )
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+import logging
+from code_structure.utils.logger import get_logger
+logger = get_logger(__name__, level=logging.DEBUG)
 
 
 class CodeParser(ABC):
@@ -65,9 +66,6 @@ class PythonParser(CodeParser):
 
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 args_str = self._format_args(node.args, node.returns)
-                # Определяем, является ли функция методом:
-                # 1. Если родитель - класс -> точно метод
-                # 2. Иначе проверяем наличие self/cls в первом параметре
                 is_method = isinstance(parent_node, ClassNode)
                 if not is_method:
                     if node.args.args and node.args.args[0].arg in ('self', 'cls'):
@@ -95,77 +93,58 @@ class PythonParser(CodeParser):
                 i += 1
 
             else:
-                if not is_method_body:
-                    start = i
-                    while i < n and not isinstance(body[i], (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-                        i += 1
-                    if i > start:
-                        first_node = body[start]
-                        last_node = body[i-1]
-                        end_line = last_node.end_lineno if hasattr(last_node, 'end_lineno') else last_node.lineno
-                        lines = block.content.splitlines()
-                        fragment_lines = lines[first_node.lineno-1:end_line]
-
-                        # Находим первую строку кода (не импорт и не комментарий)
-                        first_code_idx = None
-                        for idx, line in enumerate(fragment_lines):
-                            stripped = line.strip()
-                            if stripped and not stripped.startswith('#') and not re.match(r'^(from\s+\.+\s*import|import\s+)', stripped):
-                                first_code_idx = idx
-                                break
-
-                        if first_code_idx is not None and first_code_idx > 0:
-                            # Импорты и комментарии перед кодом
-                            import_start = first_node.lineno
-                            import_end = first_node.lineno + first_code_idx - 1
-                            import_node = ImportNode(
-                                statement='\n'.join(fragment_lines[:first_code_idx]),
-                                block=block,
-                                start_line=import_start,
-                                end_line=import_end,
-                                parent=parent_node
-                            )
-                            parent_node.add_child(import_node)
-                            logger.debug(f"Created ImportNode in block {block.id}: lines {import_start}-{import_end}")
-
-                            # Блок кода
-                            code_start = first_node.lineno + first_code_idx
-                            code_end = end_line
-                            code_block_node = CodeBlockNode(
-                                name="code_block",
-                                block=block,
-                                start_line=code_start,
-                                end_line=code_end,
-                                parent=parent_node
-                            )
-                            parent_node.add_child(code_block_node)
-                            logger.debug(f"Created CodeBlockNode in block {block.id}: lines {code_start}-{code_end}")
-
-                        elif first_code_idx == 0:
-                            # Сразу код
-                            code_block_node = CodeBlockNode(
-                                name="code_block",
-                                block=block,
-                                start_line=first_node.lineno,
-                                end_line=end_line,
-                                parent=parent_node
-                            )
-                            parent_node.add_child(code_block_node)
-                            logger.debug(f"Created CodeBlockNode (no imports) in block {block.id}: lines {first_node.lineno}-{end_line}")
-
-                        else:
-                            # Нет кода – всё импорты/комментарии
-                            import_node = ImportNode(
-                                statement='\n'.join(fragment_lines),
-                                block=block,
-                                start_line=first_node.lineno,
-                                end_line=end_line,
-                                parent=parent_node
-                            )
-                            parent_node.add_child(import_node)
-                            logger.debug(f"Created ImportNode (no code) in block {block.id}: lines {first_node.lineno}-{end_line}")
-                else:
+                # Обработка импортов, комментариев и кода верхнего уровня
+                start = i
+                while i < n and not isinstance(body[i], (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
                     i += 1
+
+                first_node = body[start]
+                last_node = body[i-1]
+                end_line = last_node.end_lineno if hasattr(last_node, 'end_lineno') else last_node.lineno
+                lines = block.content.splitlines()
+                fragment_lines = lines[first_node.lineno-1:end_line]
+
+                # Разделяем фрагмент на импорты/комментарии и остальной код
+                import_lines = []
+                code_lines = []
+                in_import_block = True
+                for line in fragment_lines:
+                    stripped = line.strip()
+                    if not stripped or stripped.startswith('#'):
+                        if in_import_block:
+                            import_lines.append(line)
+                        else:
+                            code_lines.append(line)
+                    elif stripped.startswith(('import ', 'from ')):
+                        import_lines.append(line)
+                    else:
+                        in_import_block = False
+                        code_lines.append(line)
+
+                if import_lines:
+                    import_statement = '\n'.join(import_lines).rstrip()
+                    import_node = ImportNode(
+                        statement=import_statement,
+                        block=block,
+                        start_line=first_node.lineno,
+                        end_line=first_node.lineno + len(import_lines) - 1,
+                        parent=parent_node
+                    )
+                    parent_node.add_child(import_node)
+                    logger.debug(f"Created ImportNode in block {block.id}: lines {import_node.start_line}-{import_node.end_line}")
+
+                if code_lines:
+                    code_start_line = first_node.lineno + len(import_lines)
+                    code_end_line = end_line
+                    code_block_node = CodeBlockNode(
+                        name="code_block",
+                        block=block,
+                        start_line=code_start_line,
+                        end_line=code_end_line,
+                        parent=parent_node
+                    )
+                    parent_node.add_child(code_block_node)
+                    logger.debug(f"Created CodeBlockNode in block {block.id}: lines {code_start_line}-{code_end_line}")
 
     # ---------- вспомогательные методы (без изменений) ----------
     def _format_base(self, base_node):
@@ -278,7 +257,6 @@ class PythonParser(CodeParser):
             return "?"
 
 
-# Реестр доступных парсеров
 PARSERS = {
     "python": PythonParser,
     "py": PythonParser,

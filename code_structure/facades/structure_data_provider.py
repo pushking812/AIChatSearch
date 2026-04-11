@@ -21,7 +21,7 @@ from code_structure.models.code_node import (
 
 import logging
 from code_structure.utils.logger import get_logger
-logger = get_logger(__name__, level=logging.WARNING)
+logger = get_logger(__name__, level=logging.DEBUG)
 
 
 class StructureDataProvider:
@@ -43,7 +43,6 @@ class StructureDataProvider:
         self._flat_items: List[FlatListItem] = []
 
         self._tree_builder_instance: Optional[VersionedTreeBuilder] = None
-        self._initial_blocks: List[Block] = []   # для сохранения состояния при повторных вызовах
 
     # ------------------------------------------------------------------
     # Построение плоского списка из всех блоков (включая неопределённые и ошибки)
@@ -169,15 +168,9 @@ class StructureDataProvider:
     # Основные методы загрузки и обновления
     # ------------------------------------------------------------------
     def load_blocks(self, resolved_ambiguities: Optional[Dict[str, str]] = None) -> List[AmbiguityInfo]:
-        if not self._initial_blocks:
-            BlockRegistry().clear()
-            self.block_service.load_from_items(self.items)
-            self._initial_blocks = self.block_service.get_new_blocks()
-        else:
-            BlockRegistry().clear()
-            for block in self._initial_blocks:
-                BlockRegistry().register(block)
-
+        # Полная перезагрузка блоков из сервиса
+        BlockRegistry().clear()
+        self.block_service.load_from_items(self.items)
         all_blocks = self.block_service.get_new_blocks()
         text_blocks_by_pair = self.block_service.get_text_blocks_by_pair()
         full_texts_by_pair = self.block_service.get_full_texts_by_pair()
@@ -194,13 +187,10 @@ class StructureDataProvider:
         if candidates:
             return candidates
 
-        updated_blocks = self.block_service.get_new_blocks()
-        self._initial_blocks = updated_blocks
-
         self._versioned_roots = roots
         self._unknown_blocks = [b for b in unknown if b.code_tree is not None]
         self._error_blocks = self.block_service.get_error_blocks()
-        self._all_code_blocks = [b for b in updated_blocks if b.language in ('python', 'py')]
+        self._all_code_blocks = [b for b in all_blocks if b.language in ('python', 'py')]
         self._languages = list(set(b.language for b in self._all_code_blocks))
 
         logger.info(f"Построено модулей: {len(self._versioned_roots)}, неразрешённых: {len(self._unknown_blocks)}, ошибок: {len(self._error_blocks)}")
@@ -230,43 +220,8 @@ class StructureDataProvider:
         )
         BlockRegistry().register(new_block)
 
-        logger.info(f"update_block_assignment: block_id={block_id}, module_name={module_name}, strategy={strategy}, has_code_tree={new_block.code_tree is not None}")
-
-        if self._tree_builder_instance and new_block.code_tree:
-            logger.info(f"  Инкрементальное добавление блока в дерево")
-            effective_module = module_name if module_name is not None else f"_temp_{block_id}"
-            self._tree_builder_instance._collect_from_code_node(
-                new_block.code_tree, effective_module, new_block
-            )
-            self._tree_builder_instance._add_imports_from_block(new_block)
-            self._versioned_roots = self._tree_builder_instance._build_versioned_from_identifier()
-        else:
-            logger.warning(f"  Не удалось инкрементально обновить блок {block_id}, выполняем полную перестройку")
-            self.rebuild_structure()
-            return
-
-        _, _, path_map, source_map = self.tree_builder.build_display_tree(self._versioned_roots, self._current_local_only)
-        self._versioned_nodes_by_full_name = path_map
-        self._versioned_nodes_by_source = source_map
-        self._flat_items = self._build_flat_items_from_all_blocks()
-
-        self._unknown_blocks = [b for b in self._unknown_blocks if b.id != block_id]
-        self._error_blocks = [b for b in self._error_blocks if b.id != block_id]
-        self._all_code_blocks = [b for b in self._all_code_blocks if b.id != block_id]
-
-        if new_block.code_tree is not None:
-            self._all_code_blocks.append(new_block)
-            if new_block.module_hint is None:
-                # Всегда добавляем в unknown (без фильтрации чистых классов)
-                self._unknown_blocks.append(new_block)
-                logger.info(f"  Блок {block_id} добавлен в _unknown_blocks (module_hint=None)")
-            else:
-                logger.info(f"  Блок {block_id} имеет module_hint={new_block.module_hint}")
-        else:
-            self._error_blocks.append(new_block)
-            logger.info(f"  Блок {block_id} добавлен в _error_blocks (нет code_tree)")
-
-        logger.info(f"  Итого: _unknown_blocks={len(self._unknown_blocks)}, _error_blocks={len(self._error_blocks)}, _all_code_blocks={len(self._all_code_blocks)}")
+        # Полная перестройка (для простоты, можно оптимизировать позже)
+        self.rebuild_structure()
 
     def fix_error_block(self, block_id: str, new_code: str):
         block = self.block_service.get_new_block(block_id)
@@ -387,6 +342,7 @@ class StructureDataProvider:
         return len(self._unknown_blocks) > 0
 
     def rebuild_structure(self):
+        # Полная перестройка без кэширования
         self.load_blocks()
 
     def get_unknown_blocks(self) -> List[Block]:

@@ -12,6 +12,23 @@ LOG_DIR: Optional[str] = ".logs"
 
 _file_handlers: Dict[str, logging.FileHandler] = {}
 
+
+class CustomFileFormatter(logging.Formatter):
+    def format(self, record):
+        # 1. Считаем mm:ss на основе relativeCreated (оно в миллисекундах)
+        millis = int(record.relativeCreated / 1)
+        record.runtime = f"{millis:7d}"
+
+        # 2. Логика rsplit для имени логгера (из прошлого шага)
+        if '.' in record.name:
+            record.short_name = record.name.rsplit('.', 1)[1]
+        else:
+            record.short_name = record.name
+
+        return super().format(record)
+
+
+
 def _resolve_log_path(file_path: str) -> str:
     if LOG_DIR is not None and not os.path.isabs(file_path):
         return os.path.abspath(os.path.join(LOG_DIR, os.path.normpath(file_path)))
@@ -33,13 +50,14 @@ def get_logger(
     logger = logging.getLogger(name)
     logger.setLevel(level)
 
+
     # Консольный обработчик
-    if not any(isinstance(h, logging.StreamHandler) for h in logger.handlers):
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setLevel(level)
-        console_formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
-        console_handler.setFormatter(console_formatter)
-        logger.addHandler(console_handler)
+    # if not any(isinstance(h, logging.StreamHandler) for h in logger.handlers):
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(level)
+    console_formatter = CustomFileFormatter('[%(runtime)s] | %(short_name)25s | %(levelname)10s | %(message)s')
+    console_handler.setFormatter(console_formatter)
+    logger.addHandler(console_handler)
 
     if not to_file:
         return logger
@@ -71,9 +89,10 @@ def get_logger(
             abs_target, mode='a' if append_file else 'w', encoding='utf-8'
         )
         file_handler.setLevel(logging.DEBUG)   # обработчик пропускает всё
-        file_formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
+        file_formatter = console_formatter
+        # file_formatter = logging.Formatter(
+            # '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        # )
         file_handler.setFormatter(file_formatter)
         # Принудительный сброс после каждой записи
         original_emit = file_handler.emit
