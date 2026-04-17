@@ -1,5 +1,3 @@
-# code_structure/module_resolution/services/versioned_tree_assembler.py
-
 import logging
 from typing import Dict, List, Set, Tuple
 from code_structure.models.block import Block
@@ -52,9 +50,10 @@ class VersionedTreeAssembler:
 
         elif isinstance(node, (FunctionNode, MethodNode)):
             is_method = has_self_parameter(node) if isinstance(node, FunctionNode) else True
+            # Определяем, является ли узел методом класса (родитель – ClassNode)
+            is_class_method = isinstance(node, MethodNode) and isinstance(node.parent, ClassNode)
             method_name = node.name
 
-            # Поиск подходящего пути в resolved_paths с приоритетом метода класса
             found_path = None
             # 1. Путь с дополнительным сегментом (метод класса)
             for ident, fp in self.resolved_paths.items():
@@ -64,20 +63,23 @@ class VersionedTreeAssembler:
                     found_path = fp
                     logger.debug(f"      Найден путь метода класса: {fp}")
                     break
-            # 2. Путь без дополнительного сегмента (функция модуля)
-            if not found_path:
-                for ident, fp in self.resolved_paths.items():
-                    if fp.startswith(base_path + '.') and fp.endswith('.' + method_name):
-                        found_path = fp
-                        logger.debug(f"      Найден путь функции модуля: {fp}")
-                        break
-            # 3. Поиск по идентификатору class.method
-            if not found_path:
-                for ident, fp in self.resolved_paths.items():
-                    if ident.endswith(f'.{method_name}'):
-                        found_path = fp
-                        logger.debug(f"      Найден общий путь: {fp} (ident={ident})")
-                        break
+
+            # Для методов класса НЕ используем второй и третий этапы
+            if not is_class_method:
+                # 2. Путь без дополнительного сегмента (функция модуля)
+                if not found_path:
+                    for ident, fp in self.resolved_paths.items():
+                        if fp.startswith(base_path + '.') and fp.endswith('.' + method_name):
+                            found_path = fp
+                            logger.debug(f"      Найден путь функции модуля: {fp}")
+                            break
+                # 3. Поиск по идентификатору class.method
+                if not found_path:
+                    for ident, fp in self.resolved_paths.items():
+                        if ident.endswith(f'.{method_name}'):
+                            found_path = fp
+                            logger.debug(f"      Найден общий путь: {fp} (ident={ident})")
+                            break
 
             if found_path:
                 self._add_version(found_path, node, block)
@@ -119,7 +121,6 @@ class VersionedTreeAssembler:
                 ver.add_source(src)
                 logger.debug(f"      Добавлен источник в существующую версию {full_path}: {src.block_id}")
                 return
-        # Новая версия
         versions.append(VersionInfo(norm, [src]))
         logger.debug(f"      Создана новая версия для {full_path} (всего версий: {len(versions)})")
 

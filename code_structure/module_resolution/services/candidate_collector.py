@@ -82,6 +82,7 @@ class CandidateCollector:
             self.register_candidate_from_path(full_path, node_type='class')
             for child in node.children:
                 self._collect_identifiers_from_code_node(child, full_path, block)
+
         elif isinstance(node, FunctionNode) and not isinstance(node, MethodNode):
             parent_class = find_parent_class(node)
             if has_self_parameter(node):
@@ -102,7 +103,13 @@ class CandidateCollector:
                 full_path = f"{base_path}.{node.name}"
                 self.register_candidate_from_path(full_path, node_type='function')
                 logger.debug(f"  Функция {node.name} (без self/cls) -> {full_path}")
+
         elif isinstance(node, MethodNode):
+            # Пропускаем MethodNode, родитель которого не является классом (ошибочный дубликат)
+            if not isinstance(node.parent, ClassNode):
+                logger.debug(f"  Пропускаем MethodNode {node.name} (родитель {type(node.parent).__name__})")
+                return
+
             parent_class = find_parent_class(node)
             if parent_class:
                 full_path = f"{base_path}.{node.name}"
@@ -115,13 +122,13 @@ class CandidateCollector:
                     self.register_candidate(identifier, full_path, node_type='function')
                 self.orphan_methods.append((block, node, base_path))
                 logger.info(f"  MethodNode-сирота добавлен: {node.name} из {base_path}")
+
         elif isinstance(node, ImportNode):
             imports = extract_imports_from_block(node.statement, base_path)
             for imp in imports:
                 abs_path = imp.target_fullname
                 if not abs_path:
                     continue
-                # logger.info(f"  Импорт: {node.statement} -> {abs_path} (type={imp.target_type})")
                 self.imported_paths.add(abs_path)
                 self.register_candidate_from_path(abs_path, node_type=imp.target_type)
                 identifier = abs_path.split('.')[-1]

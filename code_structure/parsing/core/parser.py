@@ -1,5 +1,3 @@
-# code_structure/parsing/core/parser.py
-
 import ast
 import logging
 import re

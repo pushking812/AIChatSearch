@@ -65,10 +65,11 @@ class BlockResolver:
                     if ident.endswith(f'.{method_name}'):
                         class_path = '.'.join(full_path.split('.')[:-1])
                         class_candidates.add(class_path)
+                        logger.debug(f"[BlockResolver] Для метода {method_name} найден путь {full_path}, класс {class_path}")
                         break
-
             if class_candidates:
                 chosen = next(iter(class_candidates))
+                logger.info(f"[BlockResolver] Блок {block.id} получил TreeResolution по методу -> class {chosen}")
                 assign_and_replace(block, chosen, "TreeResolution", blocks, i)
                 continue
 
@@ -109,15 +110,13 @@ class BlockResolver:
                 full_path = f"{class_full_path}.{method_name}"
                 identifier = f"{class_name}.{method_name}"
                 self.resolved_paths[identifier] = full_path
-
-                # Удаляем старый путь функции (по полному пути)
+                # удаляем старый путь функции
                 old_path = f"{base_path}.{method_name}"
                 keys_to_remove = [k for k, v in self.resolved_paths.items() if v == old_path]
                 for k in keys_to_remove:
                     del self.resolved_paths[k]
                     logger.debug(f"  Удалён старый путь функции: {k} -> {old_path}")
-
-                logger.info(f"  Метод-сирота '{method_name}' привязан к классу '{class_name}' -> {full_path}")
+                logger.info(f"[resolve_orphan_methods] Метод-сирота '{method_name}' привязан к классу '{class_name}' -> {full_path} (score={best_score})")
                 if block.module_hint is None:
                     module_path = '.'.join(class_full_path.split('.')[:-1])
                     try:
@@ -126,7 +125,7 @@ class BlockResolver:
                     except ValueError:
                         logger.warning(f"Блок {block.id} не найден в списке")
             else:
-                logger.debug(f"  Метод-сирота '{method_name}' не привязан к классу, остаётся функцией")
+                logger.info(f"[resolve_orphan_methods] Метод-сирота '{method_name}' НЕ привязан к классу, остаётся функцией. best_score={best_score}, best_match={best_match}")
 
     def resolve_pending_method_hints(self, pending_hints: List[Tuple[str, str, str]], candidate_paths: Dict[str, Set[str]], blocks: List[Block], assign_and_replace):
         logger.info("=== Разрешение отложенных подсказок методов ===")

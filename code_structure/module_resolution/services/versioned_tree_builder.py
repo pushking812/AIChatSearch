@@ -39,7 +39,7 @@ class VersionedTreeBuilder:
             if hint:
                 self._assign_and_replace(block, hint, "CommentHint", blocks, i)
 
-        # 2. Текстовые подсказки – только сбор кандидатов, без немедленного назначения
+        # 2. Текстовые подсказки – сбор кандидатов (включая методы)
         for block in blocks:
             if block.module_hint:
                 continue
@@ -53,9 +53,9 @@ class VersionedTreeBuilder:
             # 2.1. Путь к .py файлу
             module_path = CandidateCollector._extract_module_path_from_text(prev_text)
             if module_path:
-                # Добавляем кандидата для модуля (если его нет)
+                # Регистрируем модуль
                 self.collector.register_candidate_from_path(module_path, node_type='module')
-                # Для каждого метода в блоке добавляем кандидата от этого модуля
+                # Регистрируем каждый метод блока как кандидата (для TreeResolution)
                 if block.code_tree:
                     methods = extract_method_names(block.code_tree)
                     for method_name in methods:
@@ -68,7 +68,6 @@ class VersionedTreeBuilder:
             class_match = re.search(r'класс[еауы]?\s+[`\'"]?([A-Za-z_]+)[`\'"]?', prev_text, re.IGNORECASE)
             if class_match:
                 class_name = class_match.group(1)
-                # Сохраняем подсказку для последующего разрешения (не назначаем сразу)
                 self.collector.class_hints_by_block[block.id] = class_name
                 if block.code_tree:
                     methods = extract_method_names(block.code_tree)
