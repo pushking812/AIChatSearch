@@ -31,7 +31,7 @@ class VersionedTreeBuilder:
         return new_block
 
     def _apply_immediate_hints(self, blocks: List[Block], text_blocks_by_pair: Dict[str, Dict[int, str]]):
-        # 1. Комментарии (назначаем сразу, так как они однозначны)
+        # 1. Комментарии
         for i, block in enumerate(blocks):
             if block.module_hint:
                 continue
@@ -39,7 +39,7 @@ class VersionedTreeBuilder:
             if hint:
                 self._assign_and_replace(block, hint, "CommentHint", blocks, i)
 
-        # 2. Текстовые подсказки – сбор кандидатов (включая методы)
+        # 2. Текстовые подсказки – собираем кандидаты (включая методы)
         for block in blocks:
             if block.module_hint:
                 continue
@@ -50,12 +50,10 @@ class VersionedTreeBuilder:
             if not prev_text:
                 continue
 
-            # 2.1. Путь к .py файлу
+            # Путь к .py файлу
             module_path = CandidateCollector._extract_module_path_from_text(prev_text)
             if module_path:
-                # Регистрируем модуль
                 self.collector.register_candidate_from_path(module_path, node_type='module')
-                # Регистрируем каждый метод блока как кандидата (для TreeResolution)
                 if block.code_tree:
                     methods = extract_method_names(block.code_tree)
                     for method_name in methods:
@@ -64,7 +62,7 @@ class VersionedTreeBuilder:
                         self.collector.register_candidate(identifier, full_path, node_type='method')
                         logger.debug(f"  Добавлен кандидат от пути .py: {identifier} -> {full_path}")
 
-            # 2.2. Упоминание класса
+            # Упоминание класса
             class_match = re.search(r'класс[еауы]?\s+[`\'"]?([A-Za-z_]+)[`\'"]?', prev_text, re.IGNORECASE)
             if class_match:
                 class_name = class_match.group(1)

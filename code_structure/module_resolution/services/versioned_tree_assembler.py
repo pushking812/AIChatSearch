@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Set, Tuple, Union, Optional
 from code_structure.models.block import Block
 from code_structure.models.code_node import CodeNode, ClassNode, FunctionNode, MethodNode, CodeBlockNode
 from code_structure.models.versioned_node import (
@@ -35,81 +35,125 @@ class VersionedTreeAssembler:
         return roots
 
     def _add_block_versions(self, node: CodeNode, base_path: str, block: Block, block_classes: Set[str]):
+        """Основной метод: диспетчер для разных типов узлов."""
         logger.debug(f"  _add_block_versions: type={type(node).__name__}, base_path={base_path}")
+
+        if node.name == 'clear_all_sources':
+            pass
+        
         if isinstance(node, ClassNode):
-            if base_path.endswith('.' + node.name):
-                logger.debug(f"  => Пропускаем вложенный класс {node.name}, обрабатываем детей")
-                for child in node.children:
-                    self._add_block_versions(child, base_path, block, block_classes)
-                return
-            full_path = f"{base_path}.{node.name}"
-            self.node_type_map[full_path] = 'class'
-            self._add_version(full_path, node, block)
-            for child in node.children:
-                self._add_block_versions(child, full_path, block, block_classes)
-
+            self._process_class_node(node, base_path, block, block_classes)
         elif isinstance(node, (FunctionNode, MethodNode)):
-            is_method = has_self_parameter(node) if isinstance(node, FunctionNode) else True
-            # Определяем, является ли узел методом класса (родитель – ClassNode)
-            is_class_method = isinstance(node, MethodNode) and isinstance(node.parent, ClassNode)
-            method_name = node.name
-
-            found_path = None
-            # 1. Путь с дополнительным сегментом (метод класса)
-            for ident, fp in self.resolved_paths.items():
-                if (fp.startswith(base_path + '.') and 
-                    fp.endswith('.' + method_name) and 
-                    fp.count('.') > base_path.count('.') + 1):
-                    found_path = fp
-                    logger.debug(f"      Найден путь метода класса: {fp}")
-                    break
-
-            # Для методов класса НЕ используем второй и третий этапы
-            if not is_class_method:
-                # 2. Путь без дополнительного сегмента (функция модуля)
-                if not found_path:
-                    for ident, fp in self.resolved_paths.items():
-                        if fp.startswith(base_path + '.') and fp.endswith('.' + method_name):
-                            found_path = fp
-                            logger.debug(f"      Найден путь функции модуля: {fp}")
-                            break
-                # 3. Поиск по идентификатору class.method
-                if not found_path:
-                    for ident, fp in self.resolved_paths.items():
-                        if ident.endswith(f'.{method_name}'):
-                            found_path = fp
-                            logger.debug(f"      Найден общий путь: {fp} (ident={ident})")
-                            break
-
-            if found_path:
-                self._add_version(found_path, node, block)
-                logger.debug(f"      {type(node).__name__} {method_name} взят из _resolved_paths: {found_path}")
-                return
-
-            # Создание нового пути, если не найден
-            if block_classes and is_method:
-                class_in_base = any(base_path.endswith('.' + cls) for cls in block_classes)
-                if class_in_base:
-                    full_path = f"{base_path}.{method_name}"
-                else:
-                    first_class = next(iter(block_classes))
-                    full_path = f"{base_path}.{first_class}.{method_name}"
-            else:
-                full_path = f"{base_path}.{method_name}"
-
-            node_type = 'method' if is_method else 'function'
-            self.node_type_map[full_path] = node_type
-            self._add_version(full_path, node, block)
-            logger.debug(f"      Создана {'функция' if node_type=='function' else 'метод'}: {full_path}")
-
+            self._process_function_method_node(node, base_path, block, block_classes)
         elif isinstance(node, CodeBlockNode):
-            full_path = f"{base_path}._code_block"
-            self.node_type_map[full_path] = 'code_block'
-            self._add_version(full_path, node, block)
-
+            self._process_code_block_node(node, base_path, block)
         else:
+            self._process_other_node(node, base_path, block, block_classes)
+
+    def _process_class_node(self, node: ClassNode, base_path: str, block: Block, block_classes: Set[str]):
+        """Обработка узла класса."""
+        # Пропускаем вложенный класс с тем же именем
+        if base_path.endswith('.' + node.name):
+            logger.debug(f"  => Пропускаем вложенный класс {node.name}, обрабатываем детей")
             for child in node.children:
                 self._add_block_versions(child, base_path, block, block_classes)
+            return
+
+        full_path = f"{base_path}.{node.name}"
+        self.node_type_map[full_path] = 'class'
+        self._add_version(full_path, node, block)
+        for child in node.children:
+            self._add_block_versions(child, full_path, block, block_classes)
+
+    def _process_function_method_node(self, node: Union[FunctionNode, MethodNode], base_path: str,
+                                      block: Block, block_classes: Set[str]):
+        """Обработка функций и методов."""
+        is_method = has_self_parameter(node) if isinstance(node, FunctionNode) else True
+        is_class_method = isinstance(node, MethodNode) and isinstance(node.parent, ClassNode)
+        method_name = node.name
+
+        # Поиск уже существующего пути
+        found_path = self._find_existing_path(node, base_path, method_name, is_class_method)
+
+        if found_path:
+            self._add_version(found_path, node, block)
+            logger.debug(f"      {type(node).__name__} {method_name} взят из _resolved_paths: {found_path}")
+            return
+
+        # Создание нового пути
+        new_path, node_type = self._create_new_path(node, base_path, block_classes, is_method, is_class_method)
+        self.node_type_map[new_path] = node_type
+        self._add_version(new_path, node, block)
+        logger.debug(f"      Создана {'функция' if node_type=='function' else 'метод'}: {new_path}")
+
+    def _find_existing_path(self, node: Union[FunctionNode, MethodNode], base_path: str,
+                            method_name: str, is_class_method: bool) -> Optional[str]:
+        """Ищет существующий путь в resolved_paths."""
+        if is_class_method:
+            # Для метода класса ищем по идентификатору "Класс.метод"
+            parent_class = node.parent  # ClassNode
+            identifier = f"{parent_class.name}.{method_name}"
+            if identifier in self.resolved_paths:
+                logger.debug(f"      Найден путь метода класса по идентификатору {identifier}: {self.resolved_paths[identifier]}")
+                return self.resolved_paths[identifier]
+            return None
+
+        # Для обычных функций / методов-сирот используем старый трёхэтапный поиск
+        # 1. Путь с дополнительным сегментом (вложенный класс)
+        for ident, fp in self.resolved_paths.items():
+            if (fp.startswith(base_path + '.') and
+                fp.endswith('.' + method_name) and
+                fp.count('.') > base_path.count('.') + 1):
+                logger.debug(f"      Найден путь вложенного метода: {fp}")
+                return fp
+        # 2. Путь без дополнительного сегмента (функция модуля)
+        for ident, fp in self.resolved_paths.items():
+            if fp.startswith(base_path + '.') and fp.endswith('.' + method_name):
+                logger.debug(f"      Найден путь функции модуля: {fp}")
+                return fp
+        # 3. Поиск по идентификатору class.method
+        for ident, fp in self.resolved_paths.items():
+            if ident.endswith(f'.{method_name}'):
+                logger.debug(f"      Найден общий путь: {fp} (ident={ident})")
+                return fp
+        return None
+
+    def _create_new_path(self, node: Union[FunctionNode, MethodNode], base_path: str,
+                         block_classes: Set[str], is_method: bool, is_class_method: bool) -> Tuple[str, str]:
+        """Создаёт новый полный путь и тип узла."""
+        method_name = node.name
+
+        if is_class_method:
+            # Метод класса – путь "модуль.класс.метод"
+            parent_class = node.parent  # ClassNode
+            full_path = f"{base_path}.{parent_class.name}.{method_name}"
+            node_type = 'method'
+            return full_path, node_type
+
+        # Для обычных функций и методов-сирот
+        if block_classes and is_method:
+            class_in_base = any(base_path.endswith('.' + cls) for cls in block_classes)
+            if class_in_base:
+                full_path = f"{base_path}.{method_name}"
+            else:
+                first_class = next(iter(block_classes))
+                full_path = f"{base_path}.{first_class}.{method_name}"
+        else:
+            full_path = f"{base_path}.{method_name}"
+
+        node_type = 'method' if is_method else 'function'
+        return full_path, node_type
+
+    def _process_code_block_node(self, node: CodeBlockNode, base_path: str, block: Block):
+        """Обработка блока кода."""
+        full_path = f"{base_path}._code_block"
+        self.node_type_map[full_path] = 'code_block'
+        self._add_version(full_path, node, block)
+
+    def _process_other_node(self, node: CodeNode, base_path: str, block: Block, block_classes: Set[str]):
+        """Обработка узлов, не являющихся классами, функциями/методами или блоками кода (например, импорты, комментарии)."""
+        for child in node.children:
+            self._add_block_versions(child, base_path, block, block_classes)
 
     def _add_version(self, full_path: str, code_node: CodeNode, block: Block):
         raw_code = code_node.get_raw_code()

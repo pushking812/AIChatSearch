@@ -105,7 +105,7 @@ class CandidateCollector:
                 logger.debug(f"  Функция {node.name} (без self/cls) -> {full_path}")
 
         elif isinstance(node, MethodNode):
-            # Пропускаем MethodNode, родитель которого не является классом (ошибочный дубликат)
+            # Игнорируем MethodNode, родитель которого не является классом (ошибочный дубликат)
             if not isinstance(node.parent, ClassNode):
                 logger.debug(f"  Пропускаем MethodNode {node.name} (родитель {type(node.parent).__name__})")
                 return
